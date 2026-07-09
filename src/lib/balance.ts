@@ -1,0 +1,28 @@
+import type { AttendanceRecord, Vacation } from './types';
+
+const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
+const DEDUCT_VACATION_TYPES = new Set(['نظامية', 'اعتيادية', 'إجازة اعتيادية', 'عارضة', 'عارضة إجازة', 'إجازة عارضة']);
+const DEDUCT_ATTENDANCE_STATUSES = new Set(['عارضة إجازة', 'إجازة عارضة', 'إجازة اعتيادية']);
+
+function isAutoVacationAttendance(record: AttendanceRecord) {
+  return Boolean(record.notes?.startsWith('AUTO_VACATION:'));
+}
+
+export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: Vacation[]) {
+  // الإجازات اللي نزلت تلقائي في الشيت من طلب معتمد لا تُحسب من الشيت حتى لا تتكرر.
+  const manualSheetDeduct = attendance
+    .filter(r => DEDUCT_ATTENDANCE_STATUSES.has(r.status) && !isAutoVacationAttendance(r))
+    .length;
+
+  const approvedRequestDeduct = vacations
+    .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
+    .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
+
+  return manualSheetDeduct + approvedRequestDeduct;
+}
+
+export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
+  return vacations
+    .filter(v => APPROVED.has(v.status) && types.includes(v.vacationType || 'اعتيادية'))
+    .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
+}

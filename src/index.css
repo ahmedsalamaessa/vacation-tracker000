@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: geometricPrecision;
+    font-family: 'Cairo', Arial, Tahoma, "Segoe UI", sans-serif;
+  }
+  button, input, select, textarea { font: inherit; }
+}
+.dark { color-scheme: dark; }
+.dark .bg-white { background-color: #1e293b !important; }
+.dark .bg-slate-50 { background-color: #1e293b !important; }
+.dark .bg-slate-100 { background-color: #0f172a !important; }
+.dark .text-slate-900,
+.dark .text-slate-950,
+.dark .text-slate-800,
+.dark .text-slate-700 { color: #e2e8f0 !important; }
+.dark .text-slate-600 { color: #cbd5e1 !important; }
+.dark .text-slate-500 { color: #94a3b8 !important; }
+.dark .text-slate-400 { color: #64748b !important; }
+.dark .border-slate-200,
+.dark .border-slate-100 { border-color: #334155 !important; }
+.dark .border-slate-300 { border-color: #475569 !important; }
+.dark input,
+.dark select,
+.dark textarea { background-color: #0f172a !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+.dark input::placeholder,
+.dark textarea::placeholder { color: #64748b !important; }
+.dark .bg-blue-50 { background-color: rgba(30, 58, 138, 0.25) !important; }
+.dark .bg-green-50 { background-color: rgba(20, 83, 45, 0.25) !important; }
+.dark .bg-red-50 { background-color: rgba(127, 29, 29, 0.25) !important; }
+.dark .bg-amber-50 { background-color: rgba(120, 53, 15, 0.25) !important; }
+.dark .bg-orange-50 { background-color: rgba(124, 45, 18, 0.25) !important; }
+.dark .bg-indigo-50 { background-color: rgba(49, 46, 129, 0.25) !important; }
+.dark .bg-purple-50 { background-color: rgba(88, 28, 135, 0.25) !important; }
+.dark .bg-emerald-50 { background-color: rgba(6, 78, 59, 0.25) !important; }
+.dark .bg-cyan-50 { background-color: rgba(22, 78, 99, 0.25) !important; }
+.dark .bg-teal-50 { background-color: rgba(19, 78, 74, 0.25) !important; }
+.dark .bg-sky-50 { background-color: rgba(12, 74, 110, 0.25) !important; }
+.dark .bg-pink-50 { background-color: rgba(131, 24, 67, 0.25) !important; }
+.dark .bg-yellow-50 { background-color: rgba(113, 63, 18, 0.25) !important; }
+.dark .bg-blue-100 { background-color: rgba(30, 58, 138, 0.35) !important; }
+.dark .bg-green-100 { background-color: rgba(20, 83, 45, 0.35) !important; }
+.dark .bg-red-100 { background-color: rgba(127, 29, 29, 0.35) !important; }
+.dark .bg-amber-100 { background-color: rgba(120, 53, 15, 0.35) !important; }
+.dark .bg-orange-100 { background-color: rgba(124, 45, 18, 0.35) !important; }
+.dark .bg-indigo-100 { background-color: rgba(49, 46, 129, 0.35) !important; }
+.dark .bg-purple-100 { background-color: rgba(88, 28, 135, 0.35) !important; }
+.dark .bg-teal-100 { background-color: rgba(19, 78, 74, 0.35) !important; }
+.dark .bg-cyan-100 { background-color: rgba(22, 78, 99, 0.35) !important; }
+.dark .bg-pink-100 { background-color: rgba(131, 24, 67, 0.35) !important; }
+.dark .border-blue-100,
+.dark .border-blue-200 { border-color: rgba(30, 58, 138, 0.4) !important; }
+.dark .border-green-100,
+.dark .border-green-200 { border-color: rgba(20, 83, 45, 0.4) !important; }
+.dark .border-red-100,
+.dark .border-red-200 { border-color: rgba(127, 29, 29, 0.4) !important; }
+.dark .border-amber-100,
+.dark .border-amber-200 { border-color: rgba(120, 53, 15, 0.4) !important; }
+.dark .border-orange-100,
+.dark .border-orange-200 { border-color: rgba(124, 45, 18, 0.4) !important; }
+.dark .border-indigo-100,
+.dark .border-indigo-200 { border-color: rgba(49, 46, 129, 0.4) !important; }
+.dark .border-emerald-100,
+.dark .border-emerald-200 { border-color: rgba(6, 78, 59, 0.4) !important; }
+.dark th { background-color: #1e293b !important; color: #cbd5e1 !important; }
+.dark td { border-color: #334155 !important; }
+.dark .bg-slate-900 { background-color: #0f172a !important; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }

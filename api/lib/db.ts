@@ -1,5 +1,19 @@
 import { neon } from '@neondatabase/serverless';
 
+
+function toDateOnly(v: any): string {
+  if (v == null) return v as any;
+  if (typeof v === 'string') {
+    // already yyyy-mm-dd or ISO
+    return v.slice(0, 10);
+  }
+  try {
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  } catch {}
+  return String(v);
+}
+
 export function getSql() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
@@ -87,7 +101,7 @@ export function mapAttendance(r: any) {
   return {
     id: r.id,
     employeeId: r.employee_id,
-    date: r.date,
+    date: toDateOnly(r.date),
     status: r.status,
     notes: r.notes,
     checkInLat: r.check_in_lat,
@@ -108,10 +122,10 @@ export function mapVacation(r: any) {
     workDays: r.work_days,
     vacationDays: r.vacation_days,
     vacationType: r.vacation_type,
-    startDate: r.start_date,
-    endDate: r.end_date,
-    vacationStartDate: r.vacation_start_date,
-    vacationEndDate: r.vacation_end_date,
+    startDate: toDateOnly(r.start_date),
+    endDate: toDateOnly(r.end_date),
+    vacationStartDate: toDateOnly(r.vacation_start_date),
+    vacationEndDate: toDateOnly(r.vacation_end_date),
     status: r.status,
     notes: r.notes,
     requestedBy: r.requested_by,
@@ -126,7 +140,7 @@ export function mapAttempt(r: any) {
     id: r.id,
     employeeId: r.employee_id,
     employeeName: r.employee_name,
-    date: r.date,
+    date: toDateOnly(r.date),
     status: r.status,
     success: r.success,
     reason: r.reason,

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ARABIC_MONTHS, ATTENDANCE_STATUSES, STATUS_MAP } from '../lib/constants';
-import { getEmployees, getAttendance, upsertAttendance, deleteAttendance, isMonthLocked, lockMonth, unlockMonth, addAuditLog } from '../lib/db';
+import {
+  getEmployees,
+  getAttendance,
+  upsertAttendance,
+  deleteAttendance,
+  isMonthLocked,
+  lockMonth,
+  unlockMonth,
+  addAuditLog,
+  refreshFromRemote,
+} from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
 import type { AttendanceRecord, Employee } from '../lib/types';
 
@@ -32,7 +42,12 @@ interface AttendanceTabProps {
   user?: Employee;
 }
 
-export default function AttendanceTab({ onSaved, readOnly = false, currentUserId, user }: AttendanceTabProps) {
+export default function AttendanceTab({
+  onSaved,
+  readOnly = false,
+  currentUserId,
+  user,
+}: AttendanceTabProps) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -51,41 +66,57 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
-
   const startDate = `${year}-${pad(month + 1)}-01`;
   const endDate = `${year}-${pad(month + 1)}-${pad(daysInMonth)}`;
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const applyLocal = useCallback(() => {
     let emps = getEmployees().filter(e => e.active);
-    // لو فيه user ومدير فرعي، يفلتر حسب مواقعه
     if (user) emps = getManagedEmployees(user);
-    const atts = getAttendance().filter(a => a.date >= startDate && a.date <= endDate);
-    
+    const atts = getAttendance().filter(a => {
+      const d = String(a.date).slice(0, 10);
+      return d >= startDate && d <= endDate;
+    });
+
     if (currentUserId && readOnly) {
       setEmployeesState(emps.filter(e => e.id === currentUserId));
     } else {
       setEmployeesState(emps);
     }
-    
-    setRecords(atts);
-    
+
+    setRecords(
+      atts.map(a => ({
+        ...a,
+        date: String(a.date).slice(0, 10),
+      })),
+    );
     const map: Record<string, string> = {};
     const createdMap: Record<string, string> = {};
     for (const a of atts) {
-      const key = `${a.employeeId}_${a.date}`;
+      const key = `${a.employeeId}_${String(a.date).slice(0, 10)}`;
       map[key] = a.status;
       if (a.createdAt) createdMap[key] = a.createdAt;
     }
     setCells(map);
     setCreatedAtCells(createdMap);
     setDirtyValues({});
+  }, [startDate, endDate, currentUserId, readOnly, user]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    // always pull latest from Neon first so phone/laptop stay in sync
+    await refreshFromRemote();
+    applyLocal();
     setLoading(false);
-  }, [startDate, endDate, currentUserId, readOnly]);
+  }, [applyLocal]);
 
   useEffect(() => {
     load();
-  }, [load]);
+    // auto-refresh every 15s while tab is open (cross-device sync)
+    const t = setInterval(() => {
+      refreshFromRemote().then(() => applyLocal());
+    }, 15000);
+    return () => clearInterval(t);
+  }, [load, applyLocal]);
 
   function setCell(empId: number, day: number, value: string) {
     if (readOnly) return;
@@ -99,10 +130,9 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
     const password = window.prompt(
       action === 'lock'
         ? 'اكتب كلمة مرور المدير لقفل هذا الشهر:'
-        : 'اكتب كلمة مرور المدير لفتح هذا الشهر:'
+        : 'اكتب كلمة مرور المدير لفتح هذا الشهر:',
     );
     if (!password) return;
-    
     const yearMonth = `${year}-${pad(month + 1)}`;
     if (action === 'lock') {
       lockMonth(yearMonth, 1, 'Admin');
@@ -119,19 +149,21 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
       setMsg('لا توجد تغييرات للحفظ');
       return;
     }
-    
+
     setSaving(true);
     setMsg('');
-    
     const yearMonth = `${year}-${pad(month + 1)}`;
     const monthLocked = isMonthLocked(yearMonth);
+
     if (monthLocked) {
       if (!user?.canLockMonths && user?.role !== 'admin') {
         setMsg('🔒 الشهر مقفول ولا تملك صلاحية التعديل بعد القفل');
         setSaving(false);
         return;
       }
-      const override = window.confirm('الشهر مقفول. سيتم تسجيل هذا كتعديل استثنائي في سجل الحركات. هل تريد المتابعة؟');
+      const override = window.confirm(
+        'الشهر مقفول. سيتم تسجيل هذا كتعديل استثنائي في سجل الحركات. هل تريد المتابعة؟',
+      );
       if (!override) {
         setSaving(false);
         return;
@@ -143,7 +175,10 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
 
     for (const [key, status] of entries) {
       const [employeeId, date] = key.split('_');
-      const oldRecord = records.find(r => r.employeeId === Number(employeeId) && r.date === date);
+      const oldRecord = records.find(
+        r => r.employeeId === Number(employeeId) && r.date === date,
+      );
+
       if (status) {
         upsertAttendance({
           employeeId: Number(employeeId),
@@ -199,24 +234,26 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
   }
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
-  
   const recentAttendanceLogs = records
     .filter(record => Boolean(record.createdAt))
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 12);
 
   const jobTitles = Array.from(
-    new Set(employees.map(emp => emp.jobTitle).filter((job): job is string => Boolean(job)))
+    new Set(employees.map(emp => emp.jobTitle).filter((job): job is string => Boolean(job))),
   );
 
   const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = !search.trim() || emp.name.toLowerCase().includes(search.trim().toLowerCase());
+    const matchesSearch =
+      !search.trim() || emp.name.toLowerCase().includes(search.trim().toLowerCase());
     const matchesJob = !jobFilter || emp.jobTitle === jobFilter;
     const matchesSingle = !singleEmployeeId || emp.id === Number(singleEmployeeId);
-    const matchesStatus = !statusFilter || days.some(day => {
-      const date = `${year}-${pad(month + 1)}-${pad(day)}`;
-      return cells[`${emp.id}_${date}`] === statusFilter;
-    });
+    const matchesStatus =
+      !statusFilter ||
+      days.some(day => {
+        const date = `${year}-${pad(month + 1)}-${pad(day)}`;
+        return cells[`${emp.id}_${date}`] === statusFilter;
+      });
     return matchesSearch && matchesJob && matchesSingle && matchesStatus;
   });
 
@@ -229,20 +266,24 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+            onChange={e => setMonth(Number(e.target.value))}
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
           >
             {ARABIC_MONTHS.map((m, i) => (
-              <option key={i} value={i}>{m}</option>
+              <option key={i} value={i}>
+                {m}
+              </option>
             ))}
           </select>
           <select
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            onChange={e => setYear(Number(e.target.value))}
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
           >
             {years.map(y => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>
+                {y}
+              </option>
             ))}
           </select>
           {!readOnly && (
@@ -301,23 +342,25 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
         <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-4">
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
             placeholder="🔎 بحث باسم الموظف"
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold outline-none focus:border-blue-500"
           />
           <select
             value={jobFilter}
-            onChange={(e) => setJobFilter(e.target.value)}
+            onChange={e => setJobFilter(e.target.value)}
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold outline-none focus:border-blue-500"
           >
             <option value="">كل الوظائف</option>
             {jobTitles.map(job => (
-              <option key={job} value={job}>{job}</option>
+              <option key={job} value={job}>
+                {job}
+              </option>
             ))}
           </select>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={e => setStatusFilter(e.target.value)}
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold outline-none focus:border-blue-500"
           >
             <option value="">كل الحالات</option>
@@ -329,12 +372,14 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
           </select>
           <select
             value={singleEmployeeId}
-            onChange={(e) => setSingleEmployeeId(e.target.value)}
+            onChange={e => setSingleEmployeeId(e.target.value)}
             className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold outline-none focus:border-blue-500"
           >
             <option value="">عرض كل الموظفين</option>
             {employees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
             ))}
           </select>
         </div>
@@ -350,9 +395,7 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
       </div>
 
       {msg && (
-        <div className="mb-3 text-sm text-center bg-blue-50 text-blue-700 rounded-lg py-2">
-          {msg}
-        </div>
+        <div className="mb-3 text-sm text-center bg-blue-50 text-blue-700 rounded-lg py-2">{msg}</div>
       )}
 
       {loading ? (
@@ -374,7 +417,9 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
                     return (
                       <th
                         key={d}
-                        className={`border border-slate-200 p-1 min-w-[64px] ${isFri ? 'bg-red-50 text-red-600' : 'bg-slate-100'}`}
+                        className={`border border-slate-200 p-1 min-w-[64px] ${
+                          isFri ? 'bg-red-50 text-red-600' : 'bg-slate-100'
+                        }`}
                       >
                         {d}
                       </th>
@@ -395,13 +440,14 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
                       const val = cells[key] || '';
                       const def = STATUS_MAP[val];
                       const savedTime = formatTime(createdAtCells[key]);
-                      const record = records.find(r => r.employeeId === emp.id && r.date === date);
-                      
+                      const record = records.find(
+                        r => r.employeeId === emp.id && r.date === date,
+                      );
                       return (
                         <td key={d} className="border border-slate-200 p-0.5 align-top">
                           <select
                             value={val}
-                            onChange={(e) => setCell(emp.id, d, e.target.value)}
+                            onChange={e => setCell(emp.id, d, e.target.value)}
                             disabled={readOnly}
                             className={`w-full text-xs rounded p-1 border disabled:cursor-not-allowed disabled:opacity-90 ${
                               def ? def.className : 'bg-white border-slate-200 text-slate-400'
@@ -416,14 +462,20 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
                             ))}
                           </select>
                           {savedTime && (
-                            <div className="mt-1 text-[9px] font-bold text-blue-600 text-center" title="وقت تسجيل الموظف">
+                            <div
+                              className="mt-1 text-[9px] font-bold text-blue-600 text-center"
+                              title="وقت تسجيل الموظف"
+                            >
                               🕒 {savedTime}
                             </div>
                           )}
                           {record?.workLocationName && (
-                            <div className="mt-1 text-[8px] font-bold text-emerald-700 text-center" title="موقع البصمة">
-                              📍 {record.workLocationName}
-                              {record.distanceMeters != null ? ` (${record.distanceMeters}م)` : ''}
+                            <div
+                              className="mt-1 text-[8px] font-bold text-emerald-700 text-center"
+                              title="موقع البصمة"
+                            >
+                              📍 {record.workLocationName}{' '}
+                              {record.distanceMeters != null ? `(${record.distanceMeters}م)` : ''}
                             </div>
                           )}
                         </td>
@@ -438,7 +490,9 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="font-bold text-slate-800">🕒 آخر تسجيلات الحضور في الشهر</h3>
-              <span className="text-[11px] font-bold text-slate-400">الاسم + اليوم + الساعة + الحالة</span>
+              <span className="text-[11px] font-bold text-slate-400">
+                الاسم + اليوم + الساعة + الحالة
+              </span>
             </div>
             {recentAttendanceLogs.length === 0 ? (
               <div className="rounded-xl bg-white p-4 text-center text-sm text-slate-500">
@@ -449,7 +503,10 @@ export default function AttendanceTab({ onSaved, readOnly = false, currentUserId
                 {recentAttendanceLogs.map(record => {
                   const emp = employees.find(e => e.id === record.employeeId);
                   return (
-                    <div key={record.id} className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
+                    <div
+                      key={record.id}
+                      className="rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-black text-slate-900">{emp?.name || '—'}</div>
                         <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">

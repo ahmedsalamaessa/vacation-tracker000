@@ -55,21 +55,34 @@ export async function clearAllData() {
   localStorage.removeItem('vacation_system_initialized_v4');
 }
 
+/** Pull latest data from Neon into localStorage cache */
+export async function refreshFromRemote(): Promise<boolean> {
+  try {
+    const remote = remoteAvailable() || (await probeRemote());
+    if (!remote) return false;
+    const data = await api.bootstrap();
+    if (data.employees) setItem(STORAGE_KEYS.employees, data.employees);
+    if (data.locations) setItem(STORAGE_KEYS.locations, data.locations);
+    if (data.attendance) setItem(STORAGE_KEYS.attendance, data.attendance);
+    if (data.vacations) setItem(STORAGE_KEYS.vacations, data.vacations);
+    if (data.auditLogs) setItem(STORAGE_KEYS.auditLogs, data.auditLogs);
+    if (data.monthLocks) setItem(STORAGE_KEYS.monthLocks, data.monthLocks);
+    if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
+    if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
+    if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
+    return true;
+  } catch (e) {
+    console.warn('refreshFromRemote failed', e);
+    return false;
+  }
+}
+
 export async function initializeData() {
   // Try Neon remote first — cache into localStorage for sync reads
   const remote = await probeRemote();
   if (remote) {
     try {
-      const data = await api.bootstrap();
-      if (data.employees) setItem(STORAGE_KEYS.employees, data.employees);
-      if (data.locations) setItem(STORAGE_KEYS.locations, data.locations);
-      if (data.attendance) setItem(STORAGE_KEYS.attendance, data.attendance);
-      if (data.vacations) setItem(STORAGE_KEYS.vacations, data.vacations);
-      if (data.auditLogs) setItem(STORAGE_KEYS.auditLogs, data.auditLogs);
-      if (data.monthLocks) setItem(STORAGE_KEYS.monthLocks, data.monthLocks);
-      if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
-      if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
-      if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
+      await refreshFromRemote();
       return;
     } catch (e) {
       console.warn('Remote bootstrap failed, falling back to local', e);
@@ -361,7 +374,12 @@ export function deleteLocation(id: number): boolean {
 }
 
 export function getAttendance(): AttendanceRecord[] {
-  return getItem<AttendanceRecord[]>(STORAGE_KEYS.attendance, []);
+  const rows = getItem<AttendanceRecord[]>(STORAGE_KEYS.attendance, []);
+  // normalize Neon ISO dates to YYYY-MM-DD for consistent filtering
+  return rows.map(r => ({
+    ...r,
+    date: r.date ? String(r.date).slice(0, 10) : r.date,
+  }));
 }
 
 export function setAttendance(attendance: AttendanceRecord[]): void {
@@ -373,9 +391,12 @@ export function getAttendanceByDateRange(startDate: string, endDate: string): At
 }
 
 export function upsertAttendance(record: any): AttendanceRecord {
+  // normalize date to YYYY-MM-DD
+  if (record.date) record.date = String(record.date).slice(0, 10);
+
   const attendance = getAttendance();
   const existingIndex = attendance.findIndex(
-    a => a.employeeId === record.employeeId && a.date === record.date,
+    a => a.employeeId === record.employeeId && String(a.date).slice(0, 10) === record.date,
   );
 
   let result: AttendanceRecord;
@@ -404,7 +425,21 @@ export function upsertAttendance(record: any): AttendanceRecord {
   }
 
   if (remoteAvailable()) {
-    api.upsertAttendance(record).catch(e => console.warn('remote upsertAttendance', e));
+    // fire-and-forget but also re-pull after write so other tabs/devices stay closer
+    api
+      .upsertAttendance(record)
+      .then(async saved => {
+        // merge server record (real id) into cache
+        const att = getAttendance();
+        const idx = att.findIndex(
+          a => a.employeeId === saved.employeeId && String(a.date).slice(0, 10) === String(saved.date).slice(0, 10),
+        );
+        if (idx !== -1) {
+          att[idx] = { ...att[idx], ...saved, date: String(saved.date).slice(0, 10) };
+          setAttendance(att);
+        }
+      })
+      .catch(e => console.warn('remote upsertAttendance', e));
   }
   return result;
 }

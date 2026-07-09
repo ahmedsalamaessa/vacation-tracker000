@@ -56,7 +56,7 @@ export default async function handler(req: Request) {
 
       // don't send password hash to client
       const { password, ...safe } = emp as any;
-      return json({ user: safe });
+      return json({ user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' } });
     }
 
     // ---------- bootstrap / all data ----------
@@ -80,7 +80,7 @@ export default async function handler(req: Request) {
       return json({
         employees: (employees as any[]).map(mapEmployee).map((e: any) => {
           const { password, ...rest } = e;
-          return rest;
+          return { ...rest, hasPassword: Boolean(password), password: password ? '***' : '' };
         }),
         // keep passwords only for server-side auth; client uses login endpoint
         // but employees management needs no hash exposure — strip always
@@ -108,7 +108,9 @@ export default async function handler(req: Request) {
       return json(
         (rows as any[]).map(r => {
           const e = mapEmployee(r) as any;
-          delete e.password;
+          const hasPassword = Boolean(e.password);
+          e.hasPassword = hasPassword;
+          e.password = hasPassword ? '***' : '';
           return e;
         }),
       );
@@ -139,7 +141,8 @@ export default async function handler(req: Request) {
         ) RETURNING *
       `;
       const e = mapEmployee(rows[0]) as any;
-      delete e.password;
+      e.hasPassword = Boolean(e.password);
+      e.password = e.hasPassword ? '***' : '';
       return json(e, 201);
     }
 
@@ -185,7 +188,8 @@ export default async function handler(req: Request) {
       `;
       if (!rows[0]) return json({ error: 'not_found' }, 404);
       const e = mapEmployee(rows[0]) as any;
-      delete e.password;
+      e.hasPassword = Boolean(e.password);
+      e.password = e.hasPassword ? '***' : '';
       return json(e);
     }
 

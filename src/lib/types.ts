@@ -26,6 +26,7 @@ export interface Employee extends Permissions {
   cycleType: 'fixed' | 'variable' | 'graduated';
   role: 'admin' | 'manager' | 'employee';
   password: string;
+  hasPassword?: boolean;
   managerId?: number | null;
   workLocationLat: number | null;
   workLocationLng: number | null;

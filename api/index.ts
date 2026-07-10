@@ -260,7 +260,10 @@ export default async function handler(req: Request) {
         )
         ON CONFLICT (employee_id, date) DO UPDATE SET
           status = EXCLUDED.status,
-          notes = COALESCE(EXCLUDED.notes, attendance.notes),
+          notes = CASE
+            WHEN EXCLUDED.notes IS NOT NULL THEN EXCLUDED.notes
+            ELSE attendance.notes
+          END,
           check_in_lat = COALESCE(EXCLUDED.check_in_lat, attendance.check_in_lat),
           check_in_lng = COALESCE(EXCLUDED.check_in_lng, attendance.check_in_lng),
           work_location_id = COALESCE(EXCLUDED.work_location_id, attendance.work_location_id),
@@ -473,7 +476,7 @@ export default async function handler(req: Request) {
 
       const start = vac.vacation_start_date || vac.start_date;
       const end = vac.vacation_end_date || vac.end_date;
-      if (!start || !end) return json({ synced: 0, skipped: 0 });
+      if (!start || !end) return json({ synced: 0, skipped: 0, reason: 'missing_dates' });
 
       const type = vac.vacation_type || 'اعتيادية';
       let status = 'إجازة اعتيادية';
@@ -484,37 +487,52 @@ export default async function handler(req: Request) {
       else if (type === 'بدون مرتب') status = 'بدون مرتب';
 
       const marker = `AUTO_VACATION:${vacationId}`;
+      const presence = new Set(['حاضر', 'سهر', 'عارضة حضور']);
       let synced = 0;
       let skipped = 0;
 
-      // iterate dates
-      const s = new Date(String(start) + 'T00:00:00Z');
-      const e = new Date(String(end) + 'T00:00:00Z');
+      // iterate dates in UTC-safe YYYY-MM-DD
+      const startStr = String(start).slice(0, 10);
+      const endStr = String(end).slice(0, 10);
+      const s = new Date(startStr + 'T12:00:00Z');
+      const e = new Date(endStr + 'T12:00:00Z');
       for (let d = new Date(s); d <= e && synced + skipped < 120; d.setUTCDate(d.getUTCDate() + 1)) {
         const iso = d.toISOString().slice(0, 10);
         const existing = await sql`
-          SELECT id, notes FROM attendance WHERE employee_id = ${vac.employee_id} AND date = ${iso} LIMIT 1
+          SELECT id, status, notes FROM attendance
+          WHERE employee_id = ${vac.employee_id} AND date = ${iso}
+          LIMIT 1
         `;
-        if (existing[0] && !(existing[0] as any).notes?.startsWith('AUTO_VACATION:')) {
+        const row = existing[0] as any;
+        // skip real presence only (keep check-in). overwrite empty / vacation / auto rows
+        if (row && presence.has(row.status) && !String(row.notes || '').startsWith('AUTO_VACATION:')) {
           skipped++;
           continue;
         }
         await sql`
-          INSERT INTO attendance (employee_id, date, status, notes)
-          VALUES (${vac.employee_id}, ${iso}, ${status}, ${marker})
-          ON CONFLICT (employee_id, date) DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes
+          INSERT INTO attendance (employee_id, date, status, notes, vacation_id)
+          VALUES (${vac.employee_id}, ${iso}, ${status}, ${marker}, ${vacationId})
+          ON CONFLICT (employee_id, date) DO UPDATE SET
+            status = EXCLUDED.status,
+            notes = EXCLUDED.notes,
+            vacation_id = EXCLUDED.vacation_id
         `;
         synced++;
       }
-      return json({ synced, skipped });
+      return json({ synced, skipped, status, vacationId });
     }
 
     if (path === 'vacations/clear-attendance' && method === 'POST') {
       const b = await readBody<any>(req);
-      const marker = `AUTO_VACATION:${Number(b.vacationId)}`;
-      const res = await sql`DELETE FROM attendance WHERE notes = ${marker}`;
-      return json({ ok: true, removed: (res as any).length ?? 0 });
+      const vacationId = Number(b.vacationId);
+      const marker = `AUTO_VACATION:${vacationId}`;
+      // delete auto-synced rows for this vacation
+      await sql`DELETE FROM attendance WHERE notes = ${marker} OR vacation_id = ${vacationId}`;
+      return json({ ok: true, vacationId });
     }
+
+    // Fix manual attendance writes: if status is vacation-like without marker, keep as manual
+    // (no change needed — double-count is prevented in balance via AUTO_VACATION only)
 
     return json({ error: 'not_found', path, method }, 404);
   } catch (err: any) {

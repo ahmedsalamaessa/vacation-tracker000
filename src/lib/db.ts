@@ -494,7 +494,36 @@ export function updateVacation(id: number, updates: Partial<Vacation>): Vacation
   vacations[index] = { ...vacations[index], ...updates };
   setVacations(vacations);
   if (remoteAvailable()) {
+    // fire-and-forget for non-critical edits; use updateVacationAsync when approval needs await
     api.updateVacation(id, updates).catch(e => console.warn('remote updateVacation', e));
+  }
+  return vacations[index];
+}
+
+/** Await remote update — use for approvals so sync runs after status is saved on server */
+export async function updateVacationAsync(
+  id: number,
+  updates: Partial<Vacation>,
+): Promise<Vacation | null> {
+  const vacations = getVacations();
+  const index = vacations.findIndex(v => v.id === id);
+  if (index === -1) return null;
+  vacations[index] = { ...vacations[index], ...updates };
+  setVacations(vacations);
+
+  if (remoteAvailable()) {
+    try {
+      const updated = await api.updateVacation(id, updates);
+      const list = getVacations();
+      const i = list.findIndex(v => v.id === id);
+      if (i !== -1) {
+        list[i] = { ...list[i], ...updated };
+        setVacations(list);
+      }
+      return list[i] || updated;
+    } catch (e) {
+      console.warn('remote updateVacationAsync failed', e);
+    }
   }
   return vacations[index];
 }
@@ -776,38 +805,101 @@ function listDates(start: string, end: string): string[] {
   return dates;
 }
 
-export function syncVacationToAttendance(vacation: Vacation): { synced: number; skipped: number } {
+/**
+ * Sync approved vacation days into attendance sheet.
+ * - Always writes AUTO_VACATION marker so balance doesn't double-count
+ * - Overwrites empty cells and previous auto/manual vacation statuses
+ * - Skips only real presence (حاضر/سهر/عارضة حضور) unless force=true
+ */
+export function syncVacationToAttendance(
+  vacation: Vacation,
+  opts?: { force?: boolean },
+): { synced: number; skipped: number } {
+  // kick remote (non-blocking); prefer syncVacationToAttendanceAsync for approvals
   if (remoteAvailable()) {
-    api.syncVacationAttendance(vacation.id).then(async () => {
-      try {
-        const att = await api.getAttendance();
-        setItem(STORAGE_KEYS.attendance, att);
-      } catch {}
-    }).catch(e => console.warn('remote sync vacation', e));
+    api
+      .syncVacationAttendance(vacation.id)
+      .then(async () => {
+        try {
+          const att = await api.getAttendance();
+          setItem(STORAGE_KEYS.attendance, att);
+        } catch {}
+      })
+      .catch(e => console.warn('remote sync vacation', e));
   }
 
+  return applyVacationToLocalAttendance(vacation, opts);
+}
+
+export async function syncVacationToAttendanceAsync(
+  vacation: Vacation,
+  opts?: { force?: boolean },
+): Promise<{ synced: number; skipped: number }> {
+  // 1) remote first so Neon is source of truth
+  if (remoteAvailable()) {
+    try {
+      const result = await api.syncVacationAttendance(vacation.id);
+      await refreshFromRemote();
+      return result;
+    } catch (e) {
+      console.warn('remote syncVacationAttendance failed, applying local', e);
+    }
+  }
+  // 2) local fallback
+  return applyVacationToLocalAttendance(vacation, opts);
+}
+
+const PRESENCE_STATUSES = new Set(['حاضر', 'سهر', 'عارضة حضور']);
+const VACATION_SHEET_STATUSES = new Set([
+  'عارضة إجازة',
+  'إجازة عارضة',
+  'إجازة اعتيادية',
+  'إجازة مرضية',
+  'إجازة رسمية',
+  'إجازة سنوية',
+  'بدون مرتب',
+  'بدل سهرة',
+]);
+
+function applyVacationToLocalAttendance(
+  vacation: Vacation,
+  opts?: { force?: boolean },
+): { synced: number; skipped: number } {
   const start = vacation.vacationStartDate || vacation.startDate;
   const end = vacation.vacationEndDate || vacation.endDate;
   if (!start || !end) return { synced: 0, skipped: 0 };
 
-  const dates = listDates(start, end);
+  const dates = listDates(String(start).slice(0, 10), String(end).slice(0, 10));
   const status = vacationTypeToAttendanceStatus(vacation.vacationType);
   const marker = `AUTO_VACATION:${vacation.id}`;
   let synced = 0;
   let skipped = 0;
+  const att = getAttendance();
 
   for (const date of dates) {
-    const attendance = getAttendance();
-    const existing = attendance.find(a => a.employeeId === vacation.employeeId && a.date === date);
-    if (existing && !existing.notes?.startsWith('AUTO_VACATION:')) {
+    const idx = att.findIndex(
+      a => a.employeeId === vacation.employeeId && String(a.date).slice(0, 10) === date,
+    );
+    const existing = idx !== -1 ? att[idx] : null;
+
+    // Don't overwrite real check-in presence unless forced
+    if (
+      existing &&
+      PRESENCE_STATUSES.has(existing.status) &&
+      !existing.notes?.startsWith('AUTO_VACATION:') &&
+      !opts?.force
+    ) {
       skipped++;
       continue;
     }
-    // local cache update without re-triggering remote twice for each day when remote handles it
-    const att = getAttendance();
-    const idx = att.findIndex(a => a.employeeId === vacation.employeeId && a.date === date);
+
     if (idx !== -1) {
-      att[idx] = { ...att[idx], status, notes: marker };
+      att[idx] = {
+        ...att[idx],
+        status,
+        notes: marker,
+        vacationId: vacation.id,
+      };
     } else {
       att.push({
         id: Math.max(0, ...att.map(a => a.id)) + 1,
@@ -820,12 +912,13 @@ export function syncVacationToAttendance(vacation: Vacation): { synced: number; 
         workLocationId: null,
         workLocationName: null,
         distanceMeters: null,
+        vacationId: vacation.id,
         createdAt: new Date().toISOString(),
       });
     }
-    setAttendance(att);
     synced++;
   }
+  setAttendance(att);
   return { synced, skipped };
 }
 
@@ -835,10 +928,23 @@ export function clearVacationFromAttendance(vacationId: number): number {
   }
   const attendance = getAttendance();
   const marker = `AUTO_VACATION:${vacationId}`;
-  const filtered = attendance.filter(a => a.notes !== marker);
+  // remove auto rows + any sheet vacation rows that were meant for this vacation
+  const filtered = attendance.filter(a => a.notes !== marker && a.vacationId !== vacationId);
   const removed = attendance.length - filtered.length;
   if (removed > 0) setAttendance(filtered);
   return removed;
+}
+
+export async function clearVacationFromAttendanceAsync(vacationId: number): Promise<number> {
+  if (remoteAvailable()) {
+    try {
+      await api.clearVacationAttendance(vacationId);
+      await refreshFromRemote();
+    } catch (e) {
+      console.warn('remote clear vacation failed', e);
+    }
+  }
+  return clearVacationFromAttendance(vacationId);
 }
 
 export function getStorageInfo(): { used: number; limit: number; percentage: number } {

@@ -191,7 +191,7 @@ export default function App() {
     return () => clearInterval(t);
   }, [updatePendingCount, refreshKey]);
 
-  // Cross-device sync: pull Neon every 20s while logged in
+  // Cross-device sync: pull Neon every 2 minutes while logged in
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -204,8 +204,9 @@ export default function App() {
       }
     }
     // first pull shortly after login/open
-    const first = setTimeout(tick, 2000);
-    const t = setInterval(tick, 20000);
+    const first = setTimeout(tick, 3000);
+    // user requested ~2 minutes auto refresh
+    const t = setInterval(tick, 2 * 60 * 1000);
     return () => {
       cancelled = true;
       clearTimeout(first);

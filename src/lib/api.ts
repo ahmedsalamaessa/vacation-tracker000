@@ -78,6 +78,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ vacationId }),
     }),
+  syncAllApprovedVacations: () =>
+    request<any>('/vacations/sync-all-approved', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
 
   getAttempts: () => request<any[]>('/check-in-attempts'),
   addAttempt: (data: any) =>

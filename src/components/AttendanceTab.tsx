@@ -111,10 +111,10 @@ export default function AttendanceTab({
 
   useEffect(() => {
     load();
-    // auto-refresh every 15s while tab is open (cross-device sync)
+    // auto-refresh every 2 minutes while attendance tab is open
     const t = setInterval(() => {
       refreshFromRemote().then(() => applyLocal());
-    }, 15000);
+    }, 2 * 60 * 1000);
     return () => clearInterval(t);
   }, [load, applyLocal]);
 

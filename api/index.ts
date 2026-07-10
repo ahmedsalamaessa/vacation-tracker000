@@ -21,6 +21,74 @@ function pathOf(req: Request) {
   return u.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '') || '';
 }
 
+function dateOnly(v: any): string {
+  return String(v ?? '').slice(0, 10);
+}
+
+function listDateRange(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const s = dateOnly(start);
+  const e = dateOnly(end);
+  if (!s || !e) return dates;
+  // Use noon UTC to avoid DST/off-by-one
+  let cur = new Date(s + 'T12:00:00.000Z');
+  const last = new Date(e + 'T12:00:00.000Z');
+  if (Number.isNaN(cur.getTime()) || Number.isNaN(last.getTime()) || last < cur) return dates;
+  while (cur <= last && dates.length < 120) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur = new Date(cur.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return dates;
+}
+
+function vacationTypeToStatus(type: string | null | undefined): string {
+  const t = type || 'اعتيادية';
+  if (['عارضة', 'عارضة إجازة', 'إجازة عارضة'].includes(t)) return 'عارضة إجازة';
+  if (['رسمية', 'إجازة رسمية'].includes(t)) return 'إجازة رسمية';
+  if (['سنوية', 'إجازة سنوية'].includes(t)) return 'إجازة سنوية';
+  if (['مرضية', 'إجازة مرضية'].includes(t)) return 'إجازة مرضية';
+  if (t === 'بدون مرتب') return 'بدون مرتب';
+  return 'إجازة اعتيادية';
+}
+
+/** Download approved vacation days into attendance sheet */
+async function syncVacationDays(sql: any, vac: any): Promise<{ synced: number; skipped: number; dates: string[] }> {
+  const start = vac.vacation_start_date || vac.start_date;
+  const end = vac.vacation_end_date || vac.end_date;
+  const dates = listDateRange(start, end);
+  if (dates.length === 0) return { synced: 0, skipped: 0, dates: [] };
+
+  const status = vacationTypeToStatus(vac.vacation_type);
+  const marker = `AUTO_VACATION:${vac.id}`;
+  const presence = new Set(['حاضر', 'سهر', 'عارضة حضور']);
+  let synced = 0;
+  let skipped = 0;
+
+  for (const iso of dates) {
+    const existing = await sql`
+      SELECT id, status, notes FROM attendance
+      WHERE employee_id = ${vac.employee_id} AND date = ${iso}
+      LIMIT 1
+    `;
+    const row = existing[0] as any;
+    // skip only real presence (keep check-in)
+    if (row && presence.has(row.status) && !String(row.notes || '').startsWith('AUTO_VACATION:')) {
+      skipped++;
+      continue;
+    }
+    await sql`
+      INSERT INTO attendance (employee_id, date, status, notes, vacation_id)
+      VALUES (${vac.employee_id}, ${iso}, ${status}, ${marker}, ${vac.id})
+      ON CONFLICT (employee_id, date) DO UPDATE SET
+        status = EXCLUDED.status,
+        notes = EXCLUDED.notes,
+        vacation_id = EXCLUDED.vacation_id
+    `;
+    synced++;
+  }
+  return { synced, skipped, dates };
+}
+
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return options();
 
@@ -304,12 +372,21 @@ export default async function handler(req: Request) {
           ${b.requestedBy ?? null}, ${b.approvedBy ?? null}
         ) RETURNING *
       `;
-      return json(mapVacation(rows[0]), 201);
+      const created = rows[0] as any;
+      let syncResult: any = null;
+      if (created && ['مقبولة', 'مجدولة', 'جارية'].includes(created.status)) {
+        syncResult = await syncVacationDays(sql, created);
+      }
+      return json({ ...mapVacation(created), _sync: syncResult }, 201);
     }
 
     if (path.startsWith('vacations/') && method === 'PUT') {
       const id = Number(path.split('/')[1]);
+      // only numeric ids; nested paths like vacations/sync-attendance are handled below
+      if (Number.isFinite(id) && id > 0) {
       const b = await readBody<any>(req);
+      const prevRows = await sql`SELECT status FROM vacations WHERE id = ${id} LIMIT 1`;
+      const prevStatus = (prevRows[0] as any)?.status;
       const rows = await sql`
         UPDATE vacations SET
           work_days = COALESCE(${b.workDays ?? null}, work_days),
@@ -326,7 +403,23 @@ export default async function handler(req: Request) {
         RETURNING *
       `;
       if (!rows[0]) return json({ error: 'not_found' }, 404);
-      return json(mapVacation(rows[0]));
+      const vac = rows[0] as any;
+      const newStatus = vac.status;
+      let syncResult: any = null;
+
+      // Server-side auto download when approved/scheduled
+      if (['مقبولة', 'مجدولة', 'جارية'].includes(newStatus)) {
+        syncResult = await syncVacationDays(sql, vac);
+      }
+      // Clear sheet when rejected
+      if (newStatus === 'مرفوضة' && prevStatus !== 'مرفوضة') {
+        const marker = `AUTO_VACATION:${id}`;
+        await sql`DELETE FROM attendance WHERE notes = ${marker} OR vacation_id = ${id}`;
+        syncResult = { cleared: true };
+      }
+
+      return json({ ...mapVacation(vac), _sync: syncResult });
+      }
     }
 
     if (path.startsWith('vacations/') && method === 'DELETE') {
@@ -473,66 +566,32 @@ export default async function handler(req: Request) {
       const vacRows = await sql`SELECT * FROM vacations WHERE id = ${vacationId}`;
       const vac = vacRows[0] as any;
       if (!vac) return json({ error: 'not_found' }, 404);
-
-      const start = vac.vacation_start_date || vac.start_date;
-      const end = vac.vacation_end_date || vac.end_date;
-      if (!start || !end) return json({ synced: 0, skipped: 0, reason: 'missing_dates' });
-
-      const type = vac.vacation_type || 'اعتيادية';
-      let status = 'إجازة اعتيادية';
-      if (['عارضة', 'عارضة إجازة', 'إجازة عارضة'].includes(type)) status = 'عارضة إجازة';
-      else if (['رسمية', 'إجازة رسمية'].includes(type)) status = 'إجازة رسمية';
-      else if (['سنوية', 'إجازة سنوية'].includes(type)) status = 'إجازة سنوية';
-      else if (['مرضية', 'إجازة مرضية'].includes(type)) status = 'إجازة مرضية';
-      else if (type === 'بدون مرتب') status = 'بدون مرتب';
-
-      const marker = `AUTO_VACATION:${vacationId}`;
-      const presence = new Set(['حاضر', 'سهر', 'عارضة حضور']);
-      let synced = 0;
-      let skipped = 0;
-
-      // iterate dates in UTC-safe YYYY-MM-DD
-      const startStr = String(start).slice(0, 10);
-      const endStr = String(end).slice(0, 10);
-      const s = new Date(startStr + 'T12:00:00Z');
-      const e = new Date(endStr + 'T12:00:00Z');
-      for (let d = new Date(s); d <= e && synced + skipped < 120; d.setUTCDate(d.getUTCDate() + 1)) {
-        const iso = d.toISOString().slice(0, 10);
-        const existing = await sql`
-          SELECT id, status, notes FROM attendance
-          WHERE employee_id = ${vac.employee_id} AND date = ${iso}
-          LIMIT 1
-        `;
-        const row = existing[0] as any;
-        // skip real presence only (keep check-in). overwrite empty / vacation / auto rows
-        if (row && presence.has(row.status) && !String(row.notes || '').startsWith('AUTO_VACATION:')) {
-          skipped++;
-          continue;
-        }
-        await sql`
-          INSERT INTO attendance (employee_id, date, status, notes, vacation_id)
-          VALUES (${vac.employee_id}, ${iso}, ${status}, ${marker}, ${vacationId})
-          ON CONFLICT (employee_id, date) DO UPDATE SET
-            status = EXCLUDED.status,
-            notes = EXCLUDED.notes,
-            vacation_id = EXCLUDED.vacation_id
-        `;
-        synced++;
-      }
-      return json({ synced, skipped, status, vacationId });
+      const result = await syncVacationDays(sql, vac);
+      return json({ ...result, status: vacationTypeToStatus(vac.vacation_type), vacationId });
     }
 
     if (path === 'vacations/clear-attendance' && method === 'POST') {
       const b = await readBody<any>(req);
       const vacationId = Number(b.vacationId);
       const marker = `AUTO_VACATION:${vacationId}`;
-      // delete auto-synced rows for this vacation
       await sql`DELETE FROM attendance WHERE notes = ${marker} OR vacation_id = ${vacationId}`;
       return json({ ok: true, vacationId });
     }
 
-    // Fix manual attendance writes: if status is vacation-like without marker, keep as manual
-    // (no change needed — double-count is prevented in balance via AUTO_VACATION only)
+    // Backfill: sync all approved vacations that may be missing from sheet
+    if (path === 'vacations/sync-all-approved' && method === 'POST') {
+      const vacs = await sql`
+        SELECT * FROM vacations
+        WHERE status IN ('مقبولة', 'مجدولة', 'جارية', 'منتهية')
+        ORDER BY id
+      `;
+      const results: any[] = [];
+      for (const vac of vacs as any[]) {
+        const r = await syncVacationDays(sql, vac);
+        results.push({ vacationId: vac.id, ...r });
+      }
+      return json({ ok: true, count: results.length, results });
+    }
 
     return json({ error: 'not_found', path, method }, 404);
   } catch (err: any) {

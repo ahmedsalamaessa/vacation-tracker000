@@ -85,7 +85,8 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     setMsg(status === 'مقبولة' ? '⏳ جاري الاعتماد وتنزيل الأيام في الشيت...' : '⏳ جاري الرفض...');
 
     // 1) save decision on server first
-    await updateVacationAsync(id, {
+    // Server also auto-syncs to attendance when status becomes مقبولة
+    const saved = await updateVacationAsync(id, {
       status,
       approvedBy: user.id,
       ...(rejectionNote ? { notes: rejectionNote } : {}),
@@ -93,15 +94,18 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
 
     let syncMsg = '';
     if (status === 'مقبولة') {
-      // 2) download vacation days into attendance sheet (Neon + local)
-      const updatedVac = { ...vac, status } as Vacation;
+      // 2) force client sync as well (covers older API / ensures sheet fills)
+      const updatedVac = { ...(saved || vac), status, id: vac.id } as Vacation;
       const result = await syncVacationToAttendanceAsync(updatedVac, { force: false });
+      const serverSync = (saved as any)?._sync;
+      const synced = result?.synced ?? serverSync?.synced ?? 0;
+      const skipped = result?.skipped ?? serverSync?.skipped ?? 0;
       syncMsg =
-        result.synced > 0
-          ? ` · تم تنزيل ${result.synced} يوم في شيت الحضور تلقائي`
-          : ' · لم يتم تنزيل أيام (تحقق من التواريخ)';
-      if (result.skipped > 0) {
-        syncMsg += ` (${result.skipped} يوم متخطى لوجود حضور فعلي)`;
+        synced > 0
+          ? ` · تم تنزيل ${synced} يوم في شيت الحضور تلقائي`
+          : ' · لم يتم تنزيل أيام (تحقق من التواريخ أو وجود حضور فعلي)';
+      if (skipped > 0) {
+        syncMsg += ` (${skipped} يوم متخطى لوجود حضور فعلي)`;
       }
     } else {
       // 3) remove auto-synced days on reject

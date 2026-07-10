@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { exportToCSV } from '../lib/export';
 import { printHtml } from '../lib/pdf';
 import { ARABIC_MONTHS } from '../lib/constants';
-import { getCheckInAttempts, getEmployees, getAttendance } from '../lib/db';
+import { getCheckInAttempts, getEmployees, getAttendance, getLocations } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
 import type { Employee } from '../lib/types';
 
@@ -35,10 +35,12 @@ export default function CheckInAttemptsTab({ user }: Props) {
   const now = new Date();
   const [allRows, setAllRows] = useState<CombinedRow[]>([]);
   const [employees, setEmployeesState] = useState<Employee[]>([]);
+  const [locations, setLocationsState] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [resultFilter, setResultFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
@@ -69,6 +71,18 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const uniqueAttendanceRows = attendanceRows.filter(r => { const key = `${r.employeeId}_${r.date}_${r.status}`; return !attemptKeys.has(key); });
     const combined = [...attemptRows, ...uniqueAttendanceRows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setAllRows(combined);
+
+    const locationSet = new Set<string>();
+    try {
+      const allLocations = getLocations();
+      allLocations.forEach((loc: any) => { if (loc?.name) locationSet.add(loc.name); });
+    } catch (e) {}
+    combined.forEach(r => {
+      if (r.acceptedLocationName) locationSet.add(r.acceptedLocationName);
+      if (r.nearestLocationName) locationSet.add(r.nearestLocationName);
+    });
+    setLocationsState(Array.from(locationSet).sort());
+
     setLoading(false);
   }
 
@@ -82,8 +96,9 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const matchesEmployee = !employeeId || row.employeeId === Number(employeeId);
     const matchesResult = !resultFilter || (resultFilter === 'success' ? row.success : !row.success);
     const matchesMonth = row.date?.startsWith(yearMonth);
-    return matchesSearch && matchesEmployee && matchesResult && matchesMonth;
-  }), [allRows, search, employeeId, resultFilter, yearMonth]);
+    const matchesLocation = !locationFilter || row.acceptedLocationName === locationFilter || row.nearestLocationName === locationFilter;
+    return matchesSearch && matchesEmployee && matchesResult && matchesMonth && matchesLocation;
+  }), [allRows, search, employeeId, resultFilter, yearMonth, locationFilter]);
 
   function exportCsv() {
     exportToCSV(filteredRows.map(row => ({
@@ -132,6 +147,10 @@ export default function CheckInAttemptsTab({ user }: Props) {
               <option value="">📊 كل النتائج</option>
               <option value="success">✅ مقبولة</option>
               <option value="failed">❌ مرفوضة</option>
+            </select>
+            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+              <option value="">📍 كل المواقع</option>
+              {locations.map(loc => (<option key={loc} value={loc}>{loc}</option>))}
             </select>
           </div>
         </div>

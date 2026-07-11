@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { getAttendance, getCheckInAttempts } from '../lib/db';
+import { getAttendance, getCheckInAttempts, getLocations } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
 import type { Employee } from '../lib/types';
 
@@ -11,7 +11,18 @@ function todayIso() {
 export default function DailyReviewTab({ user }: { user: Employee }) {
   const [date, setDate] = useState(todayIso());
   const [refresh, setRefresh] = useState(0);
-  const employees = getManagedEmployees(user);
+  const [locationFilter, setLocationFilter] = useState(''); // 🆕 فلتر المواقع
+  const allEmployees = getManagedEmployees(user);
+  const locations = getLocations().filter(loc => loc.active); // 🆕 قائمة المواقع
+
+  // 🆕 فلترة الموظفين حسب الموقع المختار
+  const employees = useMemo(() => {
+    if (!locationFilter) return allEmployees;
+    return allEmployees.filter(e => 
+      e.locationIds && e.locationIds.includes(Number(locationFilter))
+    );
+  }, [allEmployees, locationFilter]);
+
   const employeeIds = new Set(employees.map(e => e.id));
 
   const data = useMemo(() => {
@@ -26,7 +37,7 @@ export default function DailyReviewTab({ user }: { user: Employee }) {
     const missing = employees.filter(e => !attendance.some(a => a.employeeId === e.id));
     const present = employees.filter(e => presentIds.has(e.id));
     return { attendance, attempts, present, leave, absent, rejected, missing };
-  }, [date, refresh, user.id]);
+  }, [date, refresh, user.id, locationFilter]); // 🆕 إضافة locationFilter للـ dependencies
 
   const card = (title: string, value: number, cls: string) => (
     <div className={`rounded-2xl p-4 text-center border ${cls}`}>
@@ -45,8 +56,21 @@ export default function DailyReviewTab({ user }: { user: Employee }) {
               {user.role === 'manager' ? 'ملخص موظفي مواقعك فقط' : 'ملخص الحضور والبصمات لهذا اليوم'}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold" />
+            {/* 🆕 فلتر المواقع الجديد */}
+            <select
+              value={locationFilter}
+              onChange={e => setLocationFilter(e.target.value)}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold bg-white outline-none focus:border-blue-500"
+            >
+              <option value="">📍 كل المواقع</option>
+              {locations.map(loc => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
             <button onClick={() => setRefresh(v => v + 1)} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white">🔄 تحديث</button>
           </div>
         </div>

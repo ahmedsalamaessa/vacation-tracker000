@@ -54,10 +54,10 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   }
 
   /**
-   * 🎯 دالة GPS مرنة وسريعة:
-   * - تاخد قراءتين بس (بدل 5)
-   * - تقبل حتى لو الدقة ضعيفة (لغاية 500م)
-   * - تخلص في 5-8 ثواني
+   * ⚡ دالة GPS سريعة جداً:
+   * - قراءة واحدة بس (بدون watch)
+   * - Timeout 8 ثواني كحد أقصى
+   * - تقبل أي دقة
    */
   function getLocation(): Promise<{ lat: number; lng: number; accuracy: number; speed: number | null }> {
     return new Promise((resolve, reject) => {
@@ -66,70 +66,28 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      let bestReading: { lat: number; lng: number; accuracy: number; speed: number | null } | null = null;
-      let attempts = 0;
-      const maxAttempts = 2; // بس محاولتين
-      let watchId: number | null = null;
-      let timeoutId: any = null;
-
-      const cleanup = () => {
-        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        if (timeoutId) clearTimeout(timeoutId);
-      };
-
-      watchId = navigator.geolocation.watchPosition(
+      navigator.geolocation.getCurrentPosition(
         (pos) => {
-          attempts++;
-          const reading = {
+          resolve({
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
-            speed: pos.coords.speed, // بالمتر/ثانية (لكشف الحركة)
-          };
-
-          if (!bestReading || reading.accuracy < bestReading.accuracy) {
-            bestReading = reading;
-          }
-
-          // لو الدقة كويسة (100م أو أقل) → قبول فوري
-          if (reading.accuracy <= 100) {
-            cleanup();
-            resolve(reading);
-            return;
-          }
-
-          // خلصنا المحاولات → ناخد أحسن قراءة (حتى لو ضعيفة)
-          if (attempts >= maxAttempts) {
-            cleanup();
-            if (bestReading) {
-              resolve(bestReading);
-            } else {
-              reject(new Error('تعذر تحديد الموقع'));
-            }
-          }
+            speed: pos.coords.speed,
+          });
         },
         (err) => {
-          cleanup();
           if (err.code === err.PERMISSION_DENIED)
             reject(new Error('تم رفض إذن الموقع. فعّل الموقع وحاول مجدداً'));
+          else if (err.code === err.TIMEOUT)
+            reject(new Error('استغرق تحديد الموقع وقتاً طويلاً. حاول مجدداً'));
           else reject(new Error('تعذّر تحديد الموقع. تأكد من تفعيل GPS'));
         },
         { 
-          enableHighAccuracy: true, 
-          timeout: 15000,
-          maximumAge: 0
+          enableHighAccuracy: false, // ⚡ سرعة أهم من دقة عالية جداً
+          timeout: 8000, // ⚡ 8 ثواني بس
+          maximumAge: 30000 // ⚡ يقبل قراءة عمرها 30 ثانية (أسرع بكتير)
         }
       );
-
-      // Timeout: 15 ثانية كحد أقصى
-      timeoutId = setTimeout(() => {
-        cleanup();
-        if (bestReading) {
-          resolve(bestReading);
-        } else {
-          reject(new Error('تعذّر تحديد موقعك. تأكد من تفعيل GPS وحاول مجدداً'));
-        }
-      }, 15000);
     });
   }
 
@@ -140,7 +98,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       return;
     }
     setBusy(true);
-    setMsg('📡 جاري تحديد موقعك...');
+    setMsg('📡 جاري التحقق...');
     setOk(null);
     
     try {
@@ -154,7 +112,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      // 🚗 فحص الحركة السريعة (لو الموظف بيتحرك بسرعة أكتر من 5 م/ث = 18 كم/ساعة)
+      // 🚗 فحص الحركة السريعة
       if (location.speed !== null && location.speed > 5) {
         addCheckInAttempt({
           employeeId: user.id,
@@ -182,12 +140,10 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           severity: 'warning',
         });
         setOk(false);
-        setMsg('🚗 يبدو أنك تتحرك بسرعة. توقف تماماً ثم أعد المحاولة.');
+        setMsg('🚗 يبدو أنك تتحرك بسرعة. توقف وأعد المحاولة.');
         setBusy(false);
         return;
       }
-
-      setMsg('🎯 جاري التحقق من الموقع...');
 
       // موقع بدون إحداثيات → قبول مباشر
       if (selectedLocation.lat == null || selectedLocation.lng == null) {
@@ -218,7 +174,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           distanceMeters: null,
         });
         setOk(true);
-        setMsg(`✅ تم تسجيل بصمتك بنجاح في ${selectedLocation.name}`);
+        setMsg(`✅ تم تسجيل بصمتك في ${selectedLocation.name}`);
         loadData();
         onDataChange();
         setBusy(false);
@@ -232,13 +188,10 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         location.lng
       );
 
-      // 🎯 المنطق الذكي المرن:
-      // - المسافة الفعلية = المسافة - دقة GPS (يديك خصم عادل للموبايلات القديمة)
       const effectiveDistance = Math.max(0, distance - location.accuracy);
       
-      // 🎯 حد أقصى مطلق: لو الموظف بعيد أكتر من 3 كيلو → مستحيل يقبل
-      const MAX_ABSOLUTE_DISTANCE = 3000; // 3 كيلومتر
-      if (distance > MAX_ABSOLUTE_DISTANCE) {
+      // حد أقصى 3 كيلو
+      if (distance > 3000) {
         addCheckInAttempt({
           employeeId: user.id,
           employeeName: user.name,
@@ -265,18 +218,16 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           severity: 'danger',
         });
         setOk(false);
-        setMsg(`❌ أنت بعيد جداً عن الموقع (${Math.round(distance/1000)} كم).\nإذا كنت في الموقع الصحيح، تواصل مع المسؤول.`);
+        setMsg(`❌ أنت بعيد جداً (${Math.round(distance/1000)} كم).`);
         setBusy(false);
         return;
       }
 
-      // 🎯 المنطق المرن: يقبل لو المسافة الفعلية داخل النطاق أو المسافة الأصلية داخل النطاق
       const isWithinRange = effectiveDistance <= selectedLocation.radiusMeters 
                          || distance <= selectedLocation.radiusMeters;
 
       if (isWithinRange) {
-        // ✅ قبول - بس نسجل ملاحظة سرية لو الدقة ضعيفة
-        const isSuspicious = location.accuracy > 200; // GPS ضعيف
+        const isSuspicious = location.accuracy > 200;
         const noteForAdmin = isSuspicious ? `⚠️ GPS ضعيف (${Math.round(location.accuracy)}م)` : null;
 
         upsertAttendance({
@@ -308,7 +259,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           distanceMeters: Math.round(distance),
         });
 
-        // 🔔 لو GPS ضعيف، نبعت ملاحظة للأدمن (بصمت، الموظف مش هيحس)
         if (isSuspicious) {
           addSystemNotification({
             type: 'checkin_failed',
@@ -323,11 +273,10 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         }
 
         setOk(true);
-        setMsg(`✅ تم تسجيل بصمتك بنجاح!\n📍 ${selectedLocation.name}`);
+        setMsg(`✅ تم تسجيل بصمتك في ${selectedLocation.name}`);
         loadData();
         onDataChange();
       } else {
-        // ❌ رفض - الموظف فعلاً بعيد
         addCheckInAttempt({
           employeeId: user.id,
           employeeName: user.name,
@@ -354,7 +303,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           severity: 'danger',
         });
         setOk(false);
-        setMsg(`❌ أنت خارج نطاق ${selectedLocation.name}.\n📏 المسافة: ${Math.round(distance)}م\n🎯 المسموح: ${selectedLocation.radiusMeters}م\n\n💡 إذا كنت في الموقع، حاول التحرك قليلاً وأعد المحاولة.`);
+        setMsg(`❌ خارج النطاق (${Math.round(distance)}م). المسموح: ${selectedLocation.radiusMeters}م`);
       }
     } catch (e) {
       setOk(false);
@@ -427,7 +376,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
               <div className="bg-red-50 border-2 border-red-200 rounded-xl px-4 py-4 text-center">
                 <div className="text-2xl mb-2">🚫</div>
                 <p className="text-sm font-black text-red-700 mb-1">لم يتم تحديد موقع عمل لك</p>
-                <p className="text-xs font-bold text-red-600">تواصل مع المسؤول لربطك بموقع البصمة</p>
+                <p className="text-xs font-bold text-red-600">تواصل مع المسؤول</p>
               </div>
             ) : hasMultipleLocations ? (
               <div className="relative">
@@ -443,16 +392,14 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                     </option>
                   ))}
                 </select>
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">
-                  ▼
-                </div>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">▼</div>
               </div>
             ) : (
               <div className="bg-white border-2 border-blue-300 rounded-xl px-4 py-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="text-right">
                     <div className="text-lg font-black text-slate-900">{currentLocation?.name || '—'}</div>
-                    <div className="text-xs font-bold text-slate-500 mt-1">📡 نطاق البصمة: {currentLocation?.radiusMeters}م</div>
+                    <div className="text-xs font-bold text-slate-500 mt-1">📡 نطاق: {currentLocation?.radiusMeters}م</div>
                   </div>
                   <div className="text-3xl">📍</div>
                 </div>
@@ -462,7 +409,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
 
           <div className="mb-8 text-right bg-slate-50/50 p-4 rounded-[1.5rem] border border-slate-100">
             <label className="block text-[10px] font-black text-slate-400 mb-3 px-1 uppercase tracking-widest">
-              نوع الحضور / الحالة
+              نوع الحضور
             </label>
             <div className="relative">
               <select
@@ -477,9 +424,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                   </option>
                 ))}
               </select>
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                ▼
-              </div>
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
             </div>
           </div>
 
@@ -506,7 +451,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                     {todayStatus ? '✅' : availableLocations.length === 0 ? '🚫' : '👆'}
                   </span>
                   <span className="mt-3 text-xs font-black uppercase tracking-[0.1em]">
-                    {todayStatus ? 'تم التسجيل' : availableLocations.length === 0 ? 'غير متاح' : 'اضغط للبصمة'}
+                    {todayStatus ? 'تم' : availableLocations.length === 0 ? 'غير متاح' : 'بصمة'}
                   </span>
                 </>
               )}
@@ -528,13 +473,12 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       <div className="bg-white/50 backdrop-blur-sm border border-slate-200/50 rounded-[2rem] p-6 text-[11px] text-slate-500 font-medium leading-relaxed shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 text-sm">📍</div>
-          <span className="font-black text-slate-700 uppercase tracking-tighter">كيفية تسجيل البصمة</span>
+          <span className="font-black text-slate-700 uppercase tracking-tighter">كيفية البصمة</span>
         </div>
         <ol className="space-y-2 list-decimal list-inside text-slate-600">
-          <li><b>موقع البصمة الخاص بك</b> يظهر تلقائياً بالأعلى</li>
-          <li><b>اختر نوع الحضور</b> (حاضر، سهر، عارضة...)</li>
-          <li><b>اضغط زر البصمة</b> وسيتم التحقق من موقعك خلال ثوانٍ</li>
-          <li>إذا كنت داخل نطاق موقع العمل، سيتم <b>تسجيل بصمتك بنجاح</b></li>
+          <li>اختر <b>نوع الحضور</b></li>
+          <li>اضغط <b>زر البصمة</b></li>
+          <li>سيتم التحقق من موقعك خلال ثوانٍ</li>
         </ol>
       </div>
     </div>

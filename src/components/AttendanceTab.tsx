@@ -10,9 +10,10 @@ import {
   unlockMonth,
   addAuditLog,
   refreshFromRemote,
+  getLocations,
 } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
-import type { AttendanceRecord, Employee } from '../lib/types';
+import type { AttendanceRecord, Employee, WorkLocation } from '../lib/types';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -63,6 +64,8 @@ export default function AttendanceTab({
   const [jobFilter, setJobFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [singleEmployeeId, setSingleEmployeeId] = useState('');
+  const [locationFilter, setLocationFilter] = useState(''); // 🆕 فلتر المواقع
+  const [locationsList, setLocationsList] = useState<WorkLocation[]>([]); // 🆕 قائمة المواقع
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
@@ -99,6 +102,9 @@ export default function AttendanceTab({
     setCells(map);
     setCreatedAtCells(createdMap);
     setDirtyValues({});
+    
+    // 🆕 تحميل قائمة المواقع النشطة
+    setLocationsList(getLocations().filter(loc => loc.active));
   }, [startDate, endDate, currentUserId, readOnly, user]);
 
   const load = useCallback(async () => {
@@ -254,7 +260,11 @@ export default function AttendanceTab({
         const date = `${year}-${pad(month + 1)}-${pad(day)}`;
         return cells[`${emp.id}_${date}`] === statusFilter;
       });
-    return matchesSearch && matchesJob && matchesSingle && matchesStatus;
+    // 🆕 فلترة الموقع: الموظف يظهر لو مربوط بالموقع المختار
+    const matchesLocation = 
+      !locationFilter || 
+      (emp.locationIds && emp.locationIds.includes(Number(locationFilter)));
+    return matchesSearch && matchesJob && matchesSingle && matchesStatus && matchesLocation;
   });
 
   return (
@@ -339,7 +349,7 @@ export default function AttendanceTab({
       )}
 
       {!readOnly && (
-        <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-4">
+        <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-5">
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -367,6 +377,19 @@ export default function AttendanceTab({
             {ATTENDANCE_STATUSES.map(status => (
               <option key={status.value} value={status.value}>
                 {status.emoji} {status.label}
+              </option>
+            ))}
+          </select>
+          {/* 🆕 فلتر المواقع الجديد */}
+          <select
+            value={locationFilter}
+            onChange={e => setLocationFilter(e.target.value)}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold outline-none focus:border-blue-500"
+          >
+            <option value="">📍 كل المواقع</option>
+            {locationsList.map(loc => (
+              <option key={loc.id} value={loc.id}>
+                {loc.name}
               </option>
             ))}
           </select>

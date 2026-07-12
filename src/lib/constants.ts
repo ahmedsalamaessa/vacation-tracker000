@@ -56,6 +56,7 @@ export const VACATION_TYPES = [
   "سنوية",
   "مرضية",
   "بدون مرتب",
+  "بدل سهرة",  // 🆕 نوع جديد
 ];
 
 export const VALID_STATUSES = new Set([

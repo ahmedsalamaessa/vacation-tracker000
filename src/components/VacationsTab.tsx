@@ -21,6 +21,17 @@ function formatDateTime(value: string | null | undefined) {
   return d.toLocaleString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// 🆕 دالة تحسب عدد الأيام بين تاريخين
+function calculateDaysBetween(start: string, end: string): number {
+  if (!start || !end) return 1;
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return 1;
+  const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 عشان يشمل اليوم الأخير
+  return Math.max(1, diffDays);
+}
+
 interface Props {
   user: Employee;
   onChanged?: () => void;
@@ -66,25 +77,14 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
-  // 🆕 لما يتغير نوع الإجازة لـ "بدل سهرة"، اضبط القيم تلقائياً
+  // 🆕 لما يتغير التاريخ في حالة "بدل سهرة"، احسب الأيام تلقائياً
   useEffect(() => {
-    if (isSaharCompensation) {
-      setVacationDays(1);
-      setWorkDays(1);
-      setManual(false);
-      // لو التاريخ محدد، خلي النهاية = البداية
-      if (vacStart) {
-        setVacEnd(vacStart);
-      }
+    if (isSaharCompensation && vacStart && vacEnd) {
+      const days = calculateDaysBetween(vacStart, vacEnd);
+      setVacationDays(days);
+      setWorkDays(days); // للتوثيق
     }
-  }, [vacationType]);
-
-  // 🆕 لما تتغير تاريخ البداية في حالة "بدل سهرة"، ضع النهاية تلقائياً
-  useEffect(() => {
-    if (isSaharCompensation && vacStart) {
-      setVacEnd(vacStart);
-    }
-  }, [vacStart, isSaharCompensation]);
+  }, [vacStart, vacEnd, isSaharCompensation]);
 
   function applyPreset(idx: number) {
     setPresetIdx(idx);
@@ -97,16 +97,16 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
     setMsg('');
     const empId = (isAdmin || isManager) ? Number(employeeId) : user.id;
     if (!empId) { setMsg('اختر الموظف'); return; }
-    if (!vacStart) { setMsg('تاريخ اليوم مطلوب'); return; }
-    
-    // 🆕 لو بدل سهرة، النهاية = البداية
-    const finalEnd = isSaharCompensation ? vacStart : vacEnd;
-    if (!finalEnd) { setMsg('نهاية الإجازة مطلوبة'); return; }
-    if (new Date(finalEnd) < new Date(vacStart)) { setMsg('تاريخ النهاية قبل البداية'); return; }
+    if (!vacStart || !vacEnd) { setMsg('بداية ونهاية الإجازة مطلوبة'); return; }
+    if (new Date(vacEnd) < new Date(vacStart)) { setMsg('تاريخ النهاية قبل البداية'); return; }
 
-    // 🆕 لو بدل سهرة، الأيام = 1 دائماً
-    const finalVacationDays = isSaharCompensation ? 1 : vacationDays;
-    const finalWorkDays = isSaharCompensation ? 1 : workDays;
+    // 🆕 لو بدل سهرة، احسب الأيام من التواريخ
+    const finalVacationDays = isSaharCompensation 
+      ? calculateDaysBetween(vacStart, vacEnd) 
+      : vacationDays;
+    const finalWorkDays = isSaharCompensation 
+      ? calculateDaysBetween(vacStart, vacEnd) 
+      : workDays;
 
     const status = isAdmin ? 'مجدولة' : 'بانتظار الموافقة';
 
@@ -116,9 +116,9 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
       vacationDays: finalVacationDays,
       vacationType,
       startDate: vacStart,
-      endDate: finalEnd,
+      endDate: vacEnd,
       vacationStartDate: vacStart,
-      vacationEndDate: finalEnd,
+      vacationEndDate: vacEnd,
       status,
       notes: notes || null,
       requestedBy: user.id,
@@ -131,7 +131,7 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
       entityType: 'vacation', entityId: null,
       employeeId: empId, employeeName: employees.find(e => e.id === empId)?.name,
       date: null, oldValue: null, newValue: status,
-      notes: `${vacationType} - ${finalVacationDays} يوم${isSaharCompensation ? ' (بدل سهرة)' : ` من ${vacStart} إلى ${finalEnd}`}`,
+      notes: `${vacationType} - ${finalVacationDays} يوم من ${vacStart} إلى ${vacEnd}`,
     } as any);
 
     if (!isAdmin) {
@@ -142,7 +142,7 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
       addSystemNotification({
         type: 'vacation_request',
         title: 'طلب إجازة جديد',
-        body: `${employees.find(e => e.id === empId)?.name || 'موظف'} طلب إجازة ${vacationType} ${isSaharCompensation ? 'ليوم واحد' : `لمدة ${finalVacationDays} يوم`}`,
+        body: `${employees.find(e => e.id === empId)?.name || 'موظف'} طلب إجازة ${vacationType} لمدة ${finalVacationDays} يوم`,
         employeeId: empId,
         targetUserIds: targetManagers.map(m => m.id),
         entityType: 'vacation',
@@ -211,6 +211,11 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
 
   const latestDecision = (!isAdmin && !isManager) ? list.find(v => v.status === 'مقبولة' || v.status === 'مرفوضة') : undefined;
 
+  // 🆕 عدد الأيام لبدل السهرة (محسوب تلقائياً)
+  const saharDays = isSaharCompensation && vacStart && vacEnd 
+    ? calculateDaysBetween(vacStart, vacEnd) 
+    : 0;
+
   return (
     <div className="space-y-4">
       {latestDecision && (
@@ -238,7 +243,7 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
           </select>
           <p className="mt-1 text-[11px] text-slate-400">
             {isSaharCompensation 
-              ? '🌙 بدل السهرة يوم واحد فقط، ويُخصم من رصيد السهر.'
+              ? '🌙 بدل السهرة يُخصم من رصيد السهر (اختر عدد الأيام التي تريدها).'
               : 'الاعتيادية والعارضة تخصم من الرصيد بعد الاعتماد، وستنزل تلقائياً في شيت الحضور عند الموافقة.'}
           </p>
         </div>
@@ -263,36 +268,32 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
           </>
         )}
 
-        {/* 🆕 معلومة لبدل السهرة */}
-        {isSaharCompensation && (
+        {/* 🆕 معلومة لبدل السهرة (بتظهر بس لما يختار التواريخ) */}
+        {isSaharCompensation && saharDays > 0 && (
           <div className="bg-cyan-50 border-2 border-cyan-300 rounded-lg p-4 text-sm text-cyan-800">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-2xl">🌙</span>
-              <span className="font-black">بدل السهرة - يوم واحد</span>
+              <span className="font-black">بدل السهرة</span>
             </div>
-            <p className="text-xs font-bold">سيتم خصم <b>يوم واحد</b> من رصيد السهر الخاص بك.</p>
+            <p className="text-xs font-bold">سيتم خصم <b>{saharDays} يوم</b> من رصيد السهر الخاص بك.</p>
           </div>
         )}
 
-        {/* 🆕 لو بدل سهرة، عرض تاريخ واحد فقط */}
-        {isSaharCompensation ? (
+        {/* التواريخ (نفس اللي كان موجود قبل كده) */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">📅 تاريخ اليوم البديل *</label>
-            <input 
-              type="date" 
-              value={vacStart} 
-              onChange={(e) => setVacStart(e.target.value)} 
-              className="w-full border border-slate-300 rounded-lg px-3 py-2" 
-              required 
-            />
-            <p className="mt-1 text-[11px] text-cyan-600 font-bold">✨ اختر اليوم الذي تريد أخذه كبدل عن السهرة</p>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              {isSaharCompensation ? '📅 بداية بدل السهرة *' : 'بداية الإجازة *'}
+            </label>
+            <input type="date" value={vacStart} onChange={(e) => setVacStart(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2" required />
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">بداية الإجازة *</label><input type="date" value={vacStart} onChange={(e) => setVacStart(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2" required /></div>
-            <div><label className="block text-sm font-medium text-slate-700 mb-1">نهاية الإجازة *</label><input type="date" value={vacEnd} onChange={(e) => setVacEnd(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2" required /></div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              {isSaharCompensation ? '📅 نهاية بدل السهرة *' : 'نهاية الإجازة *'}
+            </label>
+            <input type="date" value={vacEnd} onChange={(e) => setVacEnd(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2" required />
           </div>
-        )}
+        </div>
 
         <div><label className="block text-sm font-medium text-slate-700 mb-1">ملاحظات</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات..." className="w-full border border-slate-300 rounded-lg px-3 py-2" rows={2} /></div>
         <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">{isAdmin ? '💾 حفظ وجدولة' : '📨 إرسال طلب للاعتماد'}</button>
@@ -309,13 +310,11 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
                   <div className="font-bold text-slate-800">{v.employeeName || '—'} <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLES[v.status] || ''}`}>{v.status}</span></div>
                   <div className="text-xs text-slate-500">
                     {v.vacationType === 'بدل سهرة' 
-                      ? <>🌙 بدل سهرة - يوم واحد</>
+                      ? <>🌙 بدل سهرة - {v.vacationDays} يوم</>
                       : <>{v.workDays} يوم عمل → {v.vacationDays} أيام • النوع: {v.vacationType}</>
                     }
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {v.startDate === v.endDate ? v.startDate : `${v.startDate} ← ${v.endDate}`}
-                  </div>
+                  <div className="text-xs text-slate-400">{v.startDate} ← {v.endDate}</div>
                   <div className="mt-1 text-[11px] font-bold text-blue-600">🕒 {formatDateTime(v.createdAt)}</div>
                   {v.status === 'بانتظار الموافقة' && <div className="mt-1 text-[10px] text-amber-600 font-bold">⏳ لا تُحتسب إلا بعد الاعتماد من تبويب "الاعتمادات"</div>}
                 </div>

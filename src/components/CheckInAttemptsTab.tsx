@@ -41,6 +41,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
   const [employeeId, setEmployeeId] = useState('');
   const [resultFilter, setResultFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
+  const [dayFilter, setDayFilter] = useState(''); // 🆕 فلتر اليوم
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
@@ -90,6 +91,10 @@ export default function CheckInAttemptsTab({ user }: Props) {
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+  
+  // 🆕 حساب عدد الأيام في الشهر المختار
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const filteredRows = useMemo(() => allRows.filter(row => {
     const matchesSearch = !search.trim() || row.employeeName.toLowerCase().includes(search.trim().toLowerCase());
@@ -97,8 +102,10 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const matchesResult = !resultFilter || (resultFilter === 'success' ? row.success : !row.success);
     const matchesMonth = row.date?.startsWith(yearMonth);
     const matchesLocation = !locationFilter || row.acceptedLocationName === locationFilter || row.nearestLocationName === locationFilter;
-    return matchesSearch && matchesEmployee && matchesResult && matchesMonth && matchesLocation;
-  }), [allRows, search, employeeId, resultFilter, yearMonth, locationFilter]);
+    // 🆕 فلترة اليوم
+    const matchesDay = !dayFilter || row.date === `${yearMonth}-${String(dayFilter).padStart(2, '0')}`;
+    return matchesSearch && matchesEmployee && matchesResult && matchesMonth && matchesLocation && matchesDay;
+  }), [allRows, search, employeeId, resultFilter, yearMonth, locationFilter, dayFilter]);
 
   function exportCsv() {
     exportToCSV(filteredRows.map(row => ({
@@ -106,12 +113,12 @@ export default function CheckInAttemptsTab({ user }: Props) {
       result: row.success ? 'مقبولة' : 'مرفوضة', location: row.acceptedLocationName || row.nearestLocationName || '',
       distanceMeters: row.distanceMeters ?? '', reason: row.reason || '',
       coordinates: row.lat != null && row.lng != null ? `${row.lat}, ${row.lng}` : '',
-    })), `سجل_البصمات_${yearMonth}`, { employeeName: 'الموظف', date: 'اليوم', time: 'الوقت', status: 'الحالة', result: 'النتيجة', location: 'الموقع', distanceMeters: 'المسافة', reason: 'السبب', coordinates: 'الإحداثيات' });
+    })), `سجل_البصمات_${yearMonth}${dayFilter ? '_يوم_' + dayFilter : ''}`, { employeeName: 'الموظف', date: 'اليوم', time: 'الوقت', status: 'الحالة', result: 'النتيجة', location: 'الموقع', distanceMeters: 'المسافة', reason: 'السبب', coordinates: 'الإحداثيات' });
   }
 
   function exportPdf() {
     const bodyRows = filteredRows.map(row => `<tr><td>${row.employeeName}</td><td>${row.date}</td><td>${formatDateTime(row.createdAt)}</td><td>${row.status}</td><td>${row.success ? 'مقبولة' : 'مرفوضة'}</td><td>${row.acceptedLocationName || row.nearestLocationName || '—'}</td><td>${row.distanceMeters == null ? '—' : `${row.distanceMeters}م`}</td><td>${row.reason || '—'}</td></tr>`).join('');
-    printHtml(`سجل البصمات ${yearMonth}`, `<table><thead><tr><th>الموظف</th><th>اليوم</th><th>الوقت</th><th>الحالة</th><th>النتيجة</th><th>الموقع</th><th>المسافة</th><th>السبب</th></tr></thead><tbody>${bodyRows}</tbody></table>`);
+    printHtml(`سجل البصمات ${yearMonth}${dayFilter ? ' - يوم ' + dayFilter : ''}`, `<table><thead><tr><th>الموظف</th><th>اليوم</th><th>الوقت</th><th>الحالة</th><th>النتيجة</th><th>الموقع</th><th>المسافة</th><th>السبب</th></tr></thead><tbody>${bodyRows}</tbody></table>`);
   }
 
   const isEmployee = user?.role === 'employee';
@@ -129,7 +136,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
 
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="mb-3 text-sm font-black text-slate-700">🔍 فلاتر</div>
-          <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-7">
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔎 بحث باسم الموظف..." className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 md:col-span-2" />
             {!isEmployee && (
               <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
@@ -137,11 +144,16 @@ export default function CheckInAttemptsTab({ user }: Props) {
                 {employees.map(emp => (<option key={emp.id} value={emp.id}>{emp.name}</option>))}
               </select>
             )}
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+            <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setDayFilter(''); }} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               {ARABIC_MONTHS.map((m, idx) => (<option key={m} value={idx}>📅 {m}</option>))}
             </select>
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+            <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setDayFilter(''); }} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               {years.map(y => (<option key={y} value={y}>{y}</option>))}
+            </select>
+            {/* 🆕 فلتر اليوم الجديد */}
+            <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+              <option value="">🗓️ كل الأيام</option>
+              {days.map(d => (<option key={d} value={d}>يوم {d}</option>))}
             </select>
             <select value={resultFilter} onChange={(e) => setResultFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value="">📊 كل النتائج</option>

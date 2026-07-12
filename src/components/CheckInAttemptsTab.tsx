@@ -16,6 +16,7 @@ interface CombinedRow {
   id: string;
   employeeId: number;
   employeeName: string;
+  employeeLocationIds: number[]; // 🆕 مواقع الموظف المربوط بها
   date: string;
   status: string;
   success: boolean;
@@ -35,13 +36,13 @@ export default function CheckInAttemptsTab({ user }: Props) {
   const now = new Date();
   const [allRows, setAllRows] = useState<CombinedRow[]>([]);
   const [employees, setEmployeesState] = useState<Employee[]>([]);
-  const [locations, setLocationsState] = useState<string[]>([]);
+  const [locations, setLocationsState] = useState<{ id: number; name: string }[]>([]); // 🆕 تغيير النوع
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [resultFilter, setResultFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
-  const [dayFilter, setDayFilter] = useState(''); // 🆕 فلتر اليوم
+  const [dayFilter, setDayFilter] = useState('');
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
@@ -52,7 +53,11 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const emps = user ? getManagedEmployees(user) : getEmployees().filter(e => e.active);
     setEmployeesState(emps);
     const empMap = new Map<number, string>();
-    getEmployees().forEach(e => empMap.set(e.id, e.name));
+    const empLocationMap = new Map<number, number[]>(); // 🆕 خريطة الموظف ← مواقعه
+    getEmployees().forEach(e => {
+      empMap.set(e.id, e.name);
+      empLocationMap.set(e.id, e.locationIds || []);
+    });
 
     const managedIds = new Set(emps.map(e => e.id));
     const filteredAttempts = attempts.filter(a => managedIds.has(a.employeeId));
@@ -60,11 +65,13 @@ export default function CheckInAttemptsTab({ user }: Props) {
 
     const attemptRows: CombinedRow[] = filteredAttempts.map(a => ({
       id: `attempt-${a.id}`, employeeId: a.employeeId, employeeName: a.employeeName || empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
+      employeeLocationIds: empLocationMap.get(a.employeeId) || [], // 🆕
       date: a.date, status: a.status || '—', success: a.success, reason: a.reason, lat: a.lat, lng: a.lng,
       nearestLocationName: a.nearestLocationName, acceptedLocationName: a.acceptedLocationName, distanceMeters: a.distanceMeters, createdAt: a.createdAt, source: 'attempt',
     }));
     const attendanceRows: CombinedRow[] = filteredAttendance.map(a => ({
       id: `attendance-${a.id}`, employeeId: a.employeeId, employeeName: empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
+      employeeLocationIds: empLocationMap.get(a.employeeId) || [], // 🆕
       date: a.date, status: a.status, success: true, reason: 'حضور محفوظ', lat: a.checkInLat ?? null, lng: a.checkInLng ?? null,
       nearestLocationName: null, acceptedLocationName: a.workLocationName ?? null, distanceMeters: a.distanceMeters ?? null, createdAt: a.createdAt, source: 'attendance',
     }));
@@ -73,16 +80,15 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const combined = [...attemptRows, ...uniqueAttendanceRows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setAllRows(combined);
 
-    const locationSet = new Set<string>();
+    // 🆕 تحميل المواقع بـ id + name
     try {
       const allLocations = getLocations();
-      allLocations.forEach((loc: any) => { if (loc?.name) locationSet.add(loc.name); });
+      const locsList = allLocations
+        .filter((loc: any) => loc?.name)
+        .map((loc: any) => ({ id: loc.id, name: loc.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setLocationsState(locsList);
     } catch (e) {}
-    combined.forEach(r => {
-      if (r.acceptedLocationName) locationSet.add(r.acceptedLocationName);
-      if (r.nearestLocationName) locationSet.add(r.nearestLocationName);
-    });
-    setLocationsState(Array.from(locationSet).sort());
 
     setLoading(false);
   }
@@ -91,8 +97,6 @@ export default function CheckInAttemptsTab({ user }: Props) {
 
   const yearMonth = `${year}-${String(month + 1).padStart(2, '0')}`;
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
-  
-  // 🆕 حساب عدد الأيام في الشهر المختار
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
@@ -101,11 +105,26 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const matchesEmployee = !employeeId || row.employeeId === Number(employeeId);
     const matchesResult = !resultFilter || (resultFilter === 'success' ? row.success : !row.success);
     const matchesMonth = row.date?.startsWith(yearMonth);
-    const matchesLocation = !locationFilter || row.acceptedLocationName === locationFilter || row.nearestLocationName === locationFilter;
-    // 🆕 فلترة اليوم
     const matchesDay = !dayFilter || row.date === `${yearMonth}-${String(dayFilter).padStart(2, '0')}`;
+    
+    // 🆕 فلترة الموقع الذكية:
+    // 1. لو السجل فيه اسم موقع → قارن بالاسم
+    // 2. لو السجل مفيهوش موقع (حضور يدوي) → قارن بمواقع الموظف
+    const matchesLocation = !locationFilter || (() => {
+      const selectedLoc = locations.find(l => String(l.id) === locationFilter);
+      if (!selectedLoc) return true;
+      
+      // لو السجل فيه اسم موقع، قارن بالاسم
+      if (row.acceptedLocationName || row.nearestLocationName) {
+        return row.acceptedLocationName === selectedLoc.name || row.nearestLocationName === selectedLoc.name;
+      }
+      
+      // لو مفيش موقع (حضور يدوي)، شوف الموظف مربوط بالموقع ده ولا لأ
+      return row.employeeLocationIds.includes(selectedLoc.id);
+    })();
+    
     return matchesSearch && matchesEmployee && matchesResult && matchesMonth && matchesLocation && matchesDay;
-  }), [allRows, search, employeeId, resultFilter, yearMonth, locationFilter, dayFilter]);
+  }), [allRows, search, employeeId, resultFilter, yearMonth, locationFilter, dayFilter, locations]);
 
   function exportCsv() {
     exportToCSV(filteredRows.map(row => ({
@@ -129,7 +148,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-black text-slate-950">📡 {isEmployee ? 'سجل بصماتي' : 'سجل البصمات التفصيلي'}</h2>
-            <p className="mt-1 text-sm font-bold text-slate-500">{isEmployee ? 'محاولاتك الشخصية فقط' : user?.role === 'manager' ? 'سجل بصمات موظفي مواقعك فقط' : 'كل محاولات البصمة - ناجحة ومرفوضة'}</p>
+            <p className="mt-1 text-sm font-bold text-slate-500">{isEmployee ? 'محاولاتك الشخصية فقط' : user?.role === 'manager' ? 'سجل بصمات موظفي مواقعك فقط' : 'كل محاولات البصمة - ناجحة ومرفوضة + الحضور اليدوي'}</p>
           </div>
           <button onClick={load} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700">🔄 تحديث</button>
         </div>
@@ -150,7 +169,6 @@ export default function CheckInAttemptsTab({ user }: Props) {
             <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setDayFilter(''); }} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               {years.map(y => (<option key={y} value={y}>{y}</option>))}
             </select>
-            {/* 🆕 فلتر اليوم الجديد */}
             <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value="">🗓️ كل الأيام</option>
               {days.map(d => (<option key={d} value={d}>يوم {d}</option>))}
@@ -160,9 +178,10 @@ export default function CheckInAttemptsTab({ user }: Props) {
               <option value="success">✅ مقبولة</option>
               <option value="failed">❌ مرفوضة</option>
             </select>
+            {/* 🆕 فلتر المواقع بـ id بدل name */}
             <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value="">📍 كل المواقع</option>
-              {locations.map(loc => (<option key={loc} value={loc}>{loc}</option>))}
+              {locations.map(loc => (<option key={loc.id} value={loc.id}>{loc.name}</option>))}
             </select>
           </div>
         </div>
@@ -182,12 +201,12 @@ export default function CheckInAttemptsTab({ user }: Props) {
               <tbody>
                 {filteredRows.map(row => (
                   <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="border-b border-slate-100 p-3 text-right"><div className="font-black text-slate-900">{row.employeeName}</div><div className="text-[10px] font-bold text-slate-400">{row.source === 'attempt' ? '📡 محاولة' : '📋 حضور'}</div></td>
+                    <td className="border-b border-slate-100 p-3 text-right"><div className="font-black text-slate-900">{row.employeeName}</div><div className="text-[10px] font-bold text-slate-400">{row.source === 'attempt' ? '📡 محاولة' : '📋 حضور يدوي'}</div></td>
                     <td className="border-b border-slate-100 p-3 font-bold text-slate-700">{row.date}</td>
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-500">{formatDateTime(row.createdAt)}</td>
                     <td className="border-b border-slate-100 p-3"><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">{row.status}</span></td>
                     <td className="border-b border-slate-100 p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${row.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{row.success ? '✅ مقبولة' : '❌ مرفوضة'}</span></td>
-                    <td className="border-b border-slate-100 p-3 font-bold text-sm">{row.acceptedLocationName || row.nearestLocationName || <span className="text-slate-400">—</span>}</td>
+                    <td className="border-b border-slate-100 p-3 font-bold text-sm">{row.acceptedLocationName || row.nearestLocationName || <span className="text-slate-400 text-[10px]">(حضور يدوي)</span>}</td>
                     <td className="border-b border-slate-100 p-3 font-bold">{row.distanceMeters == null ? <span className="text-slate-400">—</span> : <span className="text-emerald-700">{row.distanceMeters}م</span>}</td>
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-600">{row.reason || '—'}</td>
                     <td className="border-b border-slate-100 p-3">{row.lat != null && row.lng != null ? (<a href={`https://www.google.com/maps?q=${row.lat},${row.lng}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100">🗺️</a>) : <span className="text-slate-400">—</span>}</td>

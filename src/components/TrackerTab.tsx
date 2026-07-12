@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { getAttendance, getVacations } from '../lib/db';
+import { useEffect, useMemo, useState } from 'react';
+import { getAttendance, getVacations, getLocations } from '../lib/db';
 import { computeGraduatedVacation } from '../lib/vacation';
 import { getManagedEmployees } from '../lib/permissions';
 import { getVacationDaysTaken, sumApprovedByTypes } from '../lib/balance';
-import type { TrackerRow, Employee } from '../lib/types';
+import type { TrackerRow, Employee, WorkLocation } from '../lib/types';
 
 interface TrackerTabProps {
   refreshKey?: number;
@@ -15,6 +15,9 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
   const [loading, setLoading] = useState(true);
   const [manualRefresh, setManualRefresh] = useState(0);
   const [showRules, setShowRules] = useState(false);
+  const [locationFilter, setLocationFilter] = useState(''); // 🆕 فلتر المواقع
+  const [locations, setLocations] = useState<WorkLocation[]>([]); // 🆕 قائمة المواقع
+  const [employeeLocations, setEmployeeLocations] = useState<Map<number, number[]>>(new Map()); // 🆕 خريطة الموظف ← مواقعه
 
   useEffect(() => {
     loadData();
@@ -25,6 +28,14 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
     const employees = getManagedEmployees(user);
     const attendance = getAttendance();
     const vacations = getVacations();
+
+    // 🆕 تحميل المواقع + خريطة الموظفين
+    setLocations(getLocations().filter(loc => loc.active));
+    const empLocMap = new Map<number, number[]>();
+    employees.forEach(emp => {
+      empLocMap.set(emp.id, emp.locationIds || []);
+    });
+    setEmployeeLocations(empLocMap);
 
     const trackerData: TrackerRow[] = employees.map((emp) => {
       const empAttendance = attendance.filter(a => a.employeeId === emp.id);
@@ -73,18 +84,42 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
     setLoading(false);
   }
 
+  // 🆕 فلترة الصفوف حسب الموقع المختار
+  const filteredRows = useMemo(() => {
+    if (!locationFilter) return rows;
+    return rows.filter(r => {
+      const empLocs = employeeLocations.get(r.employeeId) || [];
+      return empLocs.includes(Number(locationFilter));
+    });
+  }, [rows, locationFilter, employeeLocations]);
+
   const isEmployeeView = user.role === 'employee';
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex-wrap gap-3">
         <div>
           <h2 className="font-black text-slate-900">{isEmployeeView ? '📋 رصيد إجازاتي' : '📋 رصيد الإجازات'}</h2>
-          <p className="text-xs font-bold text-slate-400">{isEmployeeView ? 'رصيدك الشخصي فقط - يتحدث تلقائياً بعد الحضور' : user.role === 'manager' ? `موظفي مواقعك فقط (${rows.length})` : `جميع الموظفين (${rows.length})`}</p>
+          <p className="text-xs font-bold text-slate-400">{isEmployeeView ? 'رصيدك الشخصي فقط - يتحدث تلقائياً بعد الحضور' : user.role === 'manager' ? `موظفي مواقعك فقط (${filteredRows.length})` : `جميع الموظفين (${filteredRows.length})`}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {!isEmployeeView && (
             <button onClick={() => setShowRules(v => !v)} className="rounded-xl bg-amber-100 px-4 py-2 text-xs font-black text-amber-800 hover:bg-amber-200">{showRules ? 'إخفاء' : 'نظام الإجازات'}</button>
+          )}
+          {/* 🆕 فلتر المواقع الجديد */}
+          {!isEmployeeView && (
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 outline-none focus:border-blue-500"
+            >
+              <option value="">📍 كل المواقع</option>
+              {locations.map(loc => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
           )}
           <button onClick={() => setManualRefresh(v => v + 1)} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white hover:bg-blue-700">🔄 تحديث</button>
         </div>
@@ -107,9 +142,9 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
       )}
 
       {loading && <div className="text-center text-slate-500 py-8">جاري التحميل...</div>}
-      {!loading && rows.length === 0 && <div className="text-center text-slate-500 py-8 bg-white rounded-2xl">لا يوجد موظفون</div>}
+      {!loading && filteredRows.length === 0 && <div className="text-center text-slate-500 py-8 bg-white rounded-2xl">لا يوجد موظفون{locationFilter ? ' في هذا الموقع' : ''}</div>}
 
-      {rows.map((r) => (
+      {filteredRows.map((r) => (
         <div key={r.employeeId} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
           <div className="flex justify-between items-start mb-3">
             <div><h3 className="font-bold text-lg text-slate-800">{r.name}</h3><p className="text-xs text-slate-500">{r.jobTitle || '—'}</p></div>

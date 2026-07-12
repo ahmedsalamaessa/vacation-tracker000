@@ -15,9 +15,10 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
   const [loading, setLoading] = useState(true);
   const [manualRefresh, setManualRefresh] = useState(0);
   const [showRules, setShowRules] = useState(false);
-  const [locationFilter, setLocationFilter] = useState(''); // 🆕 فلتر المواقع
-  const [locations, setLocations] = useState<WorkLocation[]>([]); // 🆕 قائمة المواقع
-  const [employeeLocations, setEmployeeLocations] = useState<Map<number, number[]>>(new Map()); // 🆕 خريطة الموظف ← مواقعه
+  const [locationFilter, setLocationFilter] = useState('');
+  const [jobFilter, setJobFilter] = useState(''); // 🆕 فلتر الوظيفة
+  const [locations, setLocations] = useState<WorkLocation[]>([]);
+  const [employeeLocations, setEmployeeLocations] = useState<Map<number, number[]>>(new Map());
 
   useEffect(() => {
     loadData();
@@ -29,7 +30,6 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
     const attendance = getAttendance();
     const vacations = getVacations();
 
-    // 🆕 تحميل المواقع + خريطة الموظفين
     setLocations(getLocations().filter(loc => loc.active));
     const empLocMap = new Map<number, number[]>();
     employees.forEach(emp => {
@@ -84,14 +84,28 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
     setLoading(false);
   }
 
-  // 🆕 فلترة الصفوف حسب الموقع المختار
-  const filteredRows = useMemo(() => {
-    if (!locationFilter) return rows;
-    return rows.filter(r => {
-      const empLocs = employeeLocations.get(r.employeeId) || [];
-      return empLocs.includes(Number(locationFilter));
+  // 🆕 استخراج قائمة الوظائف الفريدة من الصفوف
+  const jobTitles = useMemo(() => {
+    const titles = new Set<string>();
+    rows.forEach(r => {
+      if (r.jobTitle) titles.add(r.jobTitle);
     });
-  }, [rows, locationFilter, employeeLocations]);
+    return Array.from(titles).sort();
+  }, [rows]);
+
+  // 🆕 فلترة الصفوف حسب الموقع + الوظيفة
+  const filteredRows = useMemo(() => {
+    return rows.filter(r => {
+      // فلتر الموقع
+      const matchesLocation = !locationFilter || (() => {
+        const empLocs = employeeLocations.get(r.employeeId) || [];
+        return empLocs.includes(Number(locationFilter));
+      })();
+      // 🆕 فلتر الوظيفة
+      const matchesJob = !jobFilter || r.jobTitle === jobFilter;
+      return matchesLocation && matchesJob;
+    });
+  }, [rows, locationFilter, jobFilter, employeeLocations]);
 
   const isEmployeeView = user.role === 'employee';
 
@@ -106,7 +120,22 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
           {!isEmployeeView && (
             <button onClick={() => setShowRules(v => !v)} className="rounded-xl bg-amber-100 px-4 py-2 text-xs font-black text-amber-800 hover:bg-amber-200">{showRules ? 'إخفاء' : 'نظام الإجازات'}</button>
           )}
-          {/* 🆕 فلتر المواقع الجديد */}
+          {/* 🆕 فلتر الوظيفة الجديد */}
+          {!isEmployeeView && (
+            <select
+              value={jobFilter}
+              onChange={(e) => setJobFilter(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-black text-slate-700 outline-none focus:border-blue-500"
+            >
+              <option value="">💼 كل الوظائف</option>
+              {jobTitles.map(job => (
+                <option key={job} value={job}>
+                  {job}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* فلتر المواقع */}
           {!isEmployeeView && (
             <select
               value={locationFilter}
@@ -142,7 +171,7 @@ export default function TrackerTab({ refreshKey = 0, user }: TrackerTabProps) {
       )}
 
       {loading && <div className="text-center text-slate-500 py-8">جاري التحميل...</div>}
-      {!loading && filteredRows.length === 0 && <div className="text-center text-slate-500 py-8 bg-white rounded-2xl">لا يوجد موظفون{locationFilter ? ' في هذا الموقع' : ''}</div>}
+      {!loading && filteredRows.length === 0 && <div className="text-center text-slate-500 py-8 bg-white rounded-2xl">لا يوجد موظفون{locationFilter || jobFilter ? ' مطابقين للفلاتر' : ''}</div>}
 
       {filteredRows.map((r) => (
         <div key={r.employeeId} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">

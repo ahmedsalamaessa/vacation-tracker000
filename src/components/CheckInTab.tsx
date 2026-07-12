@@ -54,18 +54,19 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   }
 
   /**
-   * ⚡ دالة GPS سريعة جداً:
-   * - قراءة واحدة بس (بدون watch)
-   * - Timeout 8 ثواني كحد أقصى
-   * - تقبل أي دقة
+   * 🎯 دالة GPS محسّنة مع 2 محاولات:
+   * - محاولة أولى سريعة (10 ثواني، بدون دقة عالية)
+   * - لو فشلت، محاولة تانية بدقة عالية (20 ثانية)
+   * - رسائل خطأ واضحة تشرح للموظف يعمل إيه
    */
   function getLocation(): Promise<{ lat: number; lng: number; accuracy: number; speed: number | null }> {
     return new Promise((resolve, reject) => {
       if (!('geolocation' in navigator)) {
-        reject(new Error('المتصفح لا يدعم تحديد الموقع'));
+        reject(new Error('❌ متصفحك لا يدعم تحديد الموقع.\n\n💡 جرب من متصفح آخر (Chrome أو Safari)'));
         return;
       }
 
+      // محاولة أولى سريعة
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           resolve({
@@ -76,16 +77,56 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           });
         },
         (err) => {
-          if (err.code === err.PERMISSION_DENIED)
-            reject(new Error('تم رفض إذن الموقع. فعّل الموقع وحاول مجدداً'));
-          else if (err.code === err.TIMEOUT)
-            reject(new Error('استغرق تحديد الموقع وقتاً طويلاً. حاول مجدداً'));
-          else reject(new Error('تعذّر تحديد الموقع. تأكد من تفعيل GPS'));
+          if (err.code === err.PERMISSION_DENIED) {
+            reject(new Error(
+              '❌ تم رفض إذن الموقع.\n\n' +
+              '💡 الحل:\n' +
+              '• على iPhone: Settings → Safari → Location → Ask\n' +
+              '• على Android: Settings → Apps → Chrome → Permissions → Location\n' +
+              '• ثم أعد تحميل الصفحة'
+            ));
+            return;
+          }
+
+          // محاولة تانية بدقة عالية
+          setMsg('📡 جاري المحاولة مرة أخرى بدقة أعلى...');
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              resolve({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+                speed: pos.coords.speed,
+              });
+            },
+            (err2) => {
+              if (err2.code === err2.TIMEOUT) {
+                reject(new Error(
+                  '⏰ تعذر تحديد موقعك.\n\n' +
+                  '💡 جرب الآتي:\n' +
+                  '1. تأكد أن GPS مفتوح على الموبايل\n' +
+                  '2. اخرج للمكان المفتوح (بعيداً عن الأسقف)\n' +
+                  '3. تأكد من اتصال الإنترنت (WiFi + Data)\n' +
+                  '4. أعد المحاولة بعد 30 ثانية'
+                ));
+              } else {
+                reject(new Error(
+                  '❌ فشل تحديد الموقع.\n\n' +
+                  '💡 تأكد من تفعيل GPS وحاول مجدداً'
+                ));
+              }
+            },
+            { 
+              enableHighAccuracy: true,
+              timeout: 25000,  // 25 ثانية للمحاولة التانية
+              maximumAge: 0
+            }
+          );
         },
         { 
-          enableHighAccuracy: false, // ⚡ سرعة أهم من دقة عالية جداً
-          timeout: 8000, // ⚡ 8 ثواني بس
-          maximumAge: 30000 // ⚡ يقبل قراءة عمرها 30 ثانية (أسرع بكتير)
+          enableHighAccuracy: false,  // ⚡ سريع الأول
+          timeout: 10000,  // 10 ثواني
+          maximumAge: 60000  // ✅ يقبل قراءة عمرها دقيقة
         }
       );
     });
@@ -98,7 +139,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       return;
     }
     setBusy(true);
-    setMsg('📡 جاري التحقق...');
+    setMsg('📡 جاري تحديد موقعك...');
     setOk(null);
     
     try {
@@ -112,7 +153,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      // 🚗 فحص الحركة السريعة
+      // فحص الحركة السريعة
       if (location.speed !== null && location.speed > 5) {
         addCheckInAttempt({
           employeeId: user.id,
@@ -145,7 +186,8 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      // موقع بدون إحداثيات → قبول مباشر
+      setMsg('🎯 جاري التحقق من الموقع...');
+
       if (selectedLocation.lat == null || selectedLocation.lng == null) {
         upsertAttendance({
           employeeId: user.id,
@@ -190,7 +232,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
 
       const effectiveDistance = Math.max(0, distance - location.accuracy);
       
-      // حد أقصى 3 كيلو
       if (distance > 3000) {
         addCheckInAttempt({
           employeeId: user.id,
@@ -263,7 +304,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           addSystemNotification({
             type: 'checkin_failed',
             title: '⚠️ بصمة بدقة GPS ضعيفة',
-            body: `${user.name} بصم في ${selectedLocation.name} - المسافة ${Math.round(distance)}م، دقة GPS ${Math.round(location.accuracy)}م (تحقق يدوي مطلوب)`,
+            body: `${user.name} بصم في ${selectedLocation.name} - المسافة ${Math.round(distance)}م، دقة GPS ${Math.round(location.accuracy)}م`,
             employeeId: user.id,
             targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
             entityType: 'checkin_attempt',
@@ -473,12 +514,14 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       <div className="bg-white/50 backdrop-blur-sm border border-slate-200/50 rounded-[2rem] p-6 text-[11px] text-slate-500 font-medium leading-relaxed shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 text-sm">📍</div>
-          <span className="font-black text-slate-700 uppercase tracking-tighter">كيفية البصمة</span>
+          <span className="font-black text-slate-700 uppercase tracking-tighter">نصائح للبصمة الناجحة</span>
         </div>
         <ol className="space-y-2 list-decimal list-inside text-slate-600">
-          <li>اختر <b>نوع الحضور</b></li>
-          <li>اضغط <b>زر البصمة</b></li>
-          <li>سيتم التحقق من موقعك خلال ثوانٍ</li>
+          <li><b>فعّل GPS</b> على موبايلك من الإعدادات</li>
+          <li><b>اسمح للمتصفح</b> بمعرفة موقعك عند سؤالك</li>
+          <li><b>كن في مكان مفتوح</b> لأفضل دقة</li>
+          <li><b>تأكد من الإنترنت</b> (WiFi + Data معاً)</li>
+          <li>إذا فشلت المحاولة، <b>انتظر 30 ثانية</b> ثم أعد المحاولة</li>
         </ol>
       </div>
     </div>

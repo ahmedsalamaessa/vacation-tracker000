@@ -1,3 +1,21 @@
+export const ARABIC_MONTHS = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+];
+
+export const STATUS_MAP: Record<string, { emoji: string; color: string }> = {
+  'حاضر': { emoji: '✅', color: 'green' },
+  'غياب': { emoji: '❌', color: 'red' },
+  'سهر': { emoji: '🌙', color: 'blue' },
+  'بدل سهرة': { emoji: '🌙', color: 'cyan' },
+  'إجازة مرضية': { emoji: '🤒', color: 'amber' },
+  'إجازة رسمية': { emoji: '🏛️', color: 'indigo' },
+  'بدون مرتب': { emoji: '💰', color: 'slate' },
+  'عارضة حضور': { emoji: '⚡', color: 'emerald' },
+  'إجازة عارضة': { emoji: '⚡', color: 'orange' },
+  'إجازة اعتيادية': { emoji: '🏖️', color: 'sky' },
+};
+
 export const VACATION_TYPES = [
   { id: 'نظامية', label: 'إجازة نظامية', emoji: '📅' },
   { id: 'اعتيادية', label: 'إجازة اعتيادية', emoji: '🏖️' },

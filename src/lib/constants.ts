@@ -3,6 +3,8 @@ export const ARABIC_MONTHS = [
   'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
 ];
 
+export const WORK_DAY_PRESETS = [4, 4.5, 5]; // هذا السطر الذي كان ينقصنا وسبب الخطأ
+
 export const STATUS_MAP: Record<string, { emoji: string; color: string }> = {
   'حاضر': { emoji: '✅', color: 'green' },
   'غياب': { emoji: '❌', color: 'red' },

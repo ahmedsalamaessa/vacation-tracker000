@@ -51,6 +51,18 @@ function listDateRange(start: any, end: any): string[] {
   return dates;
 }
 
+async function getSessionUser(sql: any, req: Request) {
+  const sessionId = req.headers.get('X-Session-Id');
+  if (!sessionId) return null;
+  const rows = await sql`
+    SELECT e.* FROM sessions s
+    JOIN employees e ON s.employee_id = e.id
+    WHERE s.id = ${sessionId} AND s.expires_at > NOW()
+    LIMIT 1
+  `;
+  return rows[0] ? mapEmployee(rows[0]) : null;
+}
+
 function vacationTypeToStatus(type: string | null | undefined): string {
   const t = type || 'اعتيادية';
   if (['عارضة', 'عارضة إجازة', 'إجازة عارضة'].includes(t)) return 'عارضة إجازة';
@@ -123,9 +135,23 @@ export default async function handler(req: Request) {
       const emp = mapEmployee(rows[0]);
       if (!emp) return json({ error: 'invalid_credentials' }, 401);
       const { password, ...safe } = emp as any;
-      return json({ user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' } });
+      
+      const sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      await sql`
+        INSERT INTO sessions (id, employee_id, expires_at)
+        VALUES (${sessionId}, ${emp.id}, NOW() + INTERVAL '30 days')
+        ON CONFLICT (id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+      `;
+
+      return json({ 
+        user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' },
+        sessionId 
+      });
     }
     if (path === 'bootstrap' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
+
       const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows] =
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
@@ -138,16 +164,32 @@ export default async function handler(req: Request) {
           sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 500`,
           sql`SELECT key, value FROM settings`,
         ]);
+
+      let filteredEmployees = (employees as any[]).map(mapEmployee);
+      if (user.role === 'employee') {
+        filteredEmployees = filteredEmployees.filter(e => e.id === user.id);
+      } else if (user.role === 'manager') {
+        const userLocs = user.locationIds || [];
+        filteredEmployees = filteredEmployees.filter(e => 
+          e.id === user.id || (e.locationIds && e.locationIds.some(id => userLocs.includes(id)))
+        );
+      }
+
+      const empIds = new Set(filteredEmployees.map(e => e.id));
+      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter(a => empIds.has(a.employeeId));
+      const filteredVacations = (vacations as any[]).map(mapVacation).filter(v => empIds.has(v.employeeId));
+
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
+
       return json({
-        employees: (employees as any[]).map(mapEmployee).map((e: any) => {
+        employees: filteredEmployees.map((e: any) => {
           const { password, ...rest } = e;
           return { ...rest, hasPassword: Boolean(password), password: password ? '***' : '' };
         }),
         locations: (locations as any[]).map(mapLocation),
-        attendance: (attendance as any[]).map(mapAttendance),
-        vacations: (vacations as any[]).map(mapVacation),
+        attendance: filteredAttendance,
+        vacations: filteredVacations,
         auditLogs: (auditLogs as any[]).map(mapAudit),
         monthLocks: (monthLocks as any[]).map((r: any) => ({
           id: r.id,
@@ -163,9 +205,20 @@ export default async function handler(req: Request) {
       });
     }
     if (path === 'employees' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM employees ORDER BY id`;
+      let filteredRows = (rows as any[]);
+      if (user.role === 'employee') {
+        filteredRows = filteredRows.filter(r => r.id === user.id);
+      } else if (user.role === 'manager') {
+        const userLocs = user.locationIds || [];
+        filteredRows = filteredRows.filter(r => 
+          r.id === user.id || (r.location_ids && r.location_ids.some((id: any) => userLocs.includes(id)))
+        );
+      }
       return json(
-        (rows as any[]).map(r => {
+        filteredRows.map(r => {
           const e = mapEmployee(r) as any;
           const hasPassword = Boolean(e.password);
           e.hasPassword = hasPassword;
@@ -289,8 +342,18 @@ export default async function handler(req: Request) {
       return json({ ok: true });
     }
     if (path === 'attendance' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM attendance ORDER BY date DESC, id DESC`;
-      return json((rows as any[]).map(mapAttendance));
+      if (user.role === 'admin') return json((rows as any[]).map(mapAttendance));
+      const userLocs = user.locationIds || [];
+      const empIds = await sql`
+        SELECT id FROM employees 
+        WHERE id = ${user.id} 
+        OR (location_ids && ${userLocs})
+      `;
+      const ids = new Set((empIds as any[]).map(r => r.id));
+      return json((rows as any[]).map(mapAttendance).filter(a => ids.has(a.employeeId)));
     }
     if (path === 'attendance' && method === 'POST') {
       const b = await readBody<any>(req);
@@ -328,8 +391,18 @@ export default async function handler(req: Request) {
       return json({ ok: true });
     }
     if (path === 'vacations' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM vacations ORDER BY created_at DESC`;
-      return json((rows as any[]).map(mapVacation));
+      if (user.role === 'admin') return json((rows as any[]).map(mapVacation));
+      const userLocs = user.locationIds || [];
+      const empIds = await sql`
+        SELECT id FROM employees 
+        WHERE id = ${user.id} 
+        OR (location_ids && ${userLocs})
+      `;
+      const ids = new Set((empIds as any[]).map(r => r.id));
+      return json((rows as any[]).map(mapVacation).filter(v => ids.has(v.employeeId)));
     }
     if (path === 'vacations' && method === 'POST') {
       const b = await readBody<any>(req);

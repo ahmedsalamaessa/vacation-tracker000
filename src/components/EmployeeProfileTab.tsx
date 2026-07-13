@@ -31,12 +31,10 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
 
   const c = (s: string) => att.filter(r => r.status === s).length;
   const balanceData = calculateEmployeeBalance(att, vac);
-  
   const saharEarned = c('سهر'); 
   const saharSpentAttendance = c('بدل سهرة'); 
   const saharSpentVacations = sumApprovedByTypes(vac, ['سهرة']);
   const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
-
   const finalBalance = balanceData.earned + saharBal;
 
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();

@@ -10,12 +10,36 @@ function isAutoVacationAttendance(record: AttendanceRecord) {
 }
 
 export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: Vacation[]) {
+  // 1. تحديد الأيام التي تم أخذها كـ "بدل سهرة" من الطلبات المعتمدة لكي لا نخصمها كإجازة عمل
+  const saharVacationDates = new Set(
+    vacations
+      .filter(v => APPROVED.has(v.status) && (v.vacationType || '').includes('سهرة'))
+      .flatMap(v => {
+        const start = new Date(v.startDate);
+        const end = new Date(v.endDate);
+        const dates = [];
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          dates.push(d.toISOString().split('T')[0]);
+        }
+        return dates;
+      })
+  );
+
+  // 2. خصم الإجازات من شيت الحضور (بشرط ألا تكون هذه الإجازة هي "بدل سهرة" معتمد)
   const manualSheetDeduct = attendance
-    .filter(r => DEDUCT_ATTENDANCE_STATUSES.has(r.status) && !isAutoVacationAttendance(r))
+    .filter(r => {
+      const isDeductType = DEDUCT_ATTENDANCE_STATUSES.has(r.status);
+      const isNotAuto = !isAutoVacationAttendance(r);
+      const isNotSaharVacation = !saharVacationDates.has(r.date);
+      return isDeductType && isNotAuto && isNotSaharVacation;
+    })
     .length;
+
+  // 3. خصم الإجازات من الطلبات المعتمدة (التي ليست بدل سهرة)
   const approvedRequestDeduct = vacations
     .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
+
   return manualSheetDeduct + approvedRequestDeduct;
 }
 

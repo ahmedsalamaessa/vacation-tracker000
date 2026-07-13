@@ -26,9 +26,13 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
 }
 
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  const totalPresent = attendance.filter(r => r.status === 'حاضر').length;
+  // تعديل: حساب الحضور يشمل (حاضر، سهر، عارضة حضور) ليتطابق مع الشاشة
+  const totalPresent = attendance.filter(r => ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)).length;
   const taken = getVacationDaysTaken(attendance, vacations);
+  
+  // هنا يتم تطبيق منطق الاستهلاك التلقائي
   const result = computeGraduatedVacation(totalPresent, taken);
+  
   return {
     totalPresent,
     taken,

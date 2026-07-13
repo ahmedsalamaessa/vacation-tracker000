@@ -43,7 +43,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 
   function printPdf() {
-    printHtml(`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>حضور</th><td>${balanceData.totalPresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>مأخوذة</th><td>${balanceData.taken}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
+    printHtml(`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>الأيام الفعلية</th><td>${balanceData.effectivePresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>مأخوذة</th><td>${balanceData.taken}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
   }
 
   return (
@@ -70,9 +70,10 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
       </section>
 
       <section className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        {/* تم تغيير المسمى هنا إلى "الأيام الفعلية" والقيمة إلى effectivePresent */}
         <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-100">
-          <div className="text-xs font-bold text-slate-500">إجمالي الحضور</div>
-          <div className="mt-1 text-3xl font-black text-blue-700">{balanceData.totalPresent}</div>
+          <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
+          <div className="mt-1 text-3xl font-black text-blue-700">{balanceData.effectivePresent}</div>
         </div>
         <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-100">
           <div className="text-xs font-bold text-slate-500">إجازات مستحقة</div>

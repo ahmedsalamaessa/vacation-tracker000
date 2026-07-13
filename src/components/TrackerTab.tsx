@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
-import { calculateEmployeeBalance } from '../lib/balance';
+import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
 import type { Employee } from '../lib/types';
 
 export default function TrackerTab({ user, refreshKey }: { user: Employee; refreshKey: number }) {
@@ -68,8 +68,9 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
           const empVac = vacations.filter(v => v.employeeId === emp.id);
           const balanceData = calculateEmployeeBalance(empAtt, empVac);
           const saharEarned = empAtt.filter(r => r.status === 'سهر').length;
-          const saharSpent = empAtt.filter(r => r.status === 'بدل سهرة').length;
-          const saharBal = Math.max(0, saharEarned - saharSpent);
+          const saharSpentAttendance = empAtt.filter(r => r.status === 'بدل سهرة').length;
+          const saharSpentVacations = sumApprovedByTypes(empVac, ['سهرة']);
+          const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
           const finalBalance = balanceData.earned + saharBal;
 
           return (
@@ -85,27 +86,27 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="rounded-2xl border p-4 text-center bg-blue-50/50 border-blue-100">
+                <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
                   <div className="text-xs font-bold text-slate-500">الدورات</div>
-                  <div className="mt-1 text-2xl font-black text-blue-700">{(emp as any).courses || 0}</div>
+                  <div className="mt-1 text-2xl font-black text-blue-600">{(emp as any).courses || 0}</div>
                 </div>
-                <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-100">
+                <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
                   <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
-                  <div className="mt-1 text-2xl font-black text-blue-700">{balanceData.effectivePresent}</div>
+                  <div className="mt-1 text-2xl font-black text-blue-600">{balanceData.effectivePresent}</div>
                 </div>
-                <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-100">
+                <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
                   <div className="text-xs font-bold text-slate-500">بدل السهرة</div>
-                  <div className="mt-1 text-2xl font-black text-cyan-700">{saharBal}</div>
+                  <div className="mt-1 text-2xl font-black text-cyan-600">{saharBal}</div>
                 </div>
-                <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-100">
+                <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-200">
                   <div className="text-xs font-bold text-slate-500">مستحقة</div>
-                  <div className="mt-1 text-2xl font-black text-green-700">{balanceData.earned}</div>
+                  <div className="mt-1 text-2xl font-black text-green-600">{balanceData.earned}</div>
                 </div>
               </div>
               
-              <div className="rounded-2xl border p-4 text-center mb-4 ${finalBalance < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}">
+              <div className={`rounded-2xl border p-4 text-center mb-4 ${finalBalance < 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
                 <div className="text-xs font-bold text-slate-500">صافي الرصيد المتاح</div>
-                <div className={`mt-1 text-3xl font-black ${finalBalance < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{finalBalance} يوم</div>
+                <div className={`mt-1 text-3xl font-black ${finalBalance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{finalBalance} يوم</div>
               </div>
 
               <div className="flex justify-between items-center px-2">

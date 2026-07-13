@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { printHtml } from '../lib/pdf';
 import { getEmployeeById, getAttendance, getVacations, getCheckInAttempts, getLocations } from '../lib/db';
-import { calculateEmployeeBalance } from '../lib/balance'; 
+import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance'; 
 import type { Employee, AttendanceRecord, Vacation, CheckInAttempt } from '../lib/types';
 
 function fmtDt(v: string | null | undefined) {
@@ -31,9 +31,12 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
 
   const c = (s: string) => att.filter(r => r.status === s).length;
   const balanceData = calculateEmployeeBalance(att, vac);
+  
   const saharEarned = c('سهر'); 
-  const saharSpent = c('بدل سهرة'); 
-  const saharBal = Math.max(0, saharEarned - saharSpent);
+  const saharSpentAttendance = c('بدل سهرة'); 
+  const saharSpentVacations = sumApprovedByTypes(vac, ['سهرة']);
+  const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
+
   const finalBalance = balanceData.earned + saharBal;
 
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();

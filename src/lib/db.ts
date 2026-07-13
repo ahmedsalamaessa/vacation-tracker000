@@ -12,7 +12,6 @@ import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
 
 const PREFIX = 'vsys_';
-
 const STORAGE_KEYS = {
   employees: PREFIX + 'employees',
   locations: PREFIX + 'locations',
@@ -53,9 +52,9 @@ export async function clearAllData() {
   });
   localStorage.removeItem('hr_session');
   localStorage.removeItem('vacation_system_initialized_v4');
+  localStorage.removeItem('vsys_session_id');
 }
 
-/** Pull latest data from Neon into localStorage cache */
 export async function refreshFromRemote(): Promise<boolean> {
   try {
     const remote = remoteAvailable() || (await probeRemote());
@@ -78,7 +77,6 @@ export async function refreshFromRemote(): Promise<boolean> {
 }
 
 export async function initializeData() {
-  // Try Neon remote first — cache into localStorage for sync reads
   const remote = await probeRemote();
   if (remote) {
     try {
@@ -88,11 +86,9 @@ export async function initializeData() {
       console.warn('Remote bootstrap failed, falling back to local', e);
     }
   }
-
   const shaAdmin = await sha256('admin123');
   let employees = getItem<Employee[]>(STORAGE_KEYS.employees, []);
   const adminExists = employees.some(e => e.username === 'admin');
-
   if (!adminExists) {
     await clearAllData();
     employees = [];
@@ -124,7 +120,6 @@ export async function initializeData() {
     };
     setItem(STORAGE_KEYS.employees, [defaultAdmin]);
   } else {
-    // Migrate plain-text passwords to hashed
     let migrated = false;
     for (const emp of employees) {
       if (emp.password && !emp.password.startsWith('sha256:') && emp.password.length < 100) {
@@ -135,8 +130,6 @@ export async function initializeData() {
     if (migrated) {
       setItem(STORAGE_KEYS.employees, employees);
     }
-
-    // Extra safety: if admin exists but password doesn't start with sha256:, force re-init
     const adminEmp = employees.find(e => e.username === 'admin');
     if (adminEmp && !adminEmp.password.startsWith('sha256:')) {
       await clearAllData();
@@ -169,7 +162,6 @@ export async function initializeData() {
       setItem(STORAGE_KEYS.employees, [freshAdmin]);
     }
   }
-
   const locations = getItem<WorkLocation[]>(STORAGE_KEYS.locations, []);
   if (locations.length === 0) {
     const defaultLocations: WorkLocation[] = [
@@ -198,7 +190,6 @@ export async function initializeData() {
     ];
     setItem(STORAGE_KEYS.locations, defaultLocations);
   }
-
   const settings = getItem<Partial<Settings>>(STORAGE_KEYS.settings, {});
   if (!settings.department_name) {
     const shaSettings = await sha256('settings123');
@@ -294,17 +285,14 @@ export async function updateEmployee(id: number, updates: Partial<Employee>): Pr
   const employees = getEmployees();
   const index = employees.findIndex(e => e.id === id);
   if (index === -1) return null;
-
   if (updates.password && updates.password !== '' && !updates.password.startsWith('sha256:')) {
     updates.password = 'sha256:' + (await sha256(updates.password));
   }
   if (updates.password === '') {
     delete updates.password;
   }
-
   employees[index] = { ...employees[index], ...updates, updatedAt: new Date().toISOString() };
   setEmployees(employees);
-
   const cur = getCurrentUser();
   if (cur && cur.id === id) setCurrentUser(employees[index]);
   return employees[index];
@@ -342,7 +330,6 @@ export function addLocation(location: Omit<WorkLocation, 'id' | 'createdAt' | 'u
   if (remoteAvailable()) {
     api.addLocation(location).then(created => {
       const locs = getLocations().map(l => (l.id === newLocation.id ? { ...created } : l));
-      // keep optimistic + replace if server id differs
       if (!locs.find(l => l.id === created.id)) setLocations([...getLocations().filter(l => l.id !== newLocation.id), created]);
       else setLocations(getLocations().map(l => (l.name === created.name ? created : l)));
     }).catch(e => console.warn('remote addLocation', e));
@@ -375,7 +362,6 @@ export function deleteLocation(id: number): boolean {
 
 export function getAttendance(): AttendanceRecord[] {
   const rows = getItem<AttendanceRecord[]>(STORAGE_KEYS.attendance, []);
-  // normalize Neon ISO dates to YYYY-MM-DD for consistent filtering
   return rows.map(r => ({
     ...r,
     date: r.date ? String(r.date).slice(0, 10) : r.date,
@@ -391,14 +377,11 @@ export function getAttendanceByDateRange(startDate: string, endDate: string): At
 }
 
 export function upsertAttendance(record: any): AttendanceRecord {
-  // normalize date to YYYY-MM-DD
   if (record.date) record.date = String(record.date).slice(0, 10);
-
   const attendance = getAttendance();
   const existingIndex = attendance.findIndex(
     a => a.employeeId === record.employeeId && String(a.date).slice(0, 10) === record.date,
   );
-
   let result: AttendanceRecord;
   if (existingIndex !== -1) {
     attendance[existingIndex] = {
@@ -423,16 +406,13 @@ export function upsertAttendance(record: any): AttendanceRecord {
     setAttendance([...attendance, newRecord]);
     result = newRecord;
   }
-
   if (remoteAvailable()) {
-    // fire-and-forget but also re-pull after write so other tabs/devices stay closer
     api
       .upsertAttendance(record)
       .then(async saved => {
-        // merge server record (real id) into cache
         const att = getAttendance();
         const idx = att.findIndex(
-          a => a.employeeId === saved.employeeId && String(a.date).slice(0, 10) === String(saved.date).slice(0, 10),
+          a => a.employeeId === saved.employeeId && String(saved.date).slice(0, 10) === String(a.date).slice(0, 10),
         );
         if (idx !== -1) {
           att[idx] = { ...att[idx], ...saved, date: String(saved.date).slice(0, 10) };
@@ -476,11 +456,10 @@ export function addVacation(vacation: Omit<Vacation, 'id' | 'createdAt'>): Vacat
       const list = getVacations().map(v =>
         v.id === newVacation.id && v.createdAt === newVacation.createdAt ? created : v,
       );
-      // if id changed on server, replace optimistic entry
       if (!list.find(v => v.id === created.id)) {
         setVacations([...getVacations().filter(v => v !== newVacation), created]);
       } else {
-        setVacations(getVacations().map(v => (v.id === newVacation.id ? created : v)));
+        setVacations(getVacations().map(v => (v.id === created.id ? created : v)));
       }
     }).catch(e => console.warn('remote addVacation', e));
   }
@@ -494,23 +473,15 @@ export function updateVacation(id: number, updates: Partial<Vacation>): Vacation
   vacations[index] = { ...vacations[index], ...updates };
   setVacations(vacations);
   if (remoteAvailable()) {
-    // fire-and-forget for non-critical edits; use updateVacationAsync when approval needs await
     api.updateVacation(id, updates).catch(e => console.warn('remote updateVacation', e));
   }
   return vacations[index];
 }
 
-/** Await remote update — use for approvals so sync runs after status is saved on server */
 export async function updateVacationAsync(
   id: number,
   updates: Partial<Vacation>,
 ): Promise<Vacation | null> {
-  const vacations = getVacations();
-  const index = vacations.findIndex(v => v.id === id);
-  if (index === -1) return null;
-  vacations[index] = { ...vacations[index], ...updates };
-  setVacations(vacations);
-
   if (remoteAvailable()) {
     try {
       const updated = await api.updateVacation(id, updates);
@@ -525,6 +496,11 @@ export async function updateVacationAsync(
       console.warn('remote updateVacationAsync failed', e);
     }
   }
+  const vacations = getVacations();
+  const index = vacations.findIndex(v => v.id === id);
+  if (index === -1) return null;
+  vacations[index] = { ...vacations[index], ...updates };
+  setVacations(vacations);
   return vacations[index];
 }
 
@@ -590,7 +566,7 @@ export function addSystemNotification(
   };
   setItem(STORAGE_KEYS.notifications, [...notifications, newNotification]);
   if (remoteAvailable()) {
-    api.addNotification(newNotification).catch(e => console.warn('remote addNotification', e));
+    api.addNotification(notification).catch(e => console.warn('remote addNotification', e));
   }
   return newNotification;
 }
@@ -645,17 +621,17 @@ export function lockMonth(yearMonth: string, userId: number, userName: string) {
 
 export function unlockMonth(yearMonth: string): boolean {
   if (remoteAvailable()) {
-    api.unlockMonth(yearMonth).catch(() => {});
+    api.unlockMonth(yearMonth).catch(e => console.warn('remote unlockMonth', e));
   }
   const locks = getMonthLocks();
-  const filtered = locks.filter((l: any) => l.yearMonth !== yearMonth);
+  const filtered = locks.filter(l => l.yearMonth !== yearMonth);
   if (filtered.length === locks.length) return false;
   setMonthLocks(filtered);
   return true;
 }
 
 export function isMonthLocked(yearMonth: string): boolean {
-  return getMonthLocks().some((l: any) => l.yearMonth === yearMonth);
+  return getMonthLocks().some(l => l.yearMonth === yearMonth);
 }
 
 export function getCheckInAttempts(): CheckInAttempt[] {
@@ -717,10 +693,10 @@ export function setCurrentUser(user: Employee | null): void {
 export async function login(username: string, password: string): Promise<Employee | null> {
   if (remoteAvailable() || (await probeRemote())) {
     try {
-      const { user } = await api.login(username, password);
+      const { user, sessionId } = await api.login(username, password);
       if (user) {
+        localStorage.setItem('vsys_session_id', sessionId);
         setCurrentUser(user);
-        // refresh cache after login
         try {
           const data = await api.bootstrap();
           if (data.employees) setItem(STORAGE_KEYS.employees, data.employees);
@@ -734,19 +710,16 @@ export async function login(username: string, password: string): Promise<Employe
       console.warn('remote login failed, trying local', e);
     }
   }
-
   const employees = getEmployees();
   const passwordHash = 'sha256:' + (await sha256(password));
   const loginValue = username.trim();
-  const normalizedPhone = loginValue.replace(/\s|-/g, '');
-
+  const normalizedPhone = loginValue.replace(/\\s|-/g, '');
   const employee = employees.find(e => {
-    const empPhone = (e.phone || '').replace(/\s|-/g, '');
+    const empPhone = (e.phone || '').replace(/\\s|-/g, '');
     const matchesUsername = e.username === loginValue;
     const matchesPhone = empPhone !== '' && empPhone === normalizedPhone;
     return (matchesUsername || matchesPhone) && e.password === passwordHash && e.active;
   });
-
   if (employee) {
     setCurrentUser(employee);
     return employee;
@@ -757,6 +730,7 @@ export async function login(username: string, password: string): Promise<Employe
 export function logout(): void {
   setCurrentUser(null);
   localStorage.removeItem('hr_session');
+  localStorage.removeItem('vsys_session_id');
 }
 
 export function refreshCurrentSession(): Employee | null {
@@ -788,6 +762,8 @@ function vacationTypeToAttendanceStatus(type: string | null): string {
       return 'إجازة مرضية';
     case 'بدون مرتب':
       return 'بدون مرتب';
+    case 'بدل سهرة':
+      return 'بدل سهرة';
     default:
       return 'إجازة اعتيادية';
   }
@@ -805,17 +781,10 @@ function listDates(start: string, end: string): string[] {
   return dates;
 }
 
-/**
- * Sync approved vacation days into attendance sheet.
- * - Always writes AUTO_VACATION marker so balance doesn't double-count
- * - Overwrites empty cells and previous auto/manual vacation statuses
- * - Skips only real presence (حاضر/سهر/عارضة حضور) unless force=true
- */
 export function syncVacationToAttendance(
   vacation: Vacation,
   opts?: { force?: boolean },
 ): { synced: number; skipped: number } {
-  // kick remote (non-blocking); prefer syncVacationToAttendanceAsync for approvals
   if (remoteAvailable()) {
     api
       .syncVacationAttendance(vacation.id)
@@ -827,7 +796,6 @@ export function syncVacationToAttendance(
       })
       .catch(e => console.warn('remote sync vacation', e));
   }
-
   return applyVacationToLocalAttendance(vacation, opts);
 }
 
@@ -835,7 +803,6 @@ export async function syncVacationToAttendanceAsync(
   vacation: Vacation,
   opts?: { force?: boolean },
 ): Promise<{ synced: number; skipped: number }> {
-  // 1) remote first so Neon is source of truth
   if (remoteAvailable()) {
     try {
       const result = await api.syncVacationAttendance(vacation.id);
@@ -845,21 +812,10 @@ export async function syncVacationToAttendanceAsync(
       console.warn('remote syncVacationAttendance failed, applying local', e);
     }
   }
-  // 2) local fallback
   return applyVacationToLocalAttendance(vacation, opts);
 }
 
 const PRESENCE_STATUSES = new Set(['حاضر', 'سهر', 'عارضة حضور']);
-const VACATION_SHEET_STATUSES = new Set([
-  'عارضة إجازة',
-  'إجازة عارضة',
-  'إجازة اعتيادية',
-  'إجازة مرضية',
-  'إجازة رسمية',
-  'إجازة سنوية',
-  'بدون مرتب',
-  'بدل سهرة',
-]);
 
 function applyVacationToLocalAttendance(
   vacation: Vacation,
@@ -868,21 +824,17 @@ function applyVacationToLocalAttendance(
   const start = vacation.vacationStartDate || vacation.startDate;
   const end = vacation.vacationEndDate || vacation.endDate;
   if (!start || !end) return { synced: 0, skipped: 0 };
-
   const dates = listDates(String(start).slice(0, 10), String(end).slice(0, 10));
   const status = vacationTypeToAttendanceStatus(vacation.vacationType);
   const marker = `AUTO_VACATION:${vacation.id}`;
   let synced = 0;
   let skipped = 0;
   const att = getAttendance();
-
   for (const date of dates) {
     const idx = att.findIndex(
       a => a.employeeId === vacation.employeeId && String(a.date).slice(0, 10) === date,
     );
     const existing = idx !== -1 ? att[idx] : null;
-
-    // Don't overwrite real check-in presence unless forced
     if (
       existing &&
       PRESENCE_STATUSES.has(existing.status) &&
@@ -892,7 +844,6 @@ function applyVacationToLocalAttendance(
       skipped++;
       continue;
     }
-
     if (idx !== -1) {
       att[idx] = {
         ...att[idx],
@@ -924,11 +875,10 @@ function applyVacationToLocalAttendance(
 
 export function clearVacationFromAttendance(vacationId: number): number {
   if (remoteAvailable()) {
-    api.clearVacationAttendance(vacationId).catch(e => console.warn('remote clear vacation', e));
+    api.clearVacationAttendance(vacationId).catch(e => console.warn('remote clearVacation', e));
   }
   const attendance = getAttendance();
   const marker = `AUTO_VACATION:${vacationId}`;
-  // remove auto rows + any sheet vacation rows that were meant for this vacation
   const filtered = attendance.filter(a => a.notes !== marker && a.vacationId !== vacationId);
   const removed = attendance.length - filtered.length;
   if (removed > 0) setAttendance(filtered);
@@ -941,7 +891,7 @@ export async function clearVacationFromAttendanceAsync(vacationId: number): Prom
       await api.clearVacationAttendance(vacationId);
       await refreshFromRemote();
     } catch (e) {
-      console.warn('remote clear vacation failed', e);
+      console.warn('remote clearVacation failed', e);
     }
   }
   return clearVacationFromAttendance(vacationId);

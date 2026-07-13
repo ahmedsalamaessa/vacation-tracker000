@@ -31,6 +31,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
 
   const c = (s: string) => att.filter(r => r.status === s).length;
   
+  // استخدام balanceData (بحرف b صغير) في كل مكان لضمان عدم حدوث خطأ
   const balanceData = calculateEmployeeBalance(att, vac);
   
   const saharEarned = c('سهر'); 

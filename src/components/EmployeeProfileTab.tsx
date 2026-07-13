@@ -30,14 +30,10 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   if (!emp) return <div className="p-10 text-center font-bold text-red-600">الموظف غير موجود<br /><button onClick={onBack} className="mt-4 bg-slate-900 text-white px-5 py-2 rounded-xl text-sm font-black">رجوع</button></div>;
 
   const c = (s: string) => att.filter(r => r.status === s).length;
-  
-  // استخدام balanceData (بحرف b صغير) في كل مكان لضمان عدم حدوث خطأ
   const balanceData = calculateEmployeeBalance(att, vac);
-  
   const saharEarned = c('سهر'); 
   const saharSpent = c('بدل سهرة'); 
   const saharBal = Math.max(0, saharEarned - saharSpent);
-
   const finalBalance = (balanceData.earned - balanceData.taken) + saharBal;
 
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();

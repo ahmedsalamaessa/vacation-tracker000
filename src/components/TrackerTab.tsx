@@ -1,39 +1,77 @@
-import { useMemo } from 'react';
-import { getEmployees, getAttendance, getVacations } from '../lib/db';
+import { useState, useMemo } from 'react';
+import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
 import { calculateEmployeeBalance } from '../lib/balance';
 import type { Employee } from '../lib/types';
 
 export default function TrackerTab({ user, refreshKey }: { user: Employee; refreshKey: number }) {
+  const [locFilter, setLocFilter] = useState<string>('all');
+  const [jobFilter, setJobFilter] = useState<string>('all');
+
+  const locations = useMemo(() => getLocations(), []);
+  const jobs = useMemo(() => {
+    const allEmployees = getEmployees();
+    return Array.from(new Set(allEmployees.map(e => e.jobTitle).filter(Boolean))).sort();
+  }, []);
+
   const employees = useMemo(() => {
     const all = getEmployees().filter(e => e.active && e.role !== 'admin');
-    return all.sort((a, b) => a.name.localeCompare(b.name));
-  }, [refreshKey]);
+    return all
+      .filter(emp => {
+        const matchLoc = locFilter === 'all' || emp.locationIds?.some(id => id === locFilter);
+        const matchJob = jobFilter === 'all' || emp.jobTitle === jobFilter;
+        return matchLoc && matchJob;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [refreshKey, locFilter, jobFilter]);
 
   const attendance = getAttendance();
   const vacations = getVacations();
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">📋 تتبع أرصدة الإجازات</h2>
-          <p className="text-sm font-bold text-slate-500 dark:text-slate-400">حسابات تلقائية بناءً على الحضور الفعلي والاستهلاك</p>
+      {/* قسم الفلاتر - الشكل القديم */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الموقع:</span>
+            <select 
+              value={locFilter} 
+              onChange={e => setLocFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+            >
+              <option value="all">كل المواقع</option>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">الوظيفة:</span>
+            <select 
+              value={jobFilter} 
+              onChange={e => setJobFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+            >
+              <option value="all">كل الوظائف</option>
+              {jobs.map(j => <option key={j} value={j}>{j}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="hidden md:block text-right">
-          <div className="text-xs font-black text-slate-400 uppercase tracking-wider">إجمالي الموظفين</div>
-          <div className="text-2xl font-black text-blue-600">{employees.length}</div>
-        </div>
+        <button 
+          onClick={() => {}} // يتم التحديث عبر refreshKey من App.tsx
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm"
+        >
+          تحديث 🔄
+        </button>
       </div>
 
+      {/* قائمة الموظفين - شكل الكروت القديم */}
       <div className="grid gap-6">
         {employees.map(emp => {
           const empAtt = attendance.filter(a => a.employeeId === emp.id);
           const empVac = vacations.filter(v => v.employeeId === emp.id);
           
-          // استخدام الدالة الشاملة لحساب الرصيد (تطبق الاستهلاك تلقائياً)
+          // استخدام المنطق الجديد للحسابات (الاستهلاك التلقائي)
           const balanceData = calculateEmployeeBalance(empAtt, empVac);
           
-          // حساب بدل السهرة بشكل منفصل
           const saharEarned = empAtt.filter(r => r.status === 'سهر').length;
           const saharSpent = empAtt.filter(r => r.status === 'بدل سهرة').length;
           const saharBal = Math.max(0, saharEarned - saharSpent);

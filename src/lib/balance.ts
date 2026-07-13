@@ -13,9 +13,11 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
   const manualSheetDeduct = attendance
     .filter(r => DEDUCT_ATTENDANCE_STATUSES.has(r.status) && !isAutoVacationAttendance(r))
     .length;
+
   const approvedRequestDeduct = vacations
     .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
+
   return manualSheetDeduct + approvedRequestDeduct;
 }
 
@@ -25,12 +27,14 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
 }
 
+/**
+ * دالة شاملة لحساب رصيد الموظف بناءً على الحضور والإجازات
+ * يتم استدعاؤها من شاشات العرض لضمان تطبيق منطق الاستهلاك
+ */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // تعديل: حساب الحضور يشمل (حاضر، سهر، عارضة حضور) ليتطابق مع الشاشة
-  const totalPresent = attendance.filter(r => ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)).length;
+  const totalPresent = attendance.filter(r => r.status === 'حاضر').length;
   const taken = getVacationDaysTaken(attendance, vacations);
   
-  // هنا يتم تطبيق منطق الاستهلاك التلقائي
   const result = computeGraduatedVacation(totalPresent, taken);
   
   return {

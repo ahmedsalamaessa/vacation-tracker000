@@ -33,7 +33,10 @@ function findNextMilestone(workDays: number, earned: number): number {
 function findCurrentMilestone(workDays: number, earned: number): number {
   if (earned <= 0) return 0;
   for (let day = workDays; day >= 1; day -= 1) {
-    if (earnedVacationDaysForWorkDays(day) === earned && earnedVacationDaysForWorkDays(day - 1) < earned) {
+    if (
+      earnedVacationDaysForWorkDays(day) === earned &&
+      earnedVacationDaysForWorkDays(day - 1) < earned
+    ) {
       return day;
     }
   }
@@ -48,10 +51,16 @@ function calculateConsumedWorkDaysSimple(vacationDaysTaken: number, currentStage
   return Math.round(vacationDaysTaken * multiplier);
 }
 
-export function computeGraduatedVacation(totalPresent: number, vacationDaysTaken: number = 0): GraduatedResult {
+export function computeGraduatedVacation(
+  totalPresent: number,
+  vacationDaysTaken: number = 0
+): GraduatedResult {
   const workDays = Math.max(0, Math.floor(totalPresent));
   const originalStage = getStage(workDays);
-  const consumedWorkDays = calculateConsumedWorkDaysSimple(vacationDaysTaken, originalStage.stage);
+  const consumedWorkDays = calculateConsumedWorkDaysSimple(
+    vacationDaysTaken,
+    originalStage.stage
+  );
   const effectivePresent = Math.max(0, workDays - consumedWorkDays);
   const currentStage = getStage(effectivePresent);
   const earned = earnedVacationDaysForWorkDays(effectivePresent);

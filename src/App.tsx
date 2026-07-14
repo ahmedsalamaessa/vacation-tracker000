@@ -8,14 +8,14 @@ import {
   getVacations,
   getEmployees,
   refreshFromRemote,
-} from '../lib/db';
-import { getManagedEmployees } from '../lib/permissions';
+} from './lib/db';
+import { getManagedEmployees } from './lib/permissions';
 import {
   requestPermission,
   checkPendingVacations,
   isSupported as isNotifSupported,
-} from '../lib/notifications';
-import type { Employee } from '../lib/types';
+} from './lib/notifications';
+import type { Employee } from './lib/types';
 import LoginPage from './components/LoginPage';
 import CheckInTab from './components/CheckInTab';
 import TrackerTab from './components/TrackerTab';

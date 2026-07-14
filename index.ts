@@ -17,13 +17,11 @@ export const config = { runtime: 'edge' };
 
 function pathOf(req: Request) {
   const u = new URL(req.url);
-  // /api/... or /api
   return u.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '') || '';
 }
 
 function dateOnly(v: any): string {
   if (v == null || v === '') return '';
-  // Neon / pg may return Date objects
   if (v instanceof Date && !Number.isNaN(v.getTime())) {
     return v.toISOString().slice(0, 10);
   }
@@ -32,9 +30,7 @@ function dateOnly(v: any): string {
     if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   }
   const s = String(v).trim();
-  // already YYYY-MM-DD or ISO
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // fallback parse
   const d = new Date(s);
   if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   return '';
@@ -45,7 +41,6 @@ function listDateRange(start: any, end: any): string[] {
   const s = dateOnly(start);
   const e = dateOnly(end);
   if (!s || !e) return dates;
-  // Use noon UTC to avoid DST/off-by-one
   let cur = new Date(s + 'T12:00:00.000Z');
   const last = new Date(e + 'T12:00:00.000Z');
   if (Number.isNaN(cur.getTime()) || Number.isNaN(last.getTime()) || last < cur) return dates;
@@ -56,6 +51,18 @@ function listDateRange(start: any, end: any): string[] {
   return dates;
 }
 
+async function getSessionUser(sql: any, req: Request) {
+  const sessionId = req.headers.get('X-Session-Id');
+  if (!sessionId) return null;
+  const rows = await sql`
+    SELECT e.* FROM sessions s
+    JOIN employees e ON s.employee_id = e.id
+    WHERE s.id = ${sessionId} AND s.expires_at > NOW()
+    LIMIT 1
+  `;
+  return rows[0] ? mapEmployee(rows[0]) : null;
+}
+
 function vacationTypeToStatus(type: string | null | undefined): string {
   const t = type || 'اعتيادية';
   if (['عارضة', 'عارضة إجازة', 'إجازة عارضة'].includes(t)) return 'عارضة إجازة';
@@ -63,22 +70,20 @@ function vacationTypeToStatus(type: string | null | undefined): string {
   if (['سنوية', 'إجازة سنوية'].includes(t)) return 'إجازة سنوية';
   if (['مرضية', 'إجازة مرضية'].includes(t)) return 'إجازة مرضية';
   if (t === 'بدون مرتب') return 'بدون مرتب';
+  if (t === 'بدل سهرة') return 'بدل سهرة';
   return 'إجازة اعتيادية';
 }
 
-/** Download approved vacation days into attendance sheet */
 async function syncVacationDays(sql: any, vac: any): Promise<{ synced: number; skipped: number; dates: string[] }> {
   const start = vac.vacation_start_date || vac.start_date;
   const end = vac.vacation_end_date || vac.end_date;
   const dates = listDateRange(start, end);
   if (dates.length === 0) return { synced: 0, skipped: 0, dates: [] };
-
   const status = vacationTypeToStatus(vac.vacation_type);
   const marker = `AUTO_VACATION:${vac.id}`;
   const presence = new Set(['حاضر', 'سهر', 'عارضة حضور']);
   let synced = 0;
   let skipped = 0;
-
   for (const iso of dates) {
     const existing = await sql`
       SELECT id, status, notes FROM attendance
@@ -86,7 +91,6 @@ async function syncVacationDays(sql: any, vac: any): Promise<{ synced: number; s
       LIMIT 1
     `;
     const row = existing[0] as any;
-    // skip only real presence (keep check-in)
     if (row && presence.has(row.status) && !String(row.notes || '').startsWith('AUTO_VACATION:')) {
       skipped++;
       continue;
@@ -106,24 +110,18 @@ async function syncVacationDays(sql: any, vac: any): Promise<{ synced: number; s
 
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return options();
-
   const sql = getSql();
   const path = pathOf(req);
   const method = req.method || 'GET';
-
   try {
-    // ---------- health ----------
     if (path === '' || path === 'health') {
       return json({ ok: true, service: 'vacation-api', time: new Date().toISOString() });
     }
-
-    // ---------- auth/login ----------
     if (path === 'login' && method === 'POST') {
       const body = await readBody<{ username?: string; password?: string }>(req);
       const loginValue = (body.username || '').trim();
       const passwordHash = 'sha256:' + await sha256(body.password || '');
-      const normalizedPhone = loginValue.replace(/\s|-/g, '');
-
+      const normalizedPhone = loginValue.replace(/\\s|-/g, '');
       const rows = await sql`
         SELECT * FROM employees
         WHERE active = true
@@ -136,14 +134,24 @@ export default async function handler(req: Request) {
       `;
       const emp = mapEmployee(rows[0]);
       if (!emp) return json({ error: 'invalid_credentials' }, 401);
-
-      // don't send password hash to client
       const { password, ...safe } = emp as any;
-      return json({ user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' } });
-    }
+      
+      const sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      await sql`
+        INSERT INTO sessions (id, employee_id, expires_at)
+        VALUES (${sessionId}, ${emp.id}, NOW() + INTERVAL '30 days')
+        ON CONFLICT (id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+      `;
 
-    // ---------- bootstrap / all data ----------
+      return json({ 
+        user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' },
+        sessionId 
+      });
+    }
     if (path === 'bootstrap' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
+
       const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows] =
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
@@ -157,19 +165,31 @@ export default async function handler(req: Request) {
           sql`SELECT key, value FROM settings`,
         ]);
 
+      let filteredEmployees = (employees as any[]).map(mapEmployee).filter(e => e !== null);
+      if (user.role === 'employee') {
+        filteredEmployees = filteredEmployees.filter(e => e && e.id === user.id);
+      } else if (user.role === 'manager') {
+        const userLocs = user.locationIds || [];
+        filteredEmployees = filteredEmployees.filter(e => 
+          e && (e.id === user.id || (e.locationIds && e.locationIds.some(id => userLocs.includes(id))))
+        );
+      }
+
+      const empIds = new Set(filteredEmployees.map(e => e && e.id));
+      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter(a => a && empIds.has(a.employeeId));
+      const filteredVacations = (vacations as any[]).map(mapVacation).filter(v => v && empIds.has(v.employeeId));
+
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
 
       return json({
-        employees: (employees as any[]).map(mapEmployee).map((e: any) => {
+        employees: filteredEmployees.map((e: any) => {
           const { password, ...rest } = e;
           return { ...rest, hasPassword: Boolean(password), password: password ? '***' : '' };
         }),
-        // keep passwords only for server-side auth; client uses login endpoint
-        // but employees management needs no hash exposure — strip always
         locations: (locations as any[]).map(mapLocation),
-        attendance: (attendance as any[]).map(mapAttendance),
-        vacations: (vacations as any[]).map(mapVacation),
+        attendance: filteredAttendance,
+        vacations: filteredVacations,
         auditLogs: (auditLogs as any[]).map(mapAudit),
         monthLocks: (monthLocks as any[]).map((r: any) => ({
           id: r.id,
@@ -184,26 +204,33 @@ export default async function handler(req: Request) {
         settings,
       });
     }
-
-    // ---------- employees ----------
     if (path === 'employees' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM employees ORDER BY id`;
+      let filteredRows = (rows as any[]);
+      if (user.role === 'employee') {
+        filteredRows = filteredRows.filter(r => r && r.id === user.id);
+      } else if (user.role === 'manager') {
+        const userLocs = user.locationIds || [];
+        filteredRows = filteredRows.filter(r => 
+          r && (r.id === user.id || (r.location_ids && r.location_ids.some((id: any) => userLocs.includes(id))))
+        );
+      }
       return json(
-        (rows as any[]).map(r => {
+        filteredRows.map(r => {
           const e = mapEmployee(r) as any;
-          const hasPassword = Boolean(e.password);
+          const hasPassword = Boolean(e?.password);
           e.hasPassword = hasPassword;
           e.password = hasPassword ? '***' : '';
           return e;
         }),
       );
     }
-
     if (path === 'employees' && method === 'POST') {
       const b = await readBody<any>(req);
       let password = b.password || '';
       if (password && !password.startsWith('sha256:')) password = 'sha256:' + await sha256(password);
-
       const rows = await sql`
         INSERT INTO employees (
           name, username, job_title, phone, work_cycle, cycle_type, role, password, manager_id,
@@ -224,11 +251,10 @@ export default async function handler(req: Request) {
         ) RETURNING *
       `;
       const e = mapEmployee(rows[0]) as any;
-      e.hasPassword = Boolean(e.password);
-      e.password = e.hasPassword ? '***' : '';
+      e.hasPassword = Boolean(e?.password);
+      e.password = e?.password ? '***' : '';
       return json(e, 201);
     }
-
     if (path.startsWith('employees/') && method === 'PUT') {
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
@@ -236,7 +262,6 @@ export default async function handler(req: Request) {
       if (b.password && b.password !== '') {
         passwordSql = b.password.startsWith('sha256:') ? b.password : 'sha256:' + await sha256(b.password);
       }
-
       const rows = await sql`
         UPDATE employees SET
           name = COALESCE(${b.name ?? null}, name),
@@ -271,23 +296,19 @@ export default async function handler(req: Request) {
       `;
       if (!rows[0]) return json({ error: 'not_found' }, 404);
       const e = mapEmployee(rows[0]) as any;
-      e.hasPassword = Boolean(e.password);
-      e.password = e.hasPassword ? '***' : '';
+      e.hasPassword = Boolean(e?.password);
+      e.password = e?.password ? '***' : '';
       return json(e);
     }
-
     if (path.startsWith('employees/') && method === 'DELETE') {
       const id = Number(path.split('/')[1]);
       await sql`UPDATE employees SET active = false, updated_at = NOW() WHERE id = ${id}`;
       return json({ ok: true });
     }
-
-    // ---------- locations ----------
     if (path === 'locations' && method === 'GET') {
       const rows = await sql`SELECT * FROM work_locations ORDER BY id`;
       return json((rows as any[]).map(mapLocation));
     }
-
     if (path === 'locations' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -297,7 +318,6 @@ export default async function handler(req: Request) {
       `;
       return json(mapLocation(rows[0]), 201);
     }
-
     if (path.startsWith('locations/') && method === 'PUT') {
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
@@ -316,19 +336,25 @@ export default async function handler(req: Request) {
       if (!rows[0]) return json({ error: 'not_found' }, 404);
       return json(mapLocation(rows[0]));
     }
-
     if (path.startsWith('locations/') && method === 'DELETE') {
       const id = Number(path.split('/')[1]);
       await sql`DELETE FROM work_locations WHERE id = ${id}`;
       return json({ ok: true });
     }
-
-    // ---------- attendance ----------
     if (path === 'attendance' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM attendance ORDER BY date DESC, id DESC`;
-      return json((rows as any[]).map(mapAttendance));
+      if (user.role === 'admin') return json((rows as any[]).map(mapAttendance));
+      const userLocs = user.locationIds || [];
+      const empIds = await sql`
+        SELECT id FROM employees 
+        WHERE id = ${user.id} 
+        OR (location_ids && ${userLocs})
+      `;
+      const ids = new Set((empIds as any[]).map(r => r.id));
+      return json((rows as any[]).map(mapAttendance).filter(a => a && ids.has(a.employeeId)));
     }
-
     if (path === 'attendance' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -357,7 +383,6 @@ export default async function handler(req: Request) {
       `;
       return json(mapAttendance(rows[0]));
     }
-
     if (path === 'attendance' && method === 'DELETE') {
       const u = new URL(req.url);
       const employeeId = Number(u.searchParams.get('employeeId'));
@@ -365,13 +390,20 @@ export default async function handler(req: Request) {
       await sql`DELETE FROM attendance WHERE employee_id = ${employeeId} AND date = ${date}`;
       return json({ ok: true });
     }
-
-    // ---------- vacations ----------
     if (path === 'vacations' && method === 'GET') {
+      const user = await getSessionUser(sql, req);
+      if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM vacations ORDER BY created_at DESC`;
-      return json((rows as any[]).map(mapVacation));
+      if (user.role === 'admin') return json((rows as any[]).map(mapVacation));
+      const userLocs = user.locationIds || [];
+      const empIds = await sql`
+        SELECT id FROM employees 
+        WHERE id = ${user.id} 
+        OR (location_ids && ${userLocs})
+      `;
+      const ids = new Set((empIds as any[]).map(r => r.id));
+      return json((rows as any[]).map(mapVacation).filter(v => v && ids.has(v.employeeId)));
     }
-
     if (path === 'vacations' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -394,10 +426,8 @@ export default async function handler(req: Request) {
       }
       return json({ ...mapVacation(created), _sync: syncResult }, 201);
     }
-
     if (path.startsWith('vacations/') && method === 'PUT') {
       const id = Number(path.split('/')[1]);
-      // only numeric ids; nested paths like vacations/sync-attendance are handled below
       if (Number.isFinite(id) && id > 0) {
       const b = await readBody<any>(req);
       const prevRows = await sql`SELECT status FROM vacations WHERE id = ${id} LIMIT 1`;
@@ -421,34 +451,26 @@ export default async function handler(req: Request) {
       const vac = rows[0] as any;
       const newStatus = vac.status;
       let syncResult: any = null;
-
-      // Server-side auto download when approved/scheduled
       if (['مقبولة', 'مجدولة', 'جارية'].includes(newStatus)) {
         syncResult = await syncVacationDays(sql, vac);
       }
-      // Clear sheet when rejected
       if (newStatus === 'مرفوضة' && prevStatus !== 'مرفوضة') {
         const marker = `AUTO_VACATION:${id}`;
         await sql`DELETE FROM attendance WHERE notes = ${marker} OR vacation_id = ${id}`;
         syncResult = { cleared: true };
       }
-
       return json({ ...mapVacation(vac), _sync: syncResult });
       }
     }
-
     if (path.startsWith('vacations/') && method === 'DELETE') {
       const id = Number(path.split('/')[1]);
       await sql`DELETE FROM vacations WHERE id = ${id}`;
       return json({ ok: true });
     }
-
-    // ---------- attempts ----------
     if (path === 'check-in-attempts' && method === 'GET') {
       const rows = await sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 2000`;
       return json((rows as any[]).map(mapAttempt));
     }
-
     if (path === 'check-in-attempts' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -465,13 +487,10 @@ export default async function handler(req: Request) {
       `;
       return json(mapAttempt(rows[0]), 201);
     }
-
-    // ---------- audit ----------
     if (path === 'audit-logs' && method === 'GET') {
       const rows = await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`;
       return json((rows as any[]).map(mapAudit));
     }
-
     if (path === 'audit-logs' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -481,14 +500,11 @@ export default async function handler(req: Request) {
         ) VALUES (
           ${b.actorId ?? null}, ${b.actorName ?? null}, ${b.action}, ${b.entityType},
           ${b.entityId ?? null}, ${b.employeeId ?? null}, ${b.employeeName ?? null},
-          ${b.date ?? null}, ${b.oldValue ?? null}, ${b.newValue ?? null}, ${b.notes ?? null},
-          ${b.device ?? null}, ${b.userAgent ?? null}, ${b.ip ?? null}, ${b.override ?? false}
+          ${b.date ?? null}, ${b.oldValue ?? null}, ${b.newValue ?? null}, ${b.notes ?? null}, ${b.device ?? null}, ${b.userAgent ?? null}, ${b.ip ?? null}, ${b.override ?? false}
         ) RETURNING *
       `;
       return json(mapAudit(rows[0]), 201);
     }
-
-    // ---------- notifications ----------
     if (path === 'notifications' && method === 'GET') {
       const u = new URL(req.url);
       const userId = Number(u.searchParams.get('userId') || 0);
@@ -497,7 +513,6 @@ export default async function handler(req: Request) {
         : await sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 200`;
       return json((rows as any[]).map(mapNotification));
     }
-
     if (path === 'notifications' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -511,15 +526,12 @@ export default async function handler(req: Request) {
       `;
       return json(mapNotification(rows[0]), 201);
     }
-
-    // ---------- settings ----------
     if (path === 'settings' && method === 'GET') {
       const rows = await sql`SELECT key, value FROM settings`;
       const out: Record<string, string> = {};
       for (const r of rows as any[]) out[r.key] = r.value;
       return json(out);
     }
-
     if (path === 'settings' && method === 'PUT') {
       const b = await readBody<Record<string, string>>(req);
       for (const [key, value] of Object.entries(b)) {
@@ -530,8 +542,6 @@ export default async function handler(req: Request) {
       }
       return json({ ok: true });
     }
-
-    // ---------- month locks ----------
     if (path === 'month-locks' && method === 'GET') {
       const rows = await sql`SELECT * FROM month_locks ORDER BY year_month DESC`;
       return json(
@@ -545,7 +555,6 @@ export default async function handler(req: Request) {
         })),
       );
     }
-
     if (path === 'month-locks' && method === 'POST') {
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -567,14 +576,11 @@ export default async function handler(req: Request) {
         notes: r.notes,
       });
     }
-
     if (path.startsWith('month-locks/') && method === 'DELETE') {
       const yearMonth = decodeURIComponent(path.split('/')[1] || '');
       await sql`DELETE FROM month_locks WHERE year_month = ${yearMonth}`;
       return json({ ok: true });
     }
-
-    // ---------- vacation sync helpers ----------
     if (path === 'vacations/sync-attendance' && method === 'POST') {
       const b = await readBody<any>(req);
       const vacationId = Number(b.vacationId);
@@ -584,7 +590,6 @@ export default async function handler(req: Request) {
       const result = await syncVacationDays(sql, vac);
       return json({ ...result, status: vacationTypeToStatus(vac.vacation_type), vacationId });
     }
-
     if (path === 'vacations/clear-attendance' && method === 'POST') {
       const b = await readBody<any>(req);
       const vacationId = Number(b.vacationId);
@@ -592,8 +597,6 @@ export default async function handler(req: Request) {
       await sql`DELETE FROM attendance WHERE notes = ${marker} OR vacation_id = ${vacationId}`;
       return json({ ok: true, vacationId });
     }
-
-    // Backfill: sync all approved vacations that may be missing from sheet
     if (path === 'vacations/sync-all-approved' && method === 'POST') {
       const vacs = await sql`
         SELECT * FROM vacations
@@ -607,7 +610,6 @@ export default async function handler(req: Request) {
       }
       return json({ ok: true, count: results.length, results });
     }
-
     return json({ error: 'not_found', path, method }, 404);
   } catch (err: any) {
     console.error(err);

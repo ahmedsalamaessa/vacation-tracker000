@@ -1,0 +1,22 @@
+الموقع: https://vacation-tracker000.vercel.app
+GitHub: https://github.com/ahmedsalamaessa/vacation-tracker000
+Vercel: https://vercel.com/ahmed-salama1/vacation-tracker000
+Neon: https://console.neon.tech -> مشروع نظام الإجازات
+
+دخول النظام:
+admin / admin123
+
+Environment Variables على Vercel:
+DATABASE_URL = (رابط Neon)
+SESSION_SECRET = ahmed-vacation-secret-2026
+
+ملاحظات تقنية:
+- الاعتماد المفروض ينزّل الإجازة تلقائي في شيت الحضور.
+- متنزلش نفس الإجازة يدوي بعد الاعتماد (عشان متتدبلش).
+- آخر إصلاحات: sync أجهزة، password badge، auto vacation to sheet.
+
+Stack:
+- React + Vite + Tailwind (frontend)
+- Vercel Edge API في مجلد /api
+- Neon Postgres
+- باسورد الإعدادات الافتراضي: settings123

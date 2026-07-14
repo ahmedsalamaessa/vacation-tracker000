@@ -1,10 +1,8 @@
 import { neon } from '@neondatabase/serverless';
 
-
 function toDateOnly(v: any): string {
   if (v == null) return v as any;
   if (typeof v === 'string') {
-    // already yyyy-mm-dd or ISO
     return v.slice(0, 10);
   }
   try {

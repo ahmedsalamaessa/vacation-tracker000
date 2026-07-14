@@ -1,9 +1,6 @@
 -- نظام إدارة الإجازات • قسم المساحة
--- PostgreSQL schema for Neon
-
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ===================== employees =====================
 CREATE TABLE IF NOT EXISTS employees (
   id              SERIAL PRIMARY KEY,
   name            TEXT NOT NULL,
@@ -11,17 +8,14 @@ CREATE TABLE IF NOT EXISTS employees (
   job_title       TEXT,
   phone           TEXT,
   work_cycle      INTEGER NOT NULL DEFAULT 12,
-  cycle_type      TEXT NOT NULL DEFAULT 'graduated'
-                  CHECK (cycle_type IN ('fixed', 'variable', 'graduated')),
-  role            TEXT NOT NULL DEFAULT 'employee'
-                  CHECK (role IN ('admin', 'manager', 'employee')),
+  cycle_type      TEXT NOT NULL DEFAULT 'graduated' CHECK (cycle_type IN ('fixed', 'variable', 'graduated')),
+  role            TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('admin', 'manager', 'employee')),
   password        TEXT NOT NULL,
   manager_id      INTEGER REFERENCES employees(id) ON DELETE SET NULL,
   work_location_lat DOUBLE PRECISION,
   work_location_lng DOUBLE PRECISION,
   active          BOOLEAN NOT NULL DEFAULT TRUE,
   location_ids    INTEGER[] NOT NULL DEFAULT '{}',
-  -- permissions
   can_view_dashboard      BOOLEAN NOT NULL DEFAULT FALSE,
   can_check_in            BOOLEAN NOT NULL DEFAULT TRUE,
   can_view_my_account     BOOLEAN NOT NULL DEFAULT TRUE,
@@ -41,12 +35,6 @@ CREATE TABLE IF NOT EXISTS employees (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_employees_username ON employees(username);
-CREATE INDEX IF NOT EXISTS idx_employees_phone ON employees(phone);
-CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(active);
-CREATE INDEX IF NOT EXISTS idx_employees_role ON employees(role);
-
--- ===================== work_locations =====================
 CREATE TABLE IF NOT EXISTS work_locations (
   id              SERIAL PRIMARY KEY,
   name            TEXT NOT NULL,
@@ -59,7 +47,6 @@ CREATE TABLE IF NOT EXISTS work_locations (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ===================== attendance =====================
 CREATE TABLE IF NOT EXISTS attendance (
   id                  SERIAL PRIMARY KEY,
   employee_id         INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -76,10 +63,6 @@ CREATE TABLE IF NOT EXISTS attendance (
   UNIQUE (employee_id, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance(employee_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
-
--- ===================== vacations =====================
 CREATE TABLE IF NOT EXISTS vacations (
   id                    SERIAL PRIMARY KEY,
   employee_id           INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -97,10 +80,6 @@ CREATE TABLE IF NOT EXISTS vacations (
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_vacations_employee ON vacations(employee_id);
-CREATE INDEX IF NOT EXISTS idx_vacations_status ON vacations(status);
-
--- ===================== audit_logs =====================
 CREATE TABLE IF NOT EXISTS audit_logs (
   id              SERIAL PRIMARY KEY,
   actor_id        INTEGER,
@@ -121,9 +100,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
-
--- ===================== month_locks =====================
 CREATE TABLE IF NOT EXISTS month_locks (
   id              SERIAL PRIMARY KEY,
   year_month      TEXT NOT NULL UNIQUE,
@@ -133,7 +109,6 @@ CREATE TABLE IF NOT EXISTS month_locks (
   notes           TEXT
 );
 
--- ===================== check_in_attempts =====================
 CREATE TABLE IF NOT EXISTS check_in_attempts (
   id                      SERIAL PRIMARY KEY,
   employee_id             INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -152,14 +127,10 @@ CREATE TABLE IF NOT EXISTS check_in_attempts (
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_attempts_employee ON check_in_attempts(employee_id);
-CREATE INDEX IF NOT EXISTS idx_attempts_date ON check_in_attempts(date);
-
--- ===================== notifications =====================
 CREATE TABLE IF NOT EXISTS notifications (
   id              SERIAL PRIMARY KEY,
   type            TEXT NOT NULL,
-  title           TEXT NOT NULL,
+  title            TEXT NOT NULL,
   body            TEXT NOT NULL,
   employee_id     INTEGER,
   target_user_ids INTEGER[] NOT NULL DEFAULT '{}',
@@ -170,25 +141,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
-
--- ===================== settings (key-value) =====================
 CREATE TABLE IF NOT EXISTS settings (
   key             TEXT PRIMARY KEY,
   value           TEXT NOT NULL DEFAULT ''
 );
 
--- ===================== sessions (optional server sessions) =====================
 CREATE TABLE IF NOT EXISTS sessions (
   id              TEXT PRIMARY KEY,
   employee_id     INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expires_at      TIMESTAMPTZ NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_sessions_employee ON sessions(employee_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
-
--- ===================== seed defaults (run after tables exist) =====================
--- Note: admin password hash is set by seed script (admin123)
--- Locations Naya Bay / Beach 5 inserted by seed script

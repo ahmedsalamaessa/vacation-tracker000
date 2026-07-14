@@ -8,14 +8,14 @@ import {
   getVacations,
   getEmployees,
   refreshFromRemote,
-} from './lib/db';
-import { getManagedEmployees } from './lib/permissions';
+} from '../lib/db';
+import { getManagedEmployees } from '../lib/permissions';
 import {
   requestPermission,
   checkPendingVacations,
   isSupported as isNotifSupported,
-} from './lib/notifications';
-import type { Employee } from './lib/types';
+} from '../lib/notifications';
+import type { Employee } from '../lib/types';
 import LoginPage from './components/LoginPage';
 import CheckInTab from './components/CheckInTab';
 import TrackerTab from './components/TrackerTab';
@@ -69,6 +69,7 @@ interface TabDef {
     | 'canManageEmployees'
     | 'canManageSettings'
     | 'canManageLocations'
+    | 'canLockMonths'
     | 'canViewAuditLog'
   >;
 }
@@ -158,10 +159,10 @@ export default function App() {
 
   useEffect(() => {
     async function boot() {
-      const isFirstLoad = !localStorage.getItem('vacation_system_initialized_v4');
+      const isFirstLoad = !localStorage.getItem('vacation_system_initialized_v5');
       if (isFirstLoad) {
         await clearAllData();
-        localStorage.setItem('vacation_system_initialized_v4', 'true');
+        localStorage.setItem('vacation_system_initialized_v5', 'true');
       }
       await initializeData();
       const currentUser = getCurrentUser();
@@ -191,7 +192,6 @@ export default function App() {
     return () => clearInterval(t);
   }, [updatePendingCount, refreshKey]);
 
-  // Cross-device sync: pull Neon every 2 minutes while logged in
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -203,9 +203,7 @@ export default function App() {
         setRefreshKey(k => k + 1);
       }
     }
-    // first pull shortly after login/open
     const first = setTimeout(tick, 3000);
-    // user requested ~2 minutes auto refresh
     const t = setInterval(tick, 2 * 60 * 1000);
     return () => {
       cancelled = true;
@@ -396,7 +394,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       <header className="sticky top-0 z-50 shadow-sm border-b px-4 md:px-6 py-3 flex items-center justify-between bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-3">
           <button
@@ -427,7 +424,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSearchOpen(true)}
@@ -458,7 +454,6 @@ export default function App() {
           </button>
         </div>
       </header>
-
       {menuOpen && (
         <div
           className="fixed inset-0 z-[100] bg-slate-950/50"
@@ -512,7 +507,6 @@ export default function App() {
           </aside>
         </div>
       )}
-
       {searchOpen && (
         <div
           className="fixed inset-0 z-[300] bg-slate-950/50 p-4"
@@ -588,7 +582,6 @@ export default function App() {
           </div>
         </div>
       )}
-
       <main className="p-4 max-w-6xl mx-auto">
         {activeTab === 'dashboard' && hasAnyPerm && user.role !== 'employee' && (
           <DashboardTab user={user} onNavigate={t => setTab(t as TabKey)} />
@@ -640,9 +633,7 @@ export default function App() {
         {activeTab === 'locations' &&
           (user.role === 'admin' || user.canManageLocations) && <LocationsTab user={user} />}
         {activeTab === 'attempts' &&
-          (user.role === 'admin' || user.canViewAuditLog) && (
-            <CheckInAttemptsTab user={user} />
-          )}
+          (user.role === 'admin' || user.canViewAuditLog) && <CheckInAttemptsTab user={user} />}
         {activeTab === 'reports' &&
           (user.role === 'admin' || user.canViewReports || user.role === 'employee') && (
             <ReportsTab user={user} />
@@ -650,7 +641,6 @@ export default function App() {
         {activeTab === 'settings' &&
           (user.role === 'admin' || user.canManageSettings) && <SettingsTab />}
       </main>
-
       <footer className="mt-10 border-t px-4 py-8 text-center bg-white/70 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700">
         <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
           نظام إدارة الإجازات • قسم المساحة • 2026

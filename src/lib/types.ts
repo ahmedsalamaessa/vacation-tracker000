@@ -1,3 +1,14 @@
+import type {
+  Employee,
+  WorkLocation,
+  AttendanceRecord,
+  Vacation,
+  Settings,
+  AuditLog,
+  CheckInAttempt,
+  SystemNotification,
+} from './types';
+
 export interface Permissions {
   canViewDashboard?: boolean;
   canCheckIn?: boolean;

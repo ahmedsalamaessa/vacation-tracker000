@@ -165,19 +165,20 @@ export default async function handler(req: Request) {
           sql`SELECT key, value FROM settings`,
         ]);
 
-      let filteredEmployees = (employees as any[]).map(mapEmployee);
+      const allEmployees = (employees as any[]).map(mapEmployee).filter((e): e is any => e !== null);
+      let filteredEmployees = allEmployees;
       if (user.role === 'employee') {
-        filteredEmployees = filteredEmployees.filter(e => e.id === user.id);
+        filteredEmployees = allEmployees.filter(e => e.id === user.id);
       } else if (user.role === 'manager') {
         const userLocs = user.locationIds || [];
-        filteredEmployees = filteredEmployees.filter(e => 
-          e.id === user.id || (e.locationIds && e.locationIds.some(id => userLocs.includes(id)))
+        filteredEmployees = allEmployees.filter(e => 
+          e.id === user.id || (e.locationIds && e.locationIds.some((id: any) => userLocs.includes(id)))
         );
       }
 
       const empIds = new Set(filteredEmployees.map(e => e.id));
-      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter(a => empIds.has(a.employeeId));
-      const filteredVacations = (vacations as any[]).map(mapVacation).filter(v => empIds.has(v.employeeId));
+      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter(a => a && empIds.has(a.employeeId));
+      const filteredVacations = (vacations as any[]).map(mapVacation).filter(v => v && empIds.has(v.employeeId));
 
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
@@ -208,22 +209,23 @@ export default async function handler(req: Request) {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM employees ORDER BY id`;
-      let filteredRows = (rows as any[]);
+      const allEmps = (rows as any[]).map(mapEmployee).filter((e): e is any => e !== null);
+      let filteredRows = allEmps;
       if (user.role === 'employee') {
-        filteredRows = filteredRows.filter(r => r.id === user.id);
+        filteredRows = allEmps.filter(e => e.id === user.id);
       } else if (user.role === 'manager') {
         const userLocs = user.locationIds || [];
-        filteredRows = filteredRows.filter(r => 
-          r.id === user.id || (r.location_ids && r.location_ids.some((id: any) => userLocs.includes(id)))
+        filteredRows = allEmps.filter(e => 
+          e.id === user.id || (e.locationIds && e.locationIds.some((id: any) => userLocs.includes(id)))
         );
       }
       return json(
-        filteredRows.map(r => {
-          const e = mapEmployee(r) as any;
-          const hasPassword = Boolean(e.password);
-          e.hasPassword = hasPassword;
-          e.password = hasPassword ? '***' : '';
-          return e;
+        filteredRows.map(e => {
+          const emp = { ...e } as any;
+          const hasPassword = Boolean(emp.password);
+          emp.hasPassword = hasPassword;
+          emp.password = hasPassword ? '***' : '';
+          return emp;
         }),
       );
     }
@@ -251,8 +253,8 @@ export default async function handler(req: Request) {
         ) RETURNING *
       `;
       const e = mapEmployee(rows[0]) as any;
-      e.hasPassword = Boolean(e.password);
-      e.password = e.hasPassword ? '***' : '';
+      e.hasPassword = Boolean(e?.password);
+      e.password = e?.password ? '***' : '';
       return json(e, 201);
     }
     if (path.startsWith('employees/') && method === 'PUT') {
@@ -296,8 +298,8 @@ export default async function handler(req: Request) {
       `;
       if (!rows[0]) return json({ error: 'not_found' }, 404);
       const e = mapEmployee(rows[0]) as any;
-      e.hasPassword = Boolean(e.password);
-      e.password = e.hasPassword ? '***' : '';
+      e.hasPassword = Boolean(e?.password);
+      e.password = e?.password ? '***' : '';
       return json(e);
     }
     if (path.startsWith('employees/') && method === 'DELETE') {
@@ -306,7 +308,7 @@ export default async function handler(req: Request) {
       return json({ ok: true });
     }
     if (path === 'locations' && method === 'GET') {
-      const rows = await sql`SELECT * FROM work_locations ORDER BY id`;
+      const rows = await sql`SELECT * FROM work_locations ORDER by id`;
       return json((rows as any[]).map(mapLocation));
     }
     if (path === 'locations' && method === 'POST') {
@@ -353,7 +355,7 @@ export default async function handler(req: Request) {
         OR (location_ids && ${userLocs})
       `;
       const ids = new Set((empIds as any[]).map(r => r.id));
-      return json((rows as any[]).map(mapAttendance).filter(a => ids.has(a.employeeId)));
+      return json((rows as any[]).map(mapAttendance).filter(a => a && ids.has(a.employeeId)));
     }
     if (path === 'attendance' && method === 'POST') {
       const b = await readBody<any>(req);
@@ -402,7 +404,7 @@ export default async function handler(req: Request) {
         OR (location_ids && ${userLocs})
       `;
       const ids = new Set((empIds as any[]).map(r => r.id));
-      return json((rows as any[]).map(mapVacation).filter(v => ids.has(v.employeeId)));
+      return json((rows as any[]).map(mapVacation).filter(v => v && ids.has(v.employeeId)));
     }
     if (path === 'vacations' && method === 'POST') {
       const b = await readBody<any>(req);

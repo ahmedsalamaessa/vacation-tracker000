@@ -11,7 +11,7 @@ function pad(n: number) { return String(n).padStart(2, '0'); }
 const COLUMNS: { key: string; label: string; emoji: string; color: string }[] = [
   { key: 'حاضر', label: 'حاضر', emoji: '✅', color: 'text-green-600' },
   { key: 'سهر', label: 'سهر', emoji: '🏗️', color: 'text-indigo-600' },
-  { key: 'بدل سهرة', label: 'بدل سهرة', emoji: '🌙', color: 'text-cyan-600' },
+  { key: 'بدل سهرة', label: 'بدل سهرة', emoji: '🌙', color: 'text-indigo-700 font-black' },
   { key: 'عارضة حضور', label: 'عارضة حضور', emoji: '🟡', color: 'text-yellow-600' },
   { key: 'عارضة إجازة', label: 'عارضة إجازة', emoji: '⛱️', color: 'text-orange-600' },
   { key: 'إجازة مرضية', label: 'مرضي', emoji: '🤒', color: 'text-pink-600' },

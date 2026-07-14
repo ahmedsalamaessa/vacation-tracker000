@@ -156,7 +156,10 @@ export default function CheckInAttemptsTab({ user }: Props) {
   }
 
   function exportPdf() {
-    const bodyRows = filteredRows.map(row => `<tr><td>${row.employeeName}</td><td>${row.date}</td><td>${formatDateTime(row.createdAt)}</td><td>${row.status}</td><td>${row.success ? 'مقبولة' : 'مرفوضة'}</td><td>${row.acceptedLocationName || row.nearestLocationName || '—'}</td><td>${row.distanceMeters == null ? '—' :` ${row.distanceMeters}`}</td><td>${row.reason || '—'}</td></tr>`).join('');
+    const bodyRows = filteredRows.map(row => {
+      const displayStatus = (row.date.endsWith('-18') && row.status === 'اعتيادية') ? 'إجازة خاصة' : row.status;
+      return `<tr><td>${row.employeeName}</td><td>${row.date}</td><td>${formatDateTime(row.createdAt)}</td><td>${displayStatus}</td><td>${row.success ? 'مقبولة' : 'مرفوضة'}</td><td>${row.acceptedLocationName || row.nearestLocationName || '—'}</td><td>${row.distanceMeters == null ? '—' :` ${row.distanceMeters}`}</td><td>${row.reason || '—'}</td></tr>`;
+    }).join('');
     printHtml(`سجل البصمات ${yearMonth}${dayFilter ? ' - يوم ' + dayFilter : ''}`, `<table><thead><tr><th>الموظف</th><th>اليوم</th><th>الوقت</th><th>الحالة</th><th>النتيجة</th><th>الموقع</th><th>المسافة</th><th>السبب</th></tr></thead><tbody>${bodyRows}</tbody></table>`);
   }
 
@@ -225,7 +228,18 @@ export default function CheckInAttemptsTab({ user }: Props) {
                     </td>
                     <td className="border-b border-slate-100 p-3 font-bold text-slate-700">{row.date}</td>
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-500">{formatDateTime(row.createdAt)}</td>
-                    <td className="border-b border-slate-100 p-3"><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">{row.status}</span></td>
+                    <td className="border-b border-slate-100 p-3">
+                      <span className={`rounded-full px-2 py-1 text-xs font-black transition-all ${
+                        row.status === 'بدل سهرة' || row.status === 'سهرة'
+                          ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300 shadow-sm animate-pulse' 
+                          : 'bg-blue-50 text-blue-700'
+                      }`}>
+                        { (row.status === 'بدل سهرة' || row.status === 'سهرة') ? '🌙 ' : ''}
+                        { (row.date.endsWith('-18') && (row.status === 'اعتيادية' || row.status === 'إجازة اعتيادية')) 
+                          ? 'إجازة خاصة' 
+                          : row.status }
+                      </span>
+                    </td>
                     <td className="border-b border-slate-100 p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${row.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{row.success ? '✅ مقبولة' : '❌ مرفوضة'}</span></td>
                     <td className="border-b border-slate-100 p-3 font-bold text-sm">{row.acceptedLocationName || row.nearestLocationName || <span className="text-slate-400 text-[10px]">(حضور يدوي)</span>}</td>
                     <td className="border-b border-slate-100 p-3 font-bold">{row.distanceMeters == null ? <span className="text-slate-400">—</span> : <span className="text-emerald-700">{row.distanceMeters}م</span>}</td>

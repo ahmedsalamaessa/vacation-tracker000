@@ -227,7 +227,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-500">{formatDateTime(row.createdAt)}</td>
                     <td className="border-b border-slate-100 p-3"><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">{row.status}</span></td>
                     <td className="border-b border-slate-100 p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${row.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{row.success ? '✅ مقبولة' : '❌ مرفوضة'}</span></td>
-                    <td className="border-b border-slate-100 p-3 font-bold text-sm">{row.acceptedLocationName || row.nearestLocationName || <span className="text-slate-400 text-[10px]>(حضور يدوي)</span>}</td>
+                    <td className="border-b border-slate-100 p-3 font-bold text-sm">{row.acceptedLocationName || row.nearestLocationName || <span className="text-slate-400 text-[10px]">(حضور يدوي)</span>}</td>
                     <td className="border-b border-slate-100 p-3 font-bold">{row.distanceMeters == null ? <span className="text-slate-400">—</span> : <span className="text-emerald-700">{row.distanceMeters}م</span>}</td>
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-600">{row.reason || '—'}</td>
                     <td className="border-b border-slate-100 p-3">{row.lat != null && row.lng != null ? (<a href={`https://www.google.com/maps?q=${row.lat},${row.lng}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100">🗺️</a>) : <span className="text-slate-400">—</span>}</td>
@@ -241,4 +241,3 @@ export default function CheckInAttemptsTab({ user }: Props) {
     </section>
   );
 }
-```

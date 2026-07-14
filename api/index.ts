@@ -165,7 +165,7 @@ export default async function handler(req: Request) {
           sql`SELECT key, value FROM settings`,
         ]);
 
-      let filteredEmployees = (employees as any[]).map(mapEmployee);
+      let filteredEmployees = (employees as any[]).map(mapEmployee).filter((e): e is Employee => e !== null);
       if (user.role === 'employee') {
         filteredEmployees = filteredEmployees.filter(e => e.id === user.id);
       } else if (user.role === 'manager') {
@@ -176,21 +176,22 @@ export default async function handler(req: Request) {
       }
 
       const empIds = new Set(filteredEmployees.map(e => e.id));
-      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter(a => empIds.has(a.employeeId));
-      const filteredVacations = (vacations as any[]).map(mapVacation).filter(v => empIds.has(v.employeeId));
+      const filteredAttendance = (attendance as any[]).map(mapAttendance).filter((a): a is AttendanceRecord => a !== null && empIds.has(a.employeeId));
+      const filteredVacations = (vacations as any[]).map(mapVacation).filter((v): v is Vacation => v !== null && empIds.has(v.employeeId));
 
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
 
       return json({
-        employees: filteredEmployees.map((e: any) => {
-          const { password, ...rest } = e;
+        employees: filteredEmployees.map((e) => {
+          const empAny = e as any;
+          const { password, ...rest } = empAny;
           return { ...rest, hasPassword: Boolean(password), password: password ? '***' : '' };
         }),
-        locations: (locations as any[]).map(mapLocation),
+        locations: (locations as any[]).map(mapLocation).filter(Boolean),
         attendance: filteredAttendance,
         vacations: filteredVacations,
-        auditLogs: (auditLogs as any[]).map(mapAudit),
+        auditLogs: (auditLogs as any[]).map(mapAudit).filter(Boolean),
         monthLocks: (monthLocks as any[]).map((r: any) => ({
           id: r.id,
           yearMonth: r.year_month,
@@ -199,8 +200,8 @@ export default async function handler(req: Request) {
           lockedAt: r.locked_at,
           notes: r.notes,
         })),
-        checkInAttempts: (attempts as any[]).map(mapAttempt),
-        notifications: (notifications as any[]).map(mapNotification),
+        checkInAttempts: (attempts as any[]).map(mapAttempt).filter(Boolean),
+        notifications: (notifications as any[]).map(mapNotification).filter(Boolean),
         settings,
       });
     }
@@ -219,12 +220,14 @@ export default async function handler(req: Request) {
       }
       return json(
         filteredRows.map(r => {
-          const e = mapEmployee(r) as any;
-          const hasPassword = Boolean(e.password);
-          e.hasPassword = hasPassword;
-          e.password = hasPassword ? '***' : '';
-          return e;
-        }),
+          const e = mapEmployee(r);
+          if (!e) return null;
+          const employee = e as any;
+          const hasPassword = Boolean(employee.password);
+          employee.hasPassword = hasPassword;
+          employee.password = hasPassword ? '***' : '';
+          return employee;
+        }).filter(Boolean),
       );
     }
     if (path === 'employees' && method === 'POST') {
@@ -345,7 +348,7 @@ export default async function handler(req: Request) {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM attendance ORDER BY date DESC, id DESC`;
-      if (user.role === 'admin') return json((rows as any[]).map(mapAttendance));
+      if (user.role === 'admin') return json((rows as any[]).map(mapAttendance).filter(Boolean));
       const userLocs = user.locationIds || [];
       const empIds = await sql`
         SELECT id FROM employees 
@@ -394,7 +397,7 @@ export default async function handler(req: Request) {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM vacations ORDER BY created_at DESC`;
-      if (user.role === 'admin') return json((rows as any[]).map(mapVacation));
+      if (user.role === 'admin') return json((rows as any[]).map(mapVacation).filter(Boolean));
       const userLocs = user.locationIds || [];
       const empIds = await sql`
         SELECT id FROM employees 
@@ -469,7 +472,7 @@ export default async function handler(req: Request) {
     }
     if (path === 'check-in-attempts' && method === 'GET') {
       const rows = await sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 2000`;
-      return json((rows as any[]).map(mapAttempt));
+      return json((rows as any[]).map(mapAttempt).filter(Boolean));
     }
     if (path === 'check-in-attempts' && method === 'POST') {
       const b = await readBody<any>(req);
@@ -489,7 +492,7 @@ export default async function handler(req: Request) {
     }
     if (path === 'audit-logs' && method === 'GET') {
       const rows = await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`;
-      return json((rows as any[]).map(mapAudit));
+      return json((rows as any[]).map(mapAudit).filter(Boolean));
     }
     if (path === 'audit-logs' && method === 'POST') {
       const b = await readBody<any>(req);
@@ -511,7 +514,7 @@ export default async function handler(req: Request) {
       const rows = userId
         ? await sql`SELECT * FROM notifications WHERE ${userId} = ANY(target_user_ids) ORDER BY created_at DESC LIMIT 200`
         : await sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 200`;
-      return json((rows as any[]).map(mapNotification));
+      return json((rows as any[]).map(mapNotification).filter(Boolean));
     }
     if (path === 'notifications' && method === 'POST') {
       const b = await readBody<any>(req);

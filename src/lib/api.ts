@@ -17,9 +17,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers,
   });
 
+  // الإصلاح هنا: مسح الجلسة فقط بدون عمل reload للصفحة
   if (res.status === 401) {
     localStorage.removeItem('vsys_session_id');
-    window.location.reload();
     throw new Error('unauthorized');
   }
 

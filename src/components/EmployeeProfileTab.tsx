@@ -31,7 +31,6 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
 
   const c = (s: string) => att.filter(r => r.status === s).length;
   
-  // استخدام balanceData (بحرف b صغير) في كل مكان لضمان عدم حدوث خطأ
   const balanceData = calculateEmployeeBalance(att, vac);
   
   const saharEarned = c('سهر'); 
@@ -43,7 +42,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 
   function printPdf() {
-    printHtml`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>حضور</th><td>${balanceData.totalPresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>مأخوذة</th><td>${balanceData.taken}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
+    printHtml(`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>حضور</th><td>${balanceData.totalPresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>مأخوذة</th><td>${balanceData.taken}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
   }
 
   const stats = [

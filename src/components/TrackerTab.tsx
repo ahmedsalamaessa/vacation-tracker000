@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
 import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
 import type { Employee } from '../lib/types';
+import VacationStagesTable from './VacationStagesTable';
 
 export default function TrackerTab({ user, refreshKey }: { user: Employee; refreshKey: number }) {
   const [locFilter, setLocFilter] = useState<string>('all');
@@ -48,6 +49,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
         </div>
         <button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm">تحديث 🔄</button>
       </div>
+
+      <VacationStagesTable />
 
       <div className="grid gap-6">
         {employees.map(emp => {

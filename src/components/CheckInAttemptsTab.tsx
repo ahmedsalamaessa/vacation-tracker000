@@ -1,3 +1,20 @@
+لقد وجدت المشكلة تماماً في ملف `CheckInAttemptsTab.tsx`.
+
+### سبب المشكلة:
+الكود الحالي يعتمد على "مصدر" البيانات فقط:
+*   إذا كانت البيانات قادمة من جدول المحاولات $\rightarrow$ يكتب **"📡 محاولة"**.
+*   إذا كانت البيانات قادمة من جدول الحضور (وهو ما يحدث عند اعتماد البصمة) $\rightarrow$ يكتب **"📋 حضور يدوي"** بشكل تلقائي، حتى لو كان السجل يحتوي على موقع ومسافة (GPS).
+
+### الحل الذي سأقوم به (بدون حذف أي بيانات):
+سأقوم بتغيير "المنطق" ليصبح ذكياً، بحيث يفحص السجل أولاً:
+1.  إذا وجد **اسم موقع** أو **مسافة** $\rightarrow$ يكتب **"📡 بصمة GPS"**.
+2.  إذا لم يجد أي بيانات GPS $\rightarrow$ يكتب **"📋 حضور يدوي"**.
+
+هذا التعديل سيجعل الجدول يظهر الحقيقة: من بصم عن طريق الموبايل سيظهر له "بصمة GPS"، ومن أدخله المدير يدوياً سيظهر له "حضور يدوي".
+
+إليك الكود المعدل لملف **`src/components/CheckInAttemptsTab.tsx`**. قم بنسخه واستبداله بالكامل في GitHub:
+
+```typescript
 import { useEffect, useMemo, useState } from 'react';
 import { exportToCSV } from '../lib/export';
 import { printHtml } from '../lib/pdf';
@@ -16,7 +33,7 @@ interface CombinedRow {
   id: string;
   employeeId: number;
   employeeName: string;
-  employeeLocationIds: number[]; // 🆕 مواقع الموظف المربوط بها
+  employeeLocationIds: number[];
   date: string;
   status: string;
   success: boolean;
@@ -36,7 +53,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
   const now = new Date();
   const [allRows, setAllRows] = useState<CombinedRow[]>([]);
   const [employees, setEmployeesState] = useState<Employee[]>([]);
-  const [locations, setLocationsState] = useState<{ id: number; name: string }[]>([]); // 🆕 تغيير النوع
+  const [locations, setLocationsState] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -52,8 +69,9 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const attendance = getAttendance();
     const emps = user ? getManagedEmployees(user) : getEmployees().filter(e => e.active);
     setEmployeesState(emps);
+
     const empMap = new Map<number, string>();
-    const empLocationMap = new Map<number, number[]>(); // 🆕 خريطة الموظف ← مواقعه
+    const empLocationMap = new Map<number, number[]>();
     getEmployees().forEach(e => {
       empMap.set(e.id, e.name);
       empLocationMap.set(e.id, e.locationIds || []);
@@ -64,23 +82,51 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const filteredAttendance = attendance.filter(a => managedIds.has(a.employeeId));
 
     const attemptRows: CombinedRow[] = filteredAttempts.map(a => ({
-      id: `attempt-${a.id}`, employeeId: a.employeeId, employeeName: a.employeeName || empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
-      employeeLocationIds: empLocationMap.get(a.employeeId) || [], // 🆕
-      date: a.date, status: a.status || '—', success: a.success, reason: a.reason, lat: a.lat, lng: a.lng,
-      nearestLocationName: a.nearestLocationName, acceptedLocationName: a.acceptedLocationName, distanceMeters: a.distanceMeters, createdAt: a.createdAt, source: 'attempt',
+      id: `attempt-${a.id}`, 
+      employeeId: a.employeeId, 
+      employeeName: a.employeeName || empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
+      employeeLocationIds: empLocationMap.get(a.employeeId) || [],
+      date: a.date, 
+      status: a.status || '—', 
+      success: a.success, 
+      reason: a.reason, 
+      lat: a.lat, 
+      lng: a.lng,
+      nearestLocationName: a.nearestLocationName, 
+      acceptedLocationName: a.acceptedLocationName, 
+      distanceMeters: a.distanceMeters, 
+      createdAt: a.createdAt, 
+      source: 'attempt',
     }));
+
     const attendanceRows: CombinedRow[] = filteredAttendance.map(a => ({
-      id: `attendance-${a.id}`, employeeId: a.employeeId, employeeName: empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
-      employeeLocationIds: empLocationMap.get(a.employeeId) || [], // 🆕
-      date: a.date, status: a.status, success: true, reason: 'حضور محفوظ', lat: a.checkInLat ?? null, lng: a.checkInLng ?? null,
-      nearestLocationName: null, acceptedLocationName: a.workLocationName ?? null, distanceMeters: a.distanceMeters ?? null, createdAt: a.createdAt, source: 'attendance',
+      id: `attendance-${a.id}`, 
+      employeeId: a.employeeId, 
+      employeeName: empMap.get(a.employeeId) || 'موظف #' + a.employeeId,
+      employeeLocationIds: empLocationMap.get(a.employeeId) || [],
+      date: a.date, 
+      status: a.status, 
+      success: true, 
+      // تعديل السبب هنا: إذا كان هناك موقع، فهو حضور بصمة وليس يدوي
+      reason: (a.workLocationName || a.distanceMeters != null) ? 'بصمة GPS' : 'حضور محفوظ', 
+      lat: a.checkInLat ?? null, 
+      lng: a.checkInLng ?? null,
+      nearestLocationName: null, 
+      acceptedLocationName: a.workLocationName ?? null, 
+      distanceMeters: a.distanceMeters ?? null, 
+      createdAt: a.createdAt, 
+      source: 'attendance',
     }));
+
     const attemptKeys = new Set(attemptRows.filter(r => r.success).map(r => `${r.employeeId}_${r.date}_${r.status}`));
-    const uniqueAttendanceRows = attendanceRows.filter(r => { const key = `${r.employeeId}_${r.date}_${r.status}`; return !attemptKeys.has(key); });
+    const uniqueAttendanceRows = attendanceRows.filter(r => { 
+      const key = `${r.employeeId}_${r.date}_${r.status}`; 
+      return !attemptKeys.has(key); 
+    });
+
     const combined = [...attemptRows, ...uniqueAttendanceRows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setAllRows(combined);
 
-    // 🆕 تحميل المواقع بـ id + name
     try {
       const allLocations = getLocations();
       const locsList = allLocations
@@ -89,7 +135,6 @@ export default function CheckInAttemptsTab({ user }: Props) {
         .sort((a, b) => a.name.localeCompare(b.name));
       setLocationsState(locsList);
     } catch (e) {}
-
     setLoading(false);
   }
 
@@ -107,19 +152,12 @@ export default function CheckInAttemptsTab({ user }: Props) {
     const matchesMonth = row.date?.startsWith(yearMonth);
     const matchesDay = !dayFilter || row.date === `${yearMonth}-${String(dayFilter).padStart(2, '0')}`;
     
-    // 🆕 فلترة الموقع الذكية:
-    // 1. لو السجل فيه اسم موقع → قارن بالاسم
-    // 2. لو السجل مفيهوش موقع (حضور يدوي) → قارن بمواقع الموظف
     const matchesLocation = !locationFilter || (() => {
       const selectedLoc = locations.find(l => String(l.id) === locationFilter);
       if (!selectedLoc) return true;
-      
-      // لو السجل فيه اسم موقع، قارن بالاسم
       if (row.acceptedLocationName || row.nearestLocationName) {
         return row.acceptedLocationName === selectedLoc.name || row.nearestLocationName === selectedLoc.name;
       }
-      
-      // لو مفيش موقع (حضور يدوي)، شوف الموظف مربوط بالموقع ده ولا لأ
       return row.employeeLocationIds.includes(selectedLoc.id);
     })();
     
@@ -136,7 +174,7 @@ export default function CheckInAttemptsTab({ user }: Props) {
   }
 
   function exportPdf() {
-    const bodyRows = filteredRows.map(row => `<tr><td>${row.employeeName}</td><td>${row.date}</td><td>${formatDateTime(row.createdAt)}</td><td>${row.status}</td><td>${row.success ? 'مقبولة' : 'مرفوضة'}</td><td>${row.acceptedLocationName || row.nearestLocationName || '—'}</td><td>${row.distanceMeters == null ? '—' : `${row.distanceMeters}م`}</td><td>${row.reason || '—'}</td></tr>`).join('');
+    const bodyRows = filteredRows.map(row => `<tr><td>${row.employeeName}</td><td>${row.date}</td><td>${formatDateTime(row.createdAt)}</td><td>${row.status}</td><td>${row.success ? 'مقبولة' : 'مرفوضة'}</td><td>${row.acceptedLocationName || row.nearestLocationName || '—'}</td><td>${row.distanceMeters == null ? '—' :` ${row.distanceMeters}`}</td><td>${row.reason || '—'}</td></tr>`).join('');
     printHtml(`سجل البصمات ${yearMonth}${dayFilter ? ' - يوم ' + dayFilter : ''}`, `<table><thead><tr><th>الموظف</th><th>اليوم</th><th>الوقت</th><th>الحالة</th><th>النتيجة</th><th>الموقع</th><th>المسافة</th><th>السبب</th></tr></thead><tbody>${bodyRows}</tbody></table>`);
   }
 
@@ -152,7 +190,6 @@ export default function CheckInAttemptsTab({ user }: Props) {
           </div>
           <button onClick={load} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700">🔄 تحديث</button>
         </div>
-
         <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="mb-3 text-sm font-black text-slate-700">🔍 فلاتر</div>
           <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-7">
@@ -178,20 +215,17 @@ export default function CheckInAttemptsTab({ user }: Props) {
               <option value="success">✅ مقبولة</option>
               <option value="failed">❌ مرفوضة</option>
             </select>
-            {/* 🆕 فلتر المواقع بـ id بدل name */}
             <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value="">📍 كل المواقع</option>
               {locations.map(loc => (<option key={loc.id} value={loc.id}>{loc.name}</option>))}
             </select>
           </div>
         </div>
-
         <div className="mb-4 flex flex-wrap gap-2">
           <button onClick={exportPdf} className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700">🖨️ PDF</button>
           <button onClick={exportCsv} className="rounded-xl bg-green-600 px-4 py-2 text-xs font-black text-white hover:bg-green-700">📥 CSV</button>
           <span className="rounded-xl bg-blue-50 px-4 py-2 text-xs font-black text-blue-700">النتائج: {filteredRows.length}</span>
         </div>
-
         {loading ? (<div className="py-10 text-center text-slate-500 font-bold">جاري التحميل...</div>) : filteredRows.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 p-8 text-center"><div className="text-4xl mb-3">📭</div><div className="font-black text-slate-700 text-lg">لا توجد سجلات</div></div>
         ) : (
@@ -201,7 +235,12 @@ export default function CheckInAttemptsTab({ user }: Props) {
               <tbody>
                 {filteredRows.map(row => (
                   <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="border-b border-slate-100 p-3 text-right"><div className="font-black text-slate-900">{row.employeeName}</div><div className="text-[10px] font-bold text-slate-400">{row.source === 'attempt' ? '📡 محاولة' : '📋 حضور يدوي'}</div></td>
+                    <td className="border-b border-slate-100 p-3 text-right">
+                      <div className="font-black text-slate-900">{row.employeeName}</div>
+                      <div className="text-[10px] font-bold text-slate-400">
+                        {row.source === 'attempt' ? '📡 محاولة' : (row.acceptedLocationName || row.distanceMeters != null ? '📡 بصمة GPS' : '📋 حضور يدوي')}
+                      </div>
+                    </td>
                     <td className="border-b border-slate-100 p-3 font-bold text-slate-700">{row.date}</td>
                     <td className="border-b border-slate-100 p-3 text-xs font-bold text-slate-500">{formatDateTime(row.createdAt)}</td>
                     <td className="border-b border-slate-100 p-3"><span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">{row.status}</span></td>
@@ -220,3 +259,4 @@ export default function CheckInAttemptsTab({ user }: Props) {
     </section>
   );
 }
+```

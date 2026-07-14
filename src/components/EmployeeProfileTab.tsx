@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { printHtml } from '../lib/pdf';
 import { getEmployeeById, getAttendance, getVacations, getCheckInAttempts, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance'; 
+import { calculateEmployeeBalance } from '../lib/balance'; 
 import type { Employee, AttendanceRecord, Vacation, CheckInAttempt } from '../lib/types';
 
 function fmtDt(v: string | null | undefined) {
@@ -30,18 +30,34 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   if (!emp) return <div className="p-10 text-center font-bold text-red-600">الموظف غير موجود<br /><button onClick={onBack} className="mt-4 bg-slate-900 text-white px-5 py-2 rounded-xl text-sm font-black">رجوع</button></div>;
 
   const c = (s: string) => att.filter(r => r.status === s).length;
+  
+  // استخدام balanceData (بحرف b صغير) في كل مكان لضمان عدم حدوث خطأ
   const balanceData = calculateEmployeeBalance(att, vac);
+  
   const saharEarned = c('سهر'); 
-  const saharSpentAttendance = c('بدل سهرة'); 
-  const saharSpentVacations = sumApprovedByTypes(vac, ['سهرة']);
-  const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
-  const finalBalance = balanceData.earned + saharBal;
+  const saharSpent = c('بدل سهرة'); 
+  const saharBal = Math.max(0, saharEarned - saharSpent);
+
+  const finalBalance = (balanceData.earned - balanceData.taken) + saharBal;
 
   const initials = emp.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 
   function printPdf() {
-    printHtml(`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>الأيام الفعلية</th><td>${balanceData.effectivePresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
+    printHtml`ملف الموظف - ${emp!.name}`, `<h2>بيانات الموظف</h2><table><tbody><tr><th>الاسم</th><td>${emp!.name}</td></tr><tr><th>الوظيفة</th><td>${emp!.jobTitle || '—'}</td></tr><tr><th>الهاتف</th><td>${emp!.phone || '—'}</td></tr><tr><th>المواقع</th><td>${locNames.join('، ') || '—'}</td></tr></tbody></table><h2>الإحصائيات</h2><table><tbody><tr><th>حضور</th><td>${balanceData.totalPresent}</td></tr><tr><th>مستحقة</th><td>${balanceData.earned}</td></tr><tr><th>مأخوذة</th><td>${balanceData.taken}</td></tr><tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr><tr><th>سهرة</th><td>${saharBal}</td></tr><tr><th>غياب</th><td>${c('غياب')}</td></tr></tbody></table>`);
   }
+
+  const stats = [
+    { l: 'إجمالي الحضور', v: balanceData.totalPresent, bg: 'bg-blue-50 border-blue-200', tc: 'text-blue-700' },
+    { l: 'إجازات مستحقة', v: balanceData.earned, bg: 'bg-green-50 border-green-200', tc: 'text-green-600' },
+    { l: 'إجازات مأخوذة', v: balanceData.taken, bg: 'bg-orange-50 border-orange-100', tc: 'text-orange-700' },
+    { l: 'صافي الرصيد المتاح', v: finalBalance, bg: finalBalance < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-200', tc: finalBalance < 0 ? 'text-red-700' : 'text-emerald-600' },
+    { l: 'بدل السهرة', v: saharBal, bg: 'bg-cyan-50 border-cyan-200', tc: 'text-cyan-600' },
+  ];
+
+  const extra = [
+    { l: 'غياب', v: c('غياب'), e: '❌' }, { l: 'مرضي', v: c('إجازة مرضية'), e: '🤒' },
+    { l: 'رسمية', v: c('إجازة رسمية'), e: '🏛️' }, { l: 'بدون مرتب', v: c('بدون مرتب'), e: '💰' },
+  ];
 
   return (
     <div className="space-y-5">
@@ -66,29 +82,24 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
         </div>
       </section>
 
-      <section className="grid gap-3 grid-cols-2 md:grid-cols-4">
-        <div className="rounded-2xl border p-4 text-center bg-blue-50/50 border-blue-100">
-          <div className="text-xs font-bold text-slate-500">الدورات</div>
-          <div className="mt-1 text-3xl font-black text-blue-700">{(emp as any).courses || 0}</div>
-        </div>
-        <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-100">
-          <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
-          <div className="mt-1 text-3xl font-black text-blue-700">{balanceData.effectivePresent}</div>
-        </div>
-        <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-100">
-          <div className="text-xs font-bold text-slate-500">مستحقة</div>
-          <div className="mt-1 text-3xl font-black text-green-700">{balanceData.earned}</div>
-        </div>
-        <div className={`rounded-2xl border p-4 text-center ${finalBalance < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
-          <div className="text-xs font-bold text-slate-500">صافي الرصيد المتاح</div>
-          <div className={`mt-1 text-3xl font-black ${finalBalance < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{finalBalance}</div>
-        </div>
+      <section className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        {stats.map((s, i) => (
+          <div key={i} className={`rounded-2xl border p-4 text-center ${s.bg}`}>
+            <div className="text-xs font-bold text-slate-500">{s.l}</div>
+            <div className={`mt-1 text-3xl font-black ${s.tc}`}>{s.v}</div>
+          </div>
+        ))}
       </section>
 
-      <div className="flex justify-between items-center px-6 py-2">
-        <div className="text-xs font-bold text-blue-600">{saharBal} يوم</div>
-        <div className="text-xs font-bold text-slate-400">بدل السهرة:</div>
-      </div>
+      <section className="grid gap-3 grid-cols-2 md:grid-cols-4">
+        {extra.map((s, i) => (
+          <div key={i} className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
+            <div className="text-2xl mb-1">{s.e}</div>
+            <div className="text-xs font-bold text-slate-500">{s.l}</div>
+            <div className="text-2xl font-black text-slate-800">{s.v}</div>
+          </div>
+        ))}
+      </section>
 
       <section className="grid gap-5 md:grid-cols-2">
         <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">

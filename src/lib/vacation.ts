@@ -11,9 +11,18 @@ export interface GraduatedResult {
 export function earnedVacationDaysForWorkDays(workDays: number): number {
   const days = Math.max(0, Math.floor(workDays));
   if (days <= 0) return 0;
-  if (days <= 12) return Math.floor(days / 4);
-  if (days <= 18) return Math.floor(days / 4.5);
-  return Math.floor(days / 5);
+  
+  if (days <= 12) {
+    return Math.floor(days / 4);
+  }
+  
+  if (days <= 18) {
+    // الموظف اجتاز المرحلة الأولى، لذا لا يمكن أن يقل رصيده عن 3 أيام
+    return Math.max(3, Math.floor(days / 4.5));
+  }
+  
+  // الموظف اجتاز المرحلة الثانية، لذا لا يمكن أن يقل رصيده عن 4 أيام
+  return Math.max(4, Math.floor(days / 5));
 }
 
 function getStage(workDays: number): { stage: number; label: string; divisor: number } {

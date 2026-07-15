@@ -1,49 +1,70 @@
+// ============================================================
+// 🎯 حساب رصيد الموظف (النسخة النهائية)
+// ============================================================
+// - المستحقة = من الحضور بالمعادلة المتدرجة
+// - المأخوذة = فقط الإجازات اللي تخصم من الرصيد
+// - المتاح = المستحقة - المأخوذة
+// ============================================================
+
 import type { AttendanceRecord, Vacation } from './types';
 import { computeGraduatedVacation } from './vacation';
 
+// حالات الإجازات المعتمدة
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
-const DEDUCT_VACATION_TYPES = new Set(['نظامية', 'اعتيادية', 'إجازة اعتيادية', 'عارضة', 'عارضة إجازة', 'إجازة عارضة']);
-const DEDUCT_ATTENDANCE_STATUSES = new Set(['عارضة إجازة', 'إجازة عارضة', 'إجازة اعتيادية']);
 
+// 🎯 أنواع الإجازات اللي تخصم من الرصيد المستحق (من طلبات الإجازات)
+const DEDUCT_VACATION_TYPES = new Set([
+  'اعتيادية',
+  'إجازة اعتيادية',
+  'عارضة',
+  'عارضة إجازة',
+  'إجازة عارضة',
+]);
+
+// 🎯 حالات الإجازة في شيت الحضور اللي تخصم من الرصيد
+const DEDUCT_ATTENDANCE_STATUSES = new Set([
+  'عارضة إجازة',
+  'إجازة عارضة',
+  'إجازة اعتيادية',
+]);
+
+/**
+ * التحقق من كون سجل الحضور تم إنشاؤه تلقائياً من إجازة معتمدة
+ */
 function isAutoVacationAttendance(record: AttendanceRecord) {
   return Boolean(record.notes?.startsWith('AUTO_VACATION:') || record.vacationId);
 }
 
-export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // 1. تحديد الأيام التي تم أخذها كـ "بدل سهرة" من الطلبات المعتمدة لكي لا نخصمها كإجازة عمل
-  const saharVacationDates = new Set(
-    vacations
-      .filter(v => APPROVED.has(v.status) && (v.vacationType || '').includes('سهرة'))
-      .flatMap(v => {
-        const start = new Date(v.startDate);
-        const end = new Date(v.endDate);
-        const dates = [];
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          dates.push(d.toISOString().split('T')[0]);
-        }
-        return dates;
-      })
-  );
+/**
+ * حساب عدد أيام الإجازات المأخوذة (اللي تخصم من الرصيد فقط)
+ */
+export function getVacationDaysTaken(
+  attendance: AttendanceRecord[],
+  vacations: Vacation[]
+): number {
+  // 1️⃣ عدد الأيام في شيت الحضور اللي حالتها إجازة مخصومة
+  //    (لكن ليس اللي أضيفت تلقائياً من طلب معتمد - عشان مانحسبش مرتين)
+  const manualSheetDeduct = attendance.filter(r => {
+    const isDeductType = DEDUCT_ATTENDANCE_STATUSES.has(r.status);
+    const isNotAuto = !isAutoVacationAttendance(r);
+    return isDeductType && isNotAuto;
+  }).length;
 
-  // 2. خصم الإجازات من شيت الحضور (بشرط ألا تكون هذه الإجازة هي "بدل سهرة" معتمد)
-  const manualSheetDeduct = attendance
-    .filter(r => {
-      const isDeductType = DEDUCT_ATTENDANCE_STATUSES.has(r.status);
-      const isNotAuto = !isAutoVacationAttendance(r);
-      const isNotSaharVacation = !saharVacationDates.has(r.date);
-      return isDeductType && isNotAuto && isNotSaharVacation;
-    })
-    .length;
-
-  // 3. خصم الإجازات من الطلبات المعتمدة (التي ليست بدل سهرة)
+  // 2️⃣ عدد الأيام من طلبات الإجازات المعتمدة (اللي تخصم)
   const approvedRequestDeduct = vacations
-    .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
+    .filter(v => 
+      APPROVED.has(v.status) && 
+      DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية')
+    )
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
 
   return manualSheetDeduct + approvedRequestDeduct;
 }
 
-export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
+/**
+ * حساب مجموع أيام الإجازات المعتمدة من نوع معين
+ */
+export function sumApprovedByTypes(vacations: Vacation[], types: string[]): number {
   return vacations
     .filter(v => {
       const statusOk = APPROVED.has(v.status);
@@ -53,18 +74,35 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
 }
 
-export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  const totalPresent = attendance.filter(r => ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)).length;
+/**
+ * 🎯 الدالة الرئيسية لحساب رصيد الموظف
+ */
+export function calculateEmployeeBalance(
+  attendance: AttendanceRecord[],
+  vacations: Vacation[]
+) {
+  // 1️⃣ إجمالي أيام الحضور الفعلي
+  const totalPresent = attendance.filter(r => 
+    ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
+  ).length;
+  
+  // 2️⃣ حساب المستحقة من المعادلة المتدرجة (بدون خصم)
+  const result = computeGraduatedVacation(totalPresent);
+  const earned = result.earned;
+  
+  // 3️⃣ حساب المأخوذة (اللي تخصم من الرصيد فقط)
   const taken = getVacationDaysTaken(attendance, vacations);
-  const result = computeGraduatedVacation(totalPresent, taken);
+  
+  // 4️⃣ الرصيد المتاح = المستحقة - المأخوذة
+  const netBalance = earned - taken;
   
   return {
     totalPresent,
+    effectivePresent: totalPresent,
+    earned,
     taken,
-    earned: result.earned,
-    effectivePresent: result.effectivePresent,
-    consumedWorkDays: result.consumedWorkDays,
+    netBalance,
+    consumedWorkDays: 0,
     stageLabel: result.stageLabel,
-    netBalance: result.earned
   };
 }

@@ -1,5 +1,5 @@
 // ============================================================
-// 🎯 معادلة حساب الإجازات المتدرجة
+// 🎯 معادلة حساب الإجازات المتدرجة (النسخة النهائية)
 // ============================================================
 // المرحلة 1: حضور 1-12 يوم  → ÷ 4  (تقريب لأسفل)
 // المرحلة 2: حضور 13-18 يوم → ÷ 4.5 (تقريب لأسفل، حد أدنى 3)
@@ -28,14 +28,12 @@ export function earnedVacationDaysForWorkDays(workDays: number): number {
     return Math.floor(days / 4);
   }
 
-  // المرحلة الثانية: 13 إلى 18 يوم
-  // بحد أدنى 3 (لأنه اجتاز المرحلة الأولى)
+  // المرحلة الثانية: 13 إلى 18 يوم (بحد أدنى 3)
   if (days <= 18) {
     return Math.max(3, Math.floor(days / 4.5));
   }
 
-  // المرحلة الثالثة: 19 يوم فأكثر
-  // بحد أدنى 4 (لأنه اجتاز المرحلة الثانية)
+  // المرحلة الثالثة: 19 يوم فأكثر (بحد أدنى 4)
   return Math.max(4, Math.floor(days / 5));
 }
 
@@ -76,10 +74,7 @@ function findCurrentMilestone(workDays: number, earned: number): number {
 }
 
 /**
- * الدالة الرئيسية لحساب الإجازات المتدرجة
- * 
- * @param totalPresent إجمالي أيام الحضور الفعلي
- * @param vacationDaysTaken عدد الإجازات المأخوذة (تُخصم من الرصيد فقط، ليس من الحضور)
+ * 🎯 الدالة الرئيسية لحساب الإجازات المتدرجة
  */
 export function computeGraduatedVacation(
   totalPresent: number,
@@ -87,31 +82,31 @@ export function computeGraduatedVacation(
 ): GraduatedResult {
   const workDays = Math.max(0, Math.floor(totalPresent));
   
-  // الأيام الفعلية = إجمالي الحضور (بدون خصم)
+  // الأيام الفعلية = إجمالي الحضور (بدون أي خصم)
   const effectivePresent = workDays;
   
   // حساب المرحلة الحالية
   const currentStage = getStage(effectivePresent);
   
-  // حساب الرصيد الإجمالي المستحق
-  const totalEarned = earnedVacationDaysForWorkDays(effectivePresent);
-  
-  // الرصيد المتاح = الإجمالي - المأخوذ
-  const earned = Math.max(0, totalEarned - vacationDaysTaken);
+  // 🎯 الرصيد المستحق الإجمالي (بدون خصم)
+  const earned = earnedVacationDaysForWorkDays(effectivePresent);
   
   // حساب المحطة التالية والتقدم
-  const nextMilestone = findNextMilestone(effectivePresent, totalEarned);
-  const currentMilestone = findCurrentMilestone(effectivePresent, totalEarned);
+  const nextMilestone = findNextMilestone(effectivePresent, earned);
+  const currentMilestone = findCurrentMilestone(effectivePresent, earned);
   const totalGap = Math.max(1, nextMilestone - currentMilestone);
   const doneInGap = Math.max(0, effectivePresent - currentMilestone);
+
+  // للتوثيق فقط - لا يُستخدم في الحساب
+  void vacationDaysTaken;
 
   return {
     stage: currentStage.stage,
     stageLabel: currentStage.label,
-    earned,                       // الرصيد المتاح (بعد خصم المأخوذ)
+    earned,
     daysToNext: Math.max(0, nextMilestone - effectivePresent),
     progressPct: Math.min(100, Math.round((doneInGap / totalGap) * 100)),
-    effectivePresent,             // الأيام الفعلية = الحضور الكلي
-    consumedWorkDays: 0,          // مفيش خصم من أيام الحضور
+    effectivePresent,
+    consumedWorkDays: 0,
   };
 }

@@ -1,9 +1,10 @@
 // ============================================================
-// 🎯 حساب رصيد الموظف (النسخة النهائية)
+// 🎯 حساب رصيد الموظف (النسخة النهائية بالمضاعف)
 // ============================================================
-// - المستحقة = من الحضور بالمعادلة المتدرجة
-// - المأخوذة = فقط الإجازات اللي تخصم من الرصيد
-// - المتاح = المستحقة - المأخوذة
+// - الحضور بالكامل → يمر على المعادلة المتدرجة
+// - الإجازات المأخوذة → تُخصم بالمضاعف من الأيام
+// - الأيام الفعلية = الحضور - (الإجازات × مضاعف المرحلة)
+// - الرصيد المتاح = محسوب من الأيام الفعلية
 // ============================================================
 
 import type { AttendanceRecord, Vacation } from './types';
@@ -12,7 +13,7 @@ import { computeGraduatedVacation } from './vacation';
 // حالات الإجازات المعتمدة
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
 
-// 🎯 أنواع الإجازات اللي تخصم من الرصيد المستحق (من طلبات الإجازات)
+// 🎯 أنواع الإجازات اللي تخصم من الرصيد (من طلبات الإجازات)
 const DEDUCT_VACATION_TYPES = new Set([
   'اعتيادية',
   'إجازة اعتيادية',
@@ -27,6 +28,13 @@ const DEDUCT_ATTENDANCE_STATUSES = new Set([
   'إجازة عارضة',
   'إجازة اعتيادية',
 ]);
+
+// حالات لا تخصم من الرصيد:
+// - إجازة رسمية ❌
+// - إجازة مرضية ❌
+// - إجازة سنوية (رصيد منفصل) ❌
+// - بدون مرتب ❌
+// - بدل سهرة (يخصم من رصيد السهر) ❌
 
 /**
  * التحقق من كون سجل الحضور تم إنشاؤه تلقائياً من إجازة معتمدة
@@ -76,6 +84,14 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]): numb
 
 /**
  * 🎯 الدالة الرئيسية لحساب رصيد الموظف
+ * 
+ * مثال:
+ * - حضور: 36 يوم
+ * - مأخوذة: 4 (اعتيادية)
+ * - مستهلك بالمضاعف: 4 × 5 = 20
+ * - الأيام الفعلية: 36 - 20 = 16
+ * - المرحلة الحالية: الثانية
+ * - المستحقة (المتاح): 3
  */
 export function calculateEmployeeBalance(
   attendance: AttendanceRecord[],
@@ -86,23 +102,19 @@ export function calculateEmployeeBalance(
     ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
   ).length;
   
-  // 2️⃣ حساب المستحقة من المعادلة المتدرجة (بدون خصم)
-  const result = computeGraduatedVacation(totalPresent);
-  const earned = result.earned;
-  
-  // 3️⃣ حساب المأخوذة (اللي تخصم من الرصيد فقط)
+  // 2️⃣ حساب الإجازات المأخوذة (اللي تخصم)
   const taken = getVacationDaysTaken(attendance, vacations);
   
-  // 4️⃣ الرصيد المتاح = المستحقة - المأخوذة
-  const netBalance = earned - taken;
+  // 3️⃣ تطبيق المعادلة مع الخصم بالمضاعف
+  const result = computeGraduatedVacation(totalPresent, taken);
   
   return {
-    totalPresent,
-    effectivePresent: totalPresent,
-    earned,
-    taken,
-    netBalance,
-    consumedWorkDays: 0,
+    totalPresent,                             // إجمالي الحضور الأصلي
+    effectivePresent: result.effectivePresent, // الأيام الفعلية بعد الخصم
+    earned: result.earned,                    // الرصيد المتاح
+    taken,                                    // الإجازات المأخوذة
+    netBalance: result.earned,                // الرصيد الصافي = المتاح
+    consumedWorkDays: result.consumedWorkDays, // الأيام المستهلكة بالمضاعف
     stageLabel: result.stageLabel,
   };
 }

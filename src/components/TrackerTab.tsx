@@ -4,6 +4,23 @@ import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
 import type { Employee } from '../lib/types';
 import VacationStagesTable from './VacationStagesTable';
 
+// 🆕 دالة حساب المرحلة بناءً على الأيام الفعلية
+// المرحلة الأولى: 1-12 يوم
+// المرحلة الثانية: 13-18 يوم
+// المرحلة الثالثة: 19+ يوم
+function getStageInfo(effectivePresent: number): { name: string; range: string; color: string; number: string } {
+  if (effectivePresent <= 0) {
+    return { number: '—', name: 'قبل البداية', range: 'لسه ماحضرش', color: 'text-slate-400' };
+  }
+  if (effectivePresent <= 12) {
+    return { number: '1', name: 'الأولى', range: '1 - 12 يوم', color: 'text-blue-700' };
+  }
+  if (effectivePresent <= 18) {
+    return { number: '2', name: 'الثانية', range: '13 - 18 يوم', color: 'text-indigo-700' };
+  }
+  return { number: '3', name: 'الثالثة', range: '19+ يوم', color: 'text-purple-700' };
+}
+
 export default function TrackerTab({ user, refreshKey }: { user: Employee; refreshKey: number }) {
   const [locFilter, setLocFilter] = useState<string>('all');
   const [jobFilter, setJobFilter] = useState<string>('all');
@@ -63,6 +80,9 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
           const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
           const finalBalance = balanceData.earned + saharBal;
 
+          // 🆕 حساب المرحلة الحالية (عرض فقط - مش بيغير أي حساب)
+          const stageInfo = getStageInfo(balanceData.effectivePresent);
+
           return (
             <div key={emp.id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm hover:border-blue-300 transition-all">
               <div className="flex justify-between items-start mb-6">
@@ -74,9 +94,15 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6">
+                {/* 🆕 عرض المرحلة الحالية بدل الدورات */}
                 <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
-                  <div className="text-xs font-bold text-slate-500">الدورات</div>
-                  <div className="mt-1 text-2xl font-black text-blue-700">{emp.workCycle || 0}</div>
+                  <div className="text-xs font-bold text-slate-500">المرحلة الحالية</div>
+                  <div className={`mt-1 text-2xl font-black ${stageInfo.color}`}>
+                    {stageInfo.name}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 mt-1">
+                    {stageInfo.range}
+                  </div>
                 </div>
                 <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
                   <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>

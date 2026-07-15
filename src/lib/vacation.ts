@@ -1,9 +1,11 @@
 // ============================================================
-// 🎯 معادلة حساب الإجازات المتدرجة (النسخة النهائية)
+// 🎯 معادلة حساب الإجازات المتدرجة مع الخصم بالمضاعف
 // ============================================================
-// المرحلة 1: حضور 1-12 يوم  → ÷ 4  (تقريب لأسفل)
-// المرحلة 2: حضور 13-18 يوم → ÷ 4.5 (تقريب لأسفل، حد أدنى 3)
-// المرحلة 3: حضور 19+ يوم   → ÷ 5  (تقريب لأسفل، حد أدنى 4)
+// المرحلة 1: حضور 1-12 يوم  → ÷ 4  (1 إجازة = 4 أيام عمل)
+// المرحلة 2: حضور 13-18 يوم → ÷ 4.5 (1 إجازة = 4.5 أيام عمل، حد أدنى 3)
+// المرحلة 3: حضور 19+ يوم   → ÷ 5  (1 إجازة = 5 أيام عمل، حد أدنى 4)
+//
+// عند أخذ إجازة → الأيام الفعلية = الحضور - (الإجازات × المضاعف)
 // ============================================================
 
 export interface GraduatedResult {
@@ -48,6 +50,18 @@ function getStage(workDays: number): { stage: number; label: string; divisor: nu
 }
 
 /**
+ * حساب أيام العمل المستهلكة بسبب الإجازات (بالمضاعف)
+ * كل يوم إجازة يخصم عدد من أيام الحضور حسب المرحلة الأصلية
+ */
+function calculateConsumedWorkDays(vacationDaysTaken: number, originalStage: number): number {
+  if (vacationDaysTaken <= 0) return 0;
+  let multiplier = 4;
+  if (originalStage === 2) multiplier = 4.5;
+  else if (originalStage === 3) multiplier = 5;
+  return Math.round(vacationDaysTaken * multiplier);
+}
+
+/**
  * إيجاد المحطة التالية اللي هيزيد فيها الرصيد
  */
 function findNextMilestone(workDays: number, earned: number): number {
@@ -75,6 +89,14 @@ function findCurrentMilestone(workDays: number, earned: number): number {
 
 /**
  * 🎯 الدالة الرئيسية لحساب الإجازات المتدرجة
+ * 
+ * مثال:
+ * - حاضر 36 يوم، أخد 4 إجازة اعتيادية
+ * - مرحلة أصلية: 3 (مضاعف ×5)
+ * - مستهلك: 4 × 5 = 20
+ * - الأيام الفعلية: 36 - 20 = 16
+ * - المرحلة الحالية: 2
+ * - المستحقة (المتاح): 3
  */
 export function computeGraduatedVacation(
   totalPresent: number,
@@ -82,13 +104,19 @@ export function computeGraduatedVacation(
 ): GraduatedResult {
   const workDays = Math.max(0, Math.floor(totalPresent));
   
-  // الأيام الفعلية = إجمالي الحضور (بدون أي خصم)
-  const effectivePresent = workDays;
+  // حدد المرحلة الأصلية بناءً على إجمالي الحضور (للمضاعف)
+  const originalStage = getStage(workDays);
   
-  // حساب المرحلة الحالية
+  // احسب أيام العمل المستهلكة بسبب الإجازات
+  const consumedWorkDays = calculateConsumedWorkDays(vacationDaysTaken, originalStage.stage);
+  
+  // الأيام الفعلية = إجمالي الحضور - المستهلك
+  const effectivePresent = Math.max(0, workDays - consumedWorkDays);
+  
+  // حدد المرحلة الحالية بناءً على الأيام الفعلية
   const currentStage = getStage(effectivePresent);
   
-  // 🎯 الرصيد المستحق الإجمالي (بدون خصم)
+  // الرصيد المتاح (بعد الخصم) - محسوب من الأيام الفعلية
   const earned = earnedVacationDaysForWorkDays(effectivePresent);
   
   // حساب المحطة التالية والتقدم
@@ -97,16 +125,13 @@ export function computeGraduatedVacation(
   const totalGap = Math.max(1, nextMilestone - currentMilestone);
   const doneInGap = Math.max(0, effectivePresent - currentMilestone);
 
-  // للتوثيق فقط - لا يُستخدم في الحساب
-  void vacationDaysTaken;
-
   return {
     stage: currentStage.stage,
     stageLabel: currentStage.label,
-    earned,
+    earned,                       // 🎯 الرصيد المتاح
     daysToNext: Math.max(0, nextMilestone - effectivePresent),
     progressPct: Math.min(100, Math.round((doneInGap / totalGap) * 100)),
-    effectivePresent,
-    consumedWorkDays: 0,
+    effectivePresent,             // 🎯 الأيام الفعلية بعد الخصم
+    consumedWorkDays,             // الأيام المستهلكة
   };
 }

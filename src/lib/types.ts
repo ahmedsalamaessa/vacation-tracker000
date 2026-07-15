@@ -1,13 +1,4 @@
-import type {
-  Employee,
-  WorkLocation,
-  AttendanceRecord,
-  Vacation,
-  Settings,
-  AuditLog,
-  CheckInAttempt,
-  SystemNotification,
-} from './types';
+// 🔧 إصلاح رقم 2: تم حذف الـ circular import (كان بيستورد من نفسه)
 
 export interface Permissions {
   canViewDashboard?: boolean;

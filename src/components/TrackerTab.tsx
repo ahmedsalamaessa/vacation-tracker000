@@ -32,7 +32,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
   }, []);
 
   const employees = useMemo(() => {
-    const all = getEmployees().filter(e => e.active && e.role !== 'admin');
+    // 🔧 التعديل: إظهار الأدمن + المديرين + الموظفين (كل النشطين)
+    const all = getEmployees().filter(e => e.active);
     return all
       .filter(emp => {
         const matchLoc = locFilter === 'all' || emp.locationIds?.some(id => String(id) === locFilter);
@@ -85,6 +86,19 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
           
           // 🆕 حالة العجز
           const hasDeficit = balanceData.hasDeficit;
+          
+          // 🆕 نوع الدور للعرض
+          const roleLabel = emp.role === 'admin' 
+            ? 'مدير النظام' 
+            : emp.role === 'manager' 
+              ? 'مدير فرعي' 
+              : 'موظف';
+          
+          const roleColor = emp.role === 'admin'
+            ? 'bg-purple-50 text-purple-700 border-purple-100'
+            : emp.role === 'manager'
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+              : 'bg-blue-50 text-blue-700 border-blue-100';
 
           return (
             <div key={emp.id} className={`rounded-[2rem] border p-6 shadow-sm transition-all ${
@@ -103,8 +117,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                       ⚠️ عجز {balanceData.deficitDays} يوم
                     </div>
                   )}
-                  <div className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-black border border-blue-100">
-                    {emp.role === 'manager' ? 'مدير فرعي' : 'موظف'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-black border ${roleColor}`}>
+                    {roleLabel}
                   </div>
                 </div>
               </div>
@@ -176,7 +190,7 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                     </div>
                   </div>
                   <div className="mt-3 text-[11px] font-bold text-red-700 text-center bg-white/60 rounded-lg py-2">
-                    💡 الموظف محتاج يحضر <b>{Math.abs(balanceData.effectivePresent)} يوم</b> عمل عشان يسدد العجز
+                    💡 محتاج يحضر <b>{Math.abs(balanceData.effectivePresent)} يوم</b> عمل عشان يسدد العجز
                   </div>
                 </div>
               )}

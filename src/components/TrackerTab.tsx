@@ -5,11 +5,11 @@ import type { Employee } from '../lib/types';
 import VacationStagesTable from './VacationStagesTable';
 
 // 🆕 دالة حساب المرحلة بناءً على الأيام الفعلية
-// المرحلة الأولى: 1-12 يوم
-// المرحلة الثانية: 13-18 يوم
-// المرحلة الثالثة: 19+ يوم
 function getStageInfo(effectivePresent: number): { name: string; range: string; color: string; number: string } {
-  if (effectivePresent <= 0) {
+  if (effectivePresent < 0) {
+    return { number: '⚠️', name: 'عجز', range: 'مستهلك أكتر من رصيده', color: 'text-red-700' };
+  }
+  if (effectivePresent === 0) {
     return { number: '—', name: 'قبل البداية', range: 'لسه ماحضرش', color: 'text-slate-400' };
   }
   if (effectivePresent <= 12) {
@@ -78,24 +78,41 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
           const saharSpentAttendance = empAtt.filter(r => r.status === 'بدل سهرة').length;
           const saharSpentVacations = sumApprovedByTypes(empVac, ['سهرة']);
           const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
-          const finalBalance = balanceData.earned + saharBal;
+          const finalBalance = balanceData.netBalance + saharBal;
 
-          // 🆕 حساب المرحلة الحالية (عرض فقط - مش بيغير أي حساب)
+          // المرحلة الحالية
           const stageInfo = getStageInfo(balanceData.effectivePresent);
+          
+          // 🆕 حالة العجز
+          const hasDeficit = balanceData.hasDeficit;
 
           return (
-            <div key={emp.id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm hover:border-blue-300 transition-all">
+            <div key={emp.id} className={`rounded-[2rem] border p-6 shadow-sm transition-all ${
+              hasDeficit 
+                ? 'border-red-300 bg-red-50/30 hover:border-red-400' 
+                : 'border-slate-200 bg-white hover:border-blue-300'
+            }`}>
               <div className="flex justify-between items-start mb-6">
                 <div className="text-left ml-auto">
                   <h3 className="text-xl font-black text-slate-900">{emp.name}</h3>
                   <p className="text-xs font-bold text-slate-500">{emp.jobTitle || 'مساح'}</p>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-black border border-blue-100">{emp.role === 'manager' ? 'مدير فرعي' : 'موظف'}</div>
+                <div className="flex gap-2 items-start">
+                  {hasDeficit && (
+                    <div className="px-3 py-1 rounded-full bg-red-100 text-red-700 text-[10px] font-black border border-red-200 animate-pulse">
+                      ⚠️ عجز {balanceData.deficitDays} يوم
+                    </div>
+                  )}
+                  <div className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-black border border-blue-100">
+                    {emp.role === 'manager' ? 'مدير فرعي' : 'موظف'}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-6">
-                {/* 🆕 عرض المرحلة الحالية بدل الدورات */}
-                <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
+                <div className={`rounded-2xl border p-4 text-center ${
+                  hasDeficit ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
+                }`}>
                   <div className="text-xs font-bold text-slate-500">المرحلة الحالية</div>
                   <div className={`mt-1 text-2xl font-black ${stageInfo.color}`}>
                     {stageInfo.name}
@@ -104,9 +121,17 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                     {stageInfo.range}
                   </div>
                 </div>
-                <div className="rounded-2xl border p-4 text-center bg-blue-50 border-blue-200">
+                <div className={`rounded-2xl border p-4 text-center ${
+                  balanceData.effectivePresent < 0 
+                    ? 'bg-red-50 border-red-200' 
+                    : 'bg-blue-50 border-blue-200'
+                }`}>
                   <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
-                  <div className="mt-1 text-2xl font-black text-blue-700">{balanceData.effectivePresent}</div>
+                  <div className={`mt-1 text-2xl font-black ${
+                    balanceData.effectivePresent < 0 ? 'text-red-700' : 'text-blue-700'
+                  }`}>
+                    {balanceData.effectivePresent}
+                  </div>
                 </div>
                 <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
                   <div className="text-xs font-bold text-slate-500">بدل السهرة</div>
@@ -117,10 +142,56 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                   <div className="mt-1 text-2xl font-black text-green-600">{balanceData.earned}</div>
                 </div>
               </div>
+
+              {/* 🆕 كارت العجز - يظهر فقط عند وجود عجز */}
+              {hasDeficit && (
+                <div className="mb-4 rounded-2xl border-2 border-red-300 bg-gradient-to-br from-red-50 to-orange-50 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">⚠️</span>
+                      <span className="text-sm font-black text-red-800">عجز في الرصيد</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-red-600 bg-white px-2 py-1 rounded-full">
+                      استهلك أكتر من المستحق
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-white border border-red-200 p-3 text-center shadow-sm">
+                      <div className="text-[10px] font-black text-red-700 mb-1">📉 أيام العجز</div>
+                      <div className="text-2xl font-black text-red-600">
+                        {balanceData.deficitDays} يوم
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-500 mt-1">
+                        إجازات زيادة
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-white border border-orange-200 p-3 text-center shadow-sm">
+                      <div className="text-[10px] font-black text-orange-700 mb-1">💼 أيام لتغطية العجز</div>
+                      <div className="text-2xl font-black text-orange-600">
+                        {Math.abs(balanceData.effectivePresent)} يوم
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-500 mt-1">
+                        محتاج يحضر
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-[11px] font-bold text-red-700 text-center bg-white/60 rounded-lg py-2">
+                    💡 الموظف محتاج يحضر <b>{Math.abs(balanceData.effectivePresent)} يوم</b> عمل عشان يسدد العجز
+                  </div>
+                </div>
+              )}
               
-              <div className={`rounded-2xl border p-4 text-center mb-4 ${finalBalance < 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+              <div className={`rounded-2xl border p-4 text-center mb-4 ${
+                finalBalance < 0 
+                  ? 'bg-red-50 border-red-200' 
+                  : 'bg-emerald-50 border-emerald-200'
+              }`}>
                 <div className="text-xs font-bold text-slate-500">صافي الرصيد المتاح</div>
-                <div className={`mt-1 text-3xl font-black ${finalBalance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{finalBalance} يوم</div>
+                <div className={`mt-1 text-3xl font-black ${
+                  finalBalance < 0 ? 'text-red-600' : 'text-emerald-600'
+                }`}>
+                  {finalBalance} يوم
+                </div>
               </div>
 
               <div className="flex justify-between items-center px-2">

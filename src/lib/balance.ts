@@ -9,8 +9,10 @@ function isAutoVacationAttendance(record: AttendanceRecord) {
   return Boolean(record.notes?.startsWith('AUTO_VACATION:') || record.vacationId);
 }
 
+/**
+ * حساب عدد أيام الإجازات المأخوذة (المخصومة من الرصيد)
+ */
 export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // 1. تحديد الأيام التي تم أخذها كـ "بدل سهرة" من الطلبات المعتمدة
   const saharVacationDates = new Set(
     vacations
       .filter(v => APPROVED.has(v.status) && (v.vacationType || '').includes('سهرة'))
@@ -25,7 +27,6 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
       })
   );
 
-  // 2. خصم الإجازات من شيت الحضور
   const manualSheetDeduct = attendance
     .filter(r => {
       const isDeductType = DEDUCT_ATTENDANCE_STATUSES.has(r.status);
@@ -35,12 +36,21 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
     })
     .length;
 
-  // 3. خصم الإجازات من الطلبات المعتمدة
   const approvedRequestDeduct = vacations
     .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
 
   return manualSheetDeduct + approvedRequestDeduct;
+}
+
+/**
+ * 🆕 حساب إجمالي أيام العمل المستهلكة من work_days المخزنة في الداتابيز
+ * (بدل ما نحسب بالمضاعف)
+ */
+export function getTotalWorkDaysConsumed(vacations: Vacation[]): number {
+  return vacations
+    .filter(v => APPROVED.has(v.status) && DEDUCT_VACATION_TYPES.has(v.vacationType || 'اعتيادية'))
+    .reduce((sum, v) => sum + (v.workDays || 0), 0);
 }
 
 export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
@@ -53,24 +63,46 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
     .reduce((sum, v) => sum + (v.vacationDays || 0), 0);
 }
 
+/**
+ * 🎯 حساب رصيد الموظف - النسخة النهائية
+ * 
+ * الفكرة الجديدة:
+ * - نستخدم work_days المخزنة في كل إجازة (مش نحسب بالمضاعف)
+ * - الأيام الفعلية = الحضور - إجمالي work_days للإجازات المعتمدة
+ * - المستحقة = محسوبة من الأيام الفعلية
+ * 
+ * مثال محمود سيف:
+ * - حضور: 19، أخد 3 إجازة (work_days = 12)
+ * - الأيام الفعلية = 19 - 12 = 7 ✅
+ * - المستحقة = 7 ÷ 4 = 1 ✅
+ */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  const totalPresent = attendance.filter(r => ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)).length;
+  // 1️⃣ إجمالي أيام الحضور
+  const totalPresent = attendance.filter(r => 
+    ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
+  ).length;
+  
+  // 2️⃣ إجمالي أيام العمل المستهلكة (من work_days المخزنة)
+  const totalWorkDaysConsumed = getTotalWorkDaysConsumed(vacations);
+  
+  // 3️⃣ الأيام الفعلية = الحضور - المستهلك
+  const effectivePresent = totalPresent - totalWorkDaysConsumed;
+  
+  // 4️⃣ إجمالي الإجازات المأخوذة (للعرض)
   const taken = getVacationDaysTaken(attendance, vacations);
-  const result = computeGraduatedVacation(totalPresent, taken);
-
-  // 🆕 حساب العجز
+  
+  // 5️⃣ حساب المرحلة والرصيد من الأيام الفعلية
+  const result = computeGraduatedVacation(Math.max(0, effectivePresent), 0);
+  
+  // 6️⃣ حساب العجز
   let deficitDays = 0;
   let netBalance = result.earned;
   
-  if (result.effectivePresent < 0) {
-    // في عجز: الأيام الفعلية سالبة
-    const absoluteDeficit = Math.abs(result.effectivePresent);
-    
-    // تحديد المضاعف للعجز
+  if (effectivePresent < 0) {
+    const absoluteDeficit = Math.abs(effectivePresent);
     let multiplier = 5;
     if (absoluteDeficit <= 12) multiplier = 4;
     else if (absoluteDeficit <= 18) multiplier = 4.5;
-    
     deficitDays = Math.ceil(absoluteDeficit / multiplier);
     netBalance = -deficitDays;
   }
@@ -79,11 +111,11 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     totalPresent,
     taken,
     earned: result.earned,
-    effectivePresent: result.effectivePresent,
-    consumedWorkDays: result.consumedWorkDays,
+    effectivePresent,             // الأيام الفعلية بعد خصم work_days
+    consumedWorkDays: totalWorkDaysConsumed,  // 🆕 إجمالي work_days المستهلكة
     stageLabel: result.stageLabel,
-    netBalance,             // الرصيد النهائي (يمكن أن يكون سالب)
-    deficitDays,            // 🆕 عدد أيام الإجازات الزيادة
-    hasDeficit: deficitDays > 0,  // 🆕 هل يوجد عجز؟
+    netBalance,
+    deficitDays,
+    hasDeficit: deficitDays > 0,
   };
 }

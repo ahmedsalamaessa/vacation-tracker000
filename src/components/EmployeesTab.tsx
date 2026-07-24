@@ -82,7 +82,8 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
   const [editId, setEditId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [showArchived, setShowArchived] = useState(false); // 🆕 عرض المؤرشفين
+  const [showArchived, setShowArchived] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; step: number; input: string } | null>(null);
 
   const isManager = user.role === 'manager';
   const isAdmin = user.role === 'admin';
@@ -101,14 +102,12 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
 
   const load = useCallback(() => {
     setLoading(true);
-    // 🔧 جيب كل الموظفين (نشطين + مؤرشفين)
     const allEmps = getEmployees();
     let filtered: Employee[];
     
     if (isAdmin) {
-      filtered = allEmps;  // الأدمن يشوف الكل
+      filtered = allEmps;
     } else if (isManager) {
-      // المدير الفرعي يشوف موظفينه (بما فيهم المؤرشفين)
       const userLocs = user.locationIds || [];
       filtered = allEmps.filter(e => 
         e.id === user.id || 
@@ -264,7 +263,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     load();
   }
 
-  // 🆕 دالة استرجاع الموظف من الأرشيف
   function restoreEmployee(emp: Employee) {
     if (!confirm(`استرجاع الموظف ${emp.name}؟`)) return;
     updateEmployee(emp.id, { active: true } as any).then(() => {
@@ -274,13 +272,127 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     });
   }
 
-  // 🆕 فلترة حسب حالة الأرشيف
+  // 🆕 دالة الحذف النهائي (يطلب تأكيدين)
+  function startDelete(emp: Employee) {
+    if (!isAdmin) {
+      alert('❌ الحذف النهائي متاح لمدير النظام فقط');
+      return;
+    }
+    if (emp.role === 'admin') {
+      alert('❌ لا يمكن حذف مدير النظام نهائياً');
+      return;
+    }
+    setDeleteConfirm({ id: emp.id, name: emp.name, step: 1, input: '' });
+  }
+
+  function confirmDelete() {
+    if (!deleteConfirm) return;
+    
+    // التأكيد الأول: اسم الموظف صح؟
+    if (deleteConfirm.step === 1) {
+      if (deleteConfirm.input.trim() !== deleteConfirm.name.trim()) {
+        setMsg('❌ الاسم اللي كتبته مش مطابق. حاول تاني.');
+        return;
+      }
+      setDeleteConfirm({ ...deleteConfirm, step: 2 });
+      return;
+    }
+    
+    // التأكيد الثاني: نفذ الحذف
+    if (deleteConfirm.step === 2) {
+      // استخدام updateEmployee بدلاً من الحذف الحقيقي عشان الأمان
+      // بدل الحذف من الداتابيز، بنخلي الموظف مؤرشف مع إخفاء بياناته
+      updateEmployee(deleteConfirm.id, { 
+        active: false,
+        name: `[محذوف] ${deleteConfirm.name}`,
+        username: `deleted_${deleteConfirm.id}_${Date.now()}`,
+        phone: null,
+      } as any).then(() => {
+        setMsg(`🗑️ تم حذف ${deleteConfirm.name} نهائياً (البيانات محفوظة في السجل للمراجعة)`);
+        setDeleteConfirm(null);
+        load();
+        setTimeout(() => setMsg(''), 5000);
+      });
+    }
+  }
+
+  function cancelDelete() {
+    setDeleteConfirm(null);
+    setMsg('');
+  }
+
   const activeList = list.filter(e => e.active);
-  const archivedList = list.filter(e => !e.active);
+  const archivedList = list.filter(e => !e.active && !e.name.startsWith('[محذوف]'));
   const displayList = showArchived ? archivedList : activeList;
 
   return (
     <div className="space-y-4">
+      {/* 🆕 نافذة تأكيد الحذف */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-3">⚠️</div>
+              <h3 className="text-xl font-black text-red-700 mb-2">
+                حذف نهائي - الخطوة {deleteConfirm.step} من 2
+              </h3>
+              <p className="text-sm font-bold text-slate-600">
+                {deleteConfirm.step === 1 
+                  ? `للتأكيد، اكتب اسم الموظف بالظبط:`
+                  : `⚠️ آخر تحذير! سيتم حذف "${deleteConfirm.name}" نهائياً.`}
+              </p>
+            </div>
+            
+            {deleteConfirm.step === 1 && (
+              <>
+                <div className="mb-3 p-3 bg-slate-100 rounded-xl text-center">
+                  <div className="text-xs text-slate-500 mb-1">الاسم المطلوب:</div>
+                  <div className="font-black text-slate-900">{deleteConfirm.name}</div>
+                </div>
+                <input
+                  type="text"
+                  value={deleteConfirm.input}
+                  onChange={e => setDeleteConfirm({ ...deleteConfirm, input: e.target.value })}
+                  placeholder="اكتب الاسم هنا..."
+                  className="w-full border-2 border-red-300 rounded-xl px-4 py-3 text-center font-bold outline-none focus:border-red-500"
+                  autoFocus
+                />
+                {msg && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-center text-sm font-bold text-red-700">
+                    {msg}
+                  </div>
+                )}
+              </>
+            )}
+            
+            {deleteConfirm.step === 2 && (
+              <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-xl">
+                <div className="text-center text-red-800 font-bold text-sm space-y-2">
+                  <p>🗑️ سيتم مسح الموظف من قائمة النشطين والأرشيف</p>
+                  <p className="text-xs">💾 بياناته (الحضور، الإجازات، البصمات) هتفضل محفوظة</p>
+                  <p className="text-xs text-red-600 font-black">هذا الإجراء لا يمكن التراجع عنه!</p>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={cancelDelete}
+                className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black hover:bg-red-700"
+              >
+                {deleteConfirm.step === 1 ? 'تأكيد' : '🗑️ حذف نهائي'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div>
@@ -299,12 +411,11 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             )}
             {showArchived && (
               <p className="text-xs text-amber-600 font-bold">
-                ⚠️ هؤلاء موظفين مؤرشفين - يمكن استرجاعهم بضغطة زر
+                ⚠️ هؤلاء موظفين مؤرشفين - يمكن استرجاعهم أو حذفهم نهائياً
               </p>
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
-            {/* 🆕 زر التبديل بين النشطين والمؤرشفين */}
             <button
               onClick={() => setShowArchived(s => !s)}
               className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
@@ -328,7 +439,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
           </div>
         </div>
 
-        {msg && (
+        {msg && !deleteConfirm && (
           <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-center text-sm font-bold text-blue-700">
             {msg}
           </div>
@@ -407,9 +518,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             </div>
             
             <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                مواقع العمل
-              </label>
+              <label className="mb-2 block text-sm font-bold text-slate-700">مواقع العمل</label>
               <div className="grid grid-cols-2 gap-2">
                 {manageableLocations.map(loc => (
                   <label key={loc.id} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-xs font-bold">
@@ -459,7 +568,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="font-bold text-slate-800 flex items-center gap-2">
+                      <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                         {emp.name}
                         {emp.role === 'admin' && (
                           <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
@@ -479,7 +588,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                       </div>
                       <div className="text-xs text-slate-400">{emp.jobTitle || '—'}</div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {onOpenProfile && (
                         <button
                           onClick={() => onOpenProfile(emp.id)}
@@ -500,21 +609,33 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                           </button>
                           <button
                             onClick={() => remove(emp.id)}
-                            className="text-red-500 hover:text-red-700 text-lg"
+                            className="text-orange-500 hover:text-orange-700 text-lg"
                             title="أرشفة"
                           >
-                            🛑
+                            🗃️
                           </button>
                         </>
                       )}
                       {showArchived && (
-                        <button
-                          onClick={() => restoreEmployee(emp)}
-                          className="text-green-500 hover:text-green-700 text-lg animate-pulse"
-                          title="استرجاع من الأرشيف"
-                        >
-                          ♻️
-                        </button>
+                        <>
+                          <button
+                            onClick={() => restoreEmployee(emp)}
+                            className="text-green-500 hover:text-green-700 text-lg animate-pulse"
+                            title="استرجاع من الأرشيف"
+                          >
+                            ♻️
+                          </button>
+                          {/* 🆕 زر الحذف النهائي - للأدمن فقط */}
+                          {isAdmin && emp.role !== 'admin' && (
+                            <button
+                              onClick={() => startDelete(emp)}
+                              className="text-red-600 hover:text-red-800 text-lg"
+                              title="حذف نهائي"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -523,15 +644,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     <span className={`${cycle.cls} text-white px-2 py-0.5 rounded-full`}>
                       {cycle.label}
                     </span>
-                    {(emp as any).hasPassword || (emp.password && emp.password !== '') ? (
-                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        🔑 مفعّل
-                      </span>
-                    ) : (
-                      <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                        ⚠️ بدون باسورد
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-400">
                     يوزر: <b className="text-slate-600">{emp.username || emp.name}</b>

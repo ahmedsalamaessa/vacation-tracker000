@@ -2,15 +2,27 @@ import type { AttendanceRecord, Vacation } from './types';
 import { computeGraduatedVacation } from './vacation';
 
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
-const DEDUCT_VACATION_TYPES = new Set(['نظامية', 'اعتيادية', 'إجازة اعتيادية', 'عارضة', 'عارضة إجازة', 'إجازة عارضة']);
-const DEDUCT_ATTENDANCE_STATUSES = new Set(['عارضة إجازة', 'إجازة عارضة', 'إجازة اعتيادية']);
+
+// 🔧 الاعتيادية بس هي اللي تخصم من الرصيد
+// العارضة والرسمية والمرضية والسنوية والبدون مرتب مبتخصمش
+const DEDUCT_VACATION_TYPES = new Set([
+  'نظامية', 
+  'اعتيادية', 
+  'إجازة اعتيادية'
+]);
+
+// حالات في شيت الحضور تخصم من الرصيد (اعتيادية فقط)
+const DEDUCT_ATTENDANCE_STATUSES = new Set([
+  'إجازة اعتيادية'
+]);
 
 function isAutoVacationAttendance(record: AttendanceRecord) {
   return Boolean(record.notes?.startsWith('AUTO_VACATION:') || record.vacationId);
 }
 
 /**
- * حساب عدد أيام الإجازات المأخوذة (المخصومة من الرصيد)
+ * حساب عدد أيام الإجازات المأخوذة (المخصومة من الرصيد فقط)
+ * فقط الاعتيادية اللي تخصم
  */
 export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: Vacation[]) {
   const saharVacationDates = new Set(
@@ -45,7 +57,7 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
 
 /**
  * 🆕 حساب إجمالي أيام العمل المستهلكة من work_days المخزنة في الداتابيز
- * (بدل ما نحسب بالمضاعف)
+ * فقط للاعتيادية (اللي تخصم)
  */
 export function getTotalWorkDaysConsumed(vacations: Vacation[]): number {
   return vacations
@@ -64,17 +76,12 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
 }
 
 /**
- * 🎯 حساب رصيد الموظف - النسخة النهائية
+ * 🎯 حساب رصيد الموظف
  * 
- * الفكرة الجديدة:
- * - نستخدم work_days المخزنة في كل إجازة (مش نحسب بالمضاعف)
- * - الأيام الفعلية = الحضور - إجمالي work_days للإجازات المعتمدة
- * - المستحقة = محسوبة من الأيام الفعلية
- * 
- * مثال محمود سيف:
- * - حضور: 19، أخد 3 إجازة (work_days = 12)
- * - الأيام الفعلية = 19 - 12 = 7 ✅
- * - المستحقة = 7 ÷ 4 = 1 ✅
+ * القاعدة:
+ * - الاعتيادية فقط تخصم من الرصيد والحضور
+ * - العارضة والرسمية والمرضية والسنوية والبدون مرتب مبتخصمش
+ * - بدل السهرة يخصم من رصيد السهر (منفصل)
  */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
   // 1️⃣ إجمالي أيام الحضور
@@ -82,13 +89,13 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
   ).length;
   
-  // 2️⃣ إجمالي أيام العمل المستهلكة (من work_days المخزنة)
+  // 2️⃣ إجمالي أيام العمل المستهلكة (من الاعتيادية فقط)
   const totalWorkDaysConsumed = getTotalWorkDaysConsumed(vacations);
   
   // 3️⃣ الأيام الفعلية = الحضور - المستهلك
   const effectivePresent = totalPresent - totalWorkDaysConsumed;
   
-  // 4️⃣ إجمالي الإجازات المأخوذة (للعرض)
+  // 4️⃣ إجمالي الإجازات المأخوذة (اعتيادية فقط)
   const taken = getVacationDaysTaken(attendance, vacations);
   
   // 5️⃣ حساب المرحلة والرصيد من الأيام الفعلية
@@ -111,8 +118,8 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     totalPresent,
     taken,
     earned: result.earned,
-    effectivePresent,             // الأيام الفعلية بعد خصم work_days
-    consumedWorkDays: totalWorkDaysConsumed,  // 🆕 إجمالي work_days المستهلكة
+    effectivePresent,
+    consumedWorkDays: totalWorkDaysConsumed,
     stageLabel: result.stageLabel,
     netBalance,
     deficitDays,

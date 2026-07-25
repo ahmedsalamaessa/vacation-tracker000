@@ -6,7 +6,6 @@ import {
   updateEmployee,
   deleteEmployee,
 } from '../lib/db';
-import { getManagedEmployees } from '../lib/permissions';
 import type { Employee, WorkLocation } from '../lib/types';
 
 interface FormState {
@@ -177,6 +176,92 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     }));
   }
 
+  // 🆕 قوالب الصلاحيات الجاهزة
+  function applyPermissionTemplate(template: 'full' | 'hr' | 'readonly') {
+    if (template === 'full') {
+      setForm(prev => ({
+        ...prev,
+        role: prev.role === 'employee' ? 'manager' : prev.role,
+        canViewDashboard: true,
+        canCheckIn: true,
+        canViewMyAccount: true,
+        canRequestVacations: true,
+        canViewNotifications: true,
+        canViewDailyReview: true,
+        canViewAttendance: true,
+        canEditAttendance: true,
+        canApproveVacations: true,
+        canViewReports: true,
+        canManageEmployees: true,
+        canManageSettings: false,
+        canManageLocations: true,
+        canLockMonths: true,
+        canViewAuditLog: true,
+      }));
+      return;
+    }
+    if (template === 'hr') {
+      setForm(prev => ({
+        ...prev,
+        role: prev.role === 'employee' ? 'manager' : prev.role,
+        canViewDashboard: true,
+        canCheckIn: true,
+        canViewMyAccount: true,
+        canRequestVacations: true,
+        canViewNotifications: true,
+        canViewDailyReview: true,
+        canViewAttendance: true,
+        canEditAttendance: true,
+        canApproveVacations: true,
+        canViewReports: true,
+        canManageEmployees: true,
+        canManageSettings: false,
+        canManageLocations: false,
+        canLockMonths: false,
+        canViewAuditLog: true,
+      }));
+      return;
+    }
+    setForm(prev => ({
+      ...prev,
+      role: prev.role === 'employee' ? 'manager' : prev.role,
+      canViewDashboard: true,
+      canCheckIn: false,
+      canViewMyAccount: true,
+      canRequestVacations: false,
+      canViewNotifications: true,
+      canViewDailyReview: false,
+      canViewAttendance: true,
+      canEditAttendance: false,
+      canApproveVacations: false,
+      canViewReports: true,
+      canManageEmployees: false,
+      canManageSettings: false,
+      canManageLocations: false,
+      canLockMonths: false,
+      canViewAuditLog: true,
+    }));
+  }
+
+  // 🆕 خيارات الصلاحيات
+  const permissionOptions: { key: keyof FormState; label: string }[] = [
+    { key: 'canViewDashboard', label: 'لوحة التحكم' },
+    { key: 'canCheckIn', label: 'بصمة الحضور' },
+    { key: 'canViewMyAccount', label: 'حسابي' },
+    { key: 'canRequestVacations', label: 'طلب الإجازات' },
+    { key: 'canViewNotifications', label: 'الإشعارات' },
+    { key: 'canViewDailyReview', label: 'مراجعة اليوم' },
+    { key: 'canViewAttendance', label: form.role === 'employee' ? 'تتبع حضوره فقط' : 'تتبع حضور موظفي الموقع' },
+    { key: 'canEditAttendance', label: 'تعديل شيت الحضور' },
+    { key: 'canApproveVacations', label: 'اعتماد الإجازات' },
+    { key: 'canViewReports', label: 'التقارير' },
+    { key: 'canManageEmployees', label: 'إدارة الموظفين' },
+    { key: 'canManageSettings', label: 'الإعدادات' },
+    { key: 'canManageLocations', label: 'إدارة المواقع' },
+    { key: 'canLockMonths', label: 'قفل الشهور' },
+    { key: 'canViewAuditLog', label: 'سجل الحركات' },
+  ];
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg('');
@@ -272,7 +357,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     });
   }
 
-  // 🆕 دالة الحذف النهائي (يطلب تأكيدين)
   function startDelete(emp: Employee) {
     if (!isAdmin) {
       alert('❌ الحذف النهائي متاح لمدير النظام فقط');
@@ -287,8 +371,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
 
   function confirmDelete() {
     if (!deleteConfirm) return;
-    
-    // التأكيد الأول: اسم الموظف صح؟
     if (deleteConfirm.step === 1) {
       if (deleteConfirm.input.trim() !== deleteConfirm.name.trim()) {
         setMsg('❌ الاسم اللي كتبته مش مطابق. حاول تاني.');
@@ -297,18 +379,14 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       setDeleteConfirm({ ...deleteConfirm, step: 2 });
       return;
     }
-    
-    // التأكيد الثاني: نفذ الحذف
     if (deleteConfirm.step === 2) {
-      // استخدام updateEmployee بدلاً من الحذف الحقيقي عشان الأمان
-      // بدل الحذف من الداتابيز، بنخلي الموظف مؤرشف مع إخفاء بياناته
       updateEmployee(deleteConfirm.id, { 
         active: false,
         name: `[محذوف] ${deleteConfirm.name}`,
         username: `deleted_${deleteConfirm.id}_${Date.now()}`,
         phone: null,
       } as any).then(() => {
-        setMsg(`🗑️ تم حذف ${deleteConfirm.name} نهائياً (البيانات محفوظة في السجل للمراجعة)`);
+        setMsg(`🗑️ تم حذف ${deleteConfirm.name} نهائياً (البيانات محفوظة في السجل)`);
         setDeleteConfirm(null);
         load();
         setTimeout(() => setMsg(''), 5000);
@@ -327,7 +405,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* 🆕 نافذة تأكيد الحذف */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
@@ -342,7 +419,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                   : `⚠️ آخر تحذير! سيتم حذف "${deleteConfirm.name}" نهائياً.`}
               </p>
             </div>
-            
             {deleteConfirm.step === 1 && (
               <>
                 <div className="mb-3 p-3 bg-slate-100 rounded-xl text-center">
@@ -364,7 +440,6 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 )}
               </>
             )}
-            
             {deleteConfirm.step === 2 && (
               <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-xl">
                 <div className="text-center text-red-800 font-bold text-sm space-y-2">
@@ -374,18 +449,11 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 </div>
               </div>
             )}
-            
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={cancelDelete}
-                className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300"
-              >
+              <button onClick={cancelDelete} className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300">
                 إلغاء
               </button>
-              <button
-                onClick={confirmDelete}
-                className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black hover:bg-red-700"
-              >
+              <button onClick={confirmDelete} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black hover:bg-red-700">
                 {deleteConfirm.step === 1 ? 'تأكيد' : '🗑️ حذف نهائي'}
               </button>
             </div>
@@ -405,8 +473,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             </h2>
             {isManager && !showArchived && (
               <p className="text-xs text-slate-500">
-                تشوف موظفين مواقعك فقط:{' '}
-                {manageableLocations.map(l => l.name).join('،') || '—'}
+                تشوف موظفين مواقعك فقط: {manageableLocations.map(l => l.name).join('،') || '—'}
               </p>
             )}
             {showArchived && (
@@ -453,51 +520,60 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">اسم الموظف *</label>
-                <input
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="الاسم..."
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                  required
-                />
+                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="الاسم..." className="w-full border border-slate-300 rounded-lg px-3 py-2" required />
               </div>
               <div>
                 <label className="block text-sm text-slate-600 mb-1">اسم المستخدم *</label>
-                <input
-                  value={form.username}
-                  onChange={e => setForm({ ...form, username: e.target.value })}
-                  placeholder="ahmed123"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                  required
-                />
+                <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="ahmed123" className="w-full border border-slate-300 rounded-lg px-3 py-2" required />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">الوظيفة</label>
-                <input
-                  value={form.jobTitle}
-                  onChange={e => setForm({ ...form, jobTitle: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                />
+                <input value={form.jobTitle} onChange={e => setForm({ ...form, jobTitle: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2" />
               </div>
               <div>
                 <label className="block text-sm text-slate-600 mb-1">الهاتف</label>
-                <input
-                  value={form.phone}
-                  onChange={e => setForm({ ...form, phone: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                />
+                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2" />
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">نظام الإجازات *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { v: 'graduated', t: 'عادي', s: 'متدرج' },
+                  { v: 'fixed', t: 'ثابت', s: 'عدد ثابت' },
+                  { v: 'variable', t: 'متغير', s: 'دوري' },
+                ].map(opt => (
+                  <button
+                    type="button"
+                    key={opt.v}
+                    onClick={() => setForm({ ...form, cycleType: opt.v })}
+                    className={`border rounded-lg p-2 text-center ${
+                      form.cycleType === opt.v
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <div className="font-bold text-sm">{opt.t}</div>
+                    <div className="text-[10px] text-slate-400">{opt.s}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {form.cycleType === 'fixed' && (
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">دورة العمل (أيام)</label>
+                <input type="number" value={form.workCycle} onChange={e => setForm({ ...form, workCycle: Number(e.target.value) })} className="w-full border border-slate-300 rounded-lg px-3 py-2" />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">الصلاحية</label>
-                <select
-                  value={form.role}
-                  onChange={e => setForm({ ...form, role: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                >
+                <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2">
                   <option value="employee">موظف</option>
                   <option value="manager">مدير فرعي</option>
                   {isAdmin && <option value="admin">مدير النظام</option>}
@@ -507,30 +583,99 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 <label className="block text-sm text-slate-600 mb-1">
                   كلمة المرور {editId ? '(فارغة = بدون تغيير)' : '*'}
                 </label>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={e => setForm({ ...form, password: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
-                  autoComplete="new-password"
-                />
+                <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2" autoComplete="new-password" />
               </div>
             </div>
             
             <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <label className="mb-2 block text-sm font-bold text-slate-700">مواقع العمل</label>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                مواقع العمل {isManager ? '(مواقعك فقط)' : ''}
+              </label>
+              {manageableLocations.length === 0 ? (
+                <div className="text-xs text-slate-400">لا توجد مواقع - أضف موقع أولاً</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {manageableLocations.map(loc => (
+                    <label key={loc.id} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-xs font-bold">
+                      <input type="checkbox" checked={form.locationIds.includes(loc.id)} onChange={() => toggleLocation(loc.id)} />
+                      {loc.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {form.role === 'employee' && form.locationIds.length > 0 && (
+                <div className={`mt-3 rounded-xl border p-3 text-xs font-bold ${
+                  linkedManager
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-amber-200 bg-amber-50 text-amber-800'
+                }`}>
+                  {linkedManager ? (
+                    <>
+                      ✅ سيتم ربط الموظف تلقائياً بالمدير الفرعي: <b>{linkedManager.name}</b>
+                    </>
+                  ) : (
+                    <>⚠️ لا يوجد مدير فرعي مربوط بالموقع المختار حالياً.</>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 🔧 قسم الصلاحيات المستعاد */}
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+              <label className="mb-2 block text-sm font-bold text-indigo-900">🔐 صلاحيات الحساب</label>
+              
+              {/* قوالب الصلاحيات الجاهزة */}
+              {form.role !== 'admin' && (
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => applyPermissionTemplate('full')}
+                    className="rounded-lg bg-purple-600 px-2 py-2 text-[11px] font-black text-white hover:bg-purple-700"
+                  >
+                    👑 صلاحيات كاملة
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPermissionTemplate('hr')}
+                    className="rounded-lg bg-blue-600 px-2 py-2 text-[11px] font-black text-white hover:bg-blue-700"
+                  >
+                    💼 موارد بشرية
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPermissionTemplate('readonly')}
+                    className="rounded-lg bg-slate-700 px-2 py-2 text-[11px] font-black text-white hover:bg-slate-800"
+                  >
+                    👁️ عرض فقط
+                  </button>
+                </div>
+              )}
+              
+              {/* الصلاحيات الفردية */}
               <div className="grid grid-cols-2 gap-2">
-                {manageableLocations.map(loc => (
-                  <label key={loc.id} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-xs font-bold">
-                    <input
-                      type="checkbox"
-                      checked={form.locationIds.includes(loc.id)}
-                      onChange={() => toggleLocation(loc.id)}
-                    />
-                    {loc.name}
-                  </label>
-                ))}
+                {permissionOptions
+                  .filter(opt => form.role !== 'employee' || opt.key !== 'canEditAttendance')
+                  .map(opt => (
+                    <label
+                      key={String(opt.key)}
+                      className="flex items-center gap-2 rounded-lg bg-white p-2 text-xs font-bold text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.role === 'admin' ? true : Boolean(form[opt.key])}
+                        disabled={form.role === 'admin'}
+                        onChange={e => setForm({ ...form, [opt.key]: e.target.checked })}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
               </div>
+              
+              {form.role === 'admin' && (
+                <div className="mt-2 text-[10px] font-bold text-purple-700 text-center bg-purple-100 p-2 rounded-lg">
+                  💡 مدير النظام يحصل على جميع الصلاحيات تلقائياً
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -590,48 +735,27 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     </div>
                     <div className="flex gap-2 flex-wrap">
                       {onOpenProfile && (
-                        <button
-                          onClick={() => onOpenProfile(emp.id)}
-                          className="text-slate-500 hover:text-slate-900 text-lg"
-                          title="الملف الشخصي"
-                        >
+                        <button onClick={() => onOpenProfile(emp.id)} className="text-slate-500 hover:text-slate-900 text-lg" title="الملف الشخصي">
                           👤
                         </button>
                       )}
                       {!showArchived && (
                         <>
-                          <button
-                            onClick={() => startEdit(emp)}
-                            className="text-blue-500 hover:text-blue-700 text-lg"
-                            title="تعديل"
-                          >
+                          <button onClick={() => startEdit(emp)} className="text-blue-500 hover:text-blue-700 text-lg" title="تعديل">
                             ✏️
                           </button>
-                          <button
-                            onClick={() => remove(emp.id)}
-                            className="text-orange-500 hover:text-orange-700 text-lg"
-                            title="أرشفة"
-                          >
+                          <button onClick={() => remove(emp.id)} className="text-orange-500 hover:text-orange-700 text-lg" title="أرشفة">
                             🗃️
                           </button>
                         </>
                       )}
                       {showArchived && (
                         <>
-                          <button
-                            onClick={() => restoreEmployee(emp)}
-                            className="text-green-500 hover:text-green-700 text-lg animate-pulse"
-                            title="استرجاع من الأرشيف"
-                          >
+                          <button onClick={() => restoreEmployee(emp)} className="text-green-500 hover:text-green-700 text-lg animate-pulse" title="استرجاع من الأرشيف">
                             ♻️
                           </button>
-                          {/* 🆕 زر الحذف النهائي - للأدمن فقط */}
                           {isAdmin && emp.role !== 'admin' && (
-                            <button
-                              onClick={() => startDelete(emp)}
-                              className="text-red-600 hover:text-red-800 text-lg"
-                              title="حذف نهائي"
-                            >
+                            <button onClick={() => startDelete(emp)} className="text-red-600 hover:text-red-800 text-lg" title="حذف نهائي">
                               🗑️
                             </button>
                           )}
@@ -644,6 +768,15 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     <span className={`${cycle.cls} text-white px-2 py-0.5 rounded-full`}>
                       {cycle.label}
                     </span>
+                    {(emp as any).hasPassword || (emp.password && emp.password !== '') ? (
+                      <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                        🔑 مفعّل
+                      </span>
+                    ) : (
+                      <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        ⚠️ بدون باسورد
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-400">
                     يوزر: <b className="text-slate-600">{emp.username || emp.name}</b>
@@ -657,6 +790,18 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                           .join('، ')
                       : 'كل/بدون'}
                   </div>
+                  {emp.role === 'employee' && (
+                    <div className="mt-1 text-[11px] text-emerald-700 font-bold">
+                      المدير الفرعي المرتبط:{' '}
+                      {getEmployees().find(m => m.id === emp.managerId)?.name ||
+                        getEmployees().find(
+                          m =>
+                            m.role === 'manager' &&
+                            emp.locationIds?.some(id => m.locationIds.includes(id)),
+                        )?.name ||
+                        'غير محدد'}
+                    </div>
+                  )}
                   {showArchived && emp.updatedAt && (
                     <div className="mt-1 text-[11px] text-amber-600 font-bold">
                       🕐 أُرشف في: {new Date(emp.updatedAt).toLocaleDateString('ar-EG')}

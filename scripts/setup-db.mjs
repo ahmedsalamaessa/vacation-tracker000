@@ -244,6 +244,7 @@ async function run() {
   });
 
   console.log('2) Seeding defaults...');
+
   const adminHash = 'sha256:' + sha256('admin123');
   const settingsHash = 'sha256:' + sha256('settings123');
 
@@ -251,7 +252,7 @@ async function run() {
     await sql`
       INSERT INTO work_locations (id, name, lat, lng, radius_meters, active, notes)
       VALUES
-        (1, 'Naya Bay', 27.0574, 33.8129, 1000, true, 'موقع نايا باي'),
+        (1, 'NAIA BAY', 27.0574, 33.8129, 1000, true, 'موقع NAIA BAY'),
         (2, 'Beach 5', 27.0612, 33.8215, 1000, true, 'موقع بيتش 5')
       ON CONFLICT (id) DO NOTHING
     `;
@@ -330,6 +331,7 @@ async function run() {
   const locs = await sql`SELECT id, name FROM work_locations`;
   console.log('   Employees:', emps);
   console.log('   Locations:', locs);
+
   console.log('\n✅ Database ready!');
   console.log('   Login: admin / admin123');
 }

@@ -12,6 +12,7 @@ import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
 
 const PREFIX = 'vsys_';
+
 const STORAGE_KEYS = {
   employees: PREFIX + 'employees',
   locations: PREFIX + 'locations',
@@ -40,7 +41,7 @@ function setItem<T>(key: string, value: T): void {
   } catch {}
 }
 
-export async function _hashOnce(text: string): Promise<string> {
+export async function hashOnce(text: string): Promise<string> {
   return sha256(text);
 }
 
@@ -86,9 +87,11 @@ export async function initializeData() {
       console.warn('Remote bootstrap failed, falling back to local', e);
     }
   }
+
   const shaAdmin = await sha256('admin123');
   let employees = getItem<Employee[]>(STORAGE_KEYS.employees, []);
   const adminExists = employees.some(e => e.username === 'admin');
+  
   if (!adminExists) {
     await clearAllData();
     employees = [];
@@ -162,17 +165,18 @@ export async function initializeData() {
       setItem(STORAGE_KEYS.employees, [freshAdmin]);
     }
   }
+
   const locations = getItem<WorkLocation[]>(STORAGE_KEYS.locations, []);
   if (locations.length === 0) {
     const defaultLocations: WorkLocation[] = [
       {
         id: 1,
-        name: 'Naya Bay',
+        name: 'NAIA BAY',  // 🔧 تم تغيير الاسم من "Naya Bay"
         lat: 27.0574,
         lng: 33.8129,
         radiusMeters: 1000,
         active: true,
-        notes: 'موقع نايا باي',
+        notes: 'موقع NAIA BAY',  // 🔧 تحديث الملاحظة
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
@@ -190,6 +194,7 @@ export async function initializeData() {
     ];
     setItem(STORAGE_KEYS.locations, defaultLocations);
   }
+
   const settings = getItem<Partial<Settings>>(STORAGE_KEYS.settings, {});
   if (!settings.department_name) {
     const shaSettings = await sha256('settings123');
@@ -713,9 +718,9 @@ export async function login(username: string, password: string): Promise<Employe
   const employees = getEmployees();
   const passwordHash = 'sha256:' + (await sha256(password));
   const loginValue = username.trim();
-  const normalizedPhone = loginValue.replace(/\\s|-/g, '');
+  const normalizedPhone = loginValue.replace(/\s|-/g, '');
   const employee = employees.find(e => {
-    const empPhone = (e.phone || '').replace(/\\s|-/g, '');
+    const empPhone = (e.phone || '').replace(/\s|-/g, '');
     const matchesUsername = e.username === loginValue;
     const matchesPhone = empPhone !== '' && empPhone === normalizedPhone;
     return (matchesUsername || matchesPhone) && e.password === passwordHash && e.active;

@@ -152,8 +152,8 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
         </div>
       </section>
 
-      {/* 🎯 كارت المرحلة والأيام الفعلية (زي تتبع الرصيد) */}
-      <section className="grid gap-3 grid-cols-1 md:grid-cols-3">
+      {/* 🎯 كارت المرحلة والأيام الفعلية */}
+      <section className="grid gap-3 grid-cols-1 md:grid-cols-2">
         <div className={`rounded-2xl border p-4 text-center ${hasDeficit ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
           <div className="text-xs font-bold text-slate-500">المرحلة الحالية</div>
           <div className={`mt-1 text-2xl font-black ${stageInfo.color}`}>{stageInfo.name}</div>
@@ -167,23 +167,13 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
           </div>
           <div className="text-[10px] font-bold text-slate-500 mt-1">بعد خصم الإجازات</div>
         </div>
-
-        <div className="rounded-2xl border p-4 text-center bg-purple-50 border-purple-200">
-          <div className="text-xs font-bold text-slate-500">أيام العمل المستهلكة</div>
-          <div className="mt-1 text-2xl font-black text-purple-700">{balanceData.consumedWorkDays}</div>
-          <div className="text-[10px] font-bold text-slate-500 mt-1">من الإجازات</div>
-        </div>
       </section>
 
       {/* 🎯 كارت الرصيد */}
-      <section className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <section className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-200">
           <div className="text-xs font-bold text-slate-500">مستحقة</div>
           <div className="mt-1 text-2xl font-black text-green-600">{balanceData.earned}</div>
-        </div>
-        <div className="rounded-2xl border p-4 text-center bg-orange-50 border-orange-200">
-          <div className="text-xs font-bold text-slate-500">مأخوذة</div>
-          <div className="mt-1 text-2xl font-black text-orange-700">{balanceData.taken}</div>
         </div>
         <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
           <div className="text-xs font-bold text-slate-500">بدل السهرة</div>

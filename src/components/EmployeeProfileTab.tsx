@@ -7,8 +7,8 @@ import type { Employee, AttendanceRecord, Vacation, CheckInAttempt } from '../li
 function fmtDt(v: string | null | undefined) {
   if (!v) return '—';
   const d = new Date(v);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString('ar-EG', { 
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString('ar-EG', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 }
 
@@ -60,22 +60,22 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   );
 
   const c = (s: string) => att.filter(r => r.status === s).length;
-  
+
   // 🎯 استخدام نفس معادلة تتبع الرصيد
   const balanceData = calculateEmployeeBalance(att, vac);
-  
+
   // بدل السهرة
   const saharEarned = c('سهر');
   const saharSpentAttendance = c('بدل سهرة');
   const saharSpentVacations = sumApprovedByTypes(vac, ['سهرة']);
   const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
-  
+
   // الرصيد النهائي = رصيد الإجازات + بدل السهرة
   const finalBalance = balanceData.netBalance + saharBal;
-  
+
   // المرحلة الحالية
   const stageInfo = getStageInfo(balanceData.effectivePresent);
-  
+
   // حالة العجز
   const hasDeficit = balanceData.hasDeficit;
 
@@ -123,6 +123,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
             🖨️ PDF
           </button>
         </div>
+
         <div className="flex flex-col gap-6 md:flex-row md:items-center">
           <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-[2rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-3xl font-black text-white shadow-lg">
             {initials || '👤'}
@@ -152,25 +153,19 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
       </section>
 
       {/* 🎯 كارت المرحلة والأيام الفعلية (زي تتبع الرصيد) */}
-      <section className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <section className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <div className={`rounded-2xl border p-4 text-center ${hasDeficit ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
           <div className="text-xs font-bold text-slate-500">المرحلة الحالية</div>
           <div className={`mt-1 text-2xl font-black ${stageInfo.color}`}>{stageInfo.name}</div>
           <div className="text-[10px] font-bold text-slate-500 mt-1">{stageInfo.range}</div>
         </div>
-        
+
         <div className={`rounded-2xl border p-4 text-center ${balanceData.effectivePresent < 0 ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
           <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
           <div className={`mt-1 text-2xl font-black ${balanceData.effectivePresent < 0 ? 'text-red-700' : 'text-blue-700'}`}>
             {balanceData.effectivePresent}
           </div>
           <div className="text-[10px] font-bold text-slate-500 mt-1">بعد خصم الإجازات</div>
-        </div>
-
-        <div className="rounded-2xl border p-4 text-center bg-slate-50 border-slate-200">
-          <div className="text-xs font-bold text-slate-500">إجمالي الحضور</div>
-          <div className="mt-1 text-2xl font-black text-slate-700">{balanceData.totalPresent}</div>
-          <div className="text-[10px] font-bold text-slate-500 mt-1">قبل الخصم</div>
         </div>
 
         <div className="rounded-2xl border p-4 text-center bg-purple-50 border-purple-200">

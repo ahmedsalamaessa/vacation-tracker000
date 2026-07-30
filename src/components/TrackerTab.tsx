@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
 import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
+import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import type { Employee } from '../lib/types';
 import VacationStagesTable from './VacationStagesTable';
 
@@ -24,15 +25,19 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
   const [locFilter, setLocFilter] = useState<string>('all');
   const [jobFilter, setJobFilter] = useState<string>('all');
 
+  // 🖨️ حالات الطباعة
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printMode, setPrintMode] = useState<'table' | 'individual'>('table');
+  const [printScope, setPrintScope] = useState<'filtered' | 'all' | 'selected'>('filtered');
+  const [selectedForPrint, setSelectedForPrint] = useState<number[]>([]);
+
   const locations = useMemo(() => getLocations(), []);
-  
-  // 🔧 إظهار كل الوظائف من كل الموظفين (بما فيهم الأدمن)
+
   const jobs = useMemo(() => {
     const allEmployees = getEmployees().filter(e => e.active);
     return Array.from(new Set(allEmployees.map(e => e.jobTitle).filter(Boolean))).sort();
   }, [refreshKey]);
 
-  // 🔧 إظهار كل الموظفين النشطين (أدمن + مدير + موظف)
   const employees = useMemo(() => {
     const all = getEmployees().filter(e => e.active);
     return all
@@ -42,7 +47,6 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
         return matchLoc && matchJob;
       })
       .sort((a, b) => {
-        // الأدمن أولاً، ثم المدير، ثم الموظفين
         const roleOrder: Record<string, number> = { admin: 0, manager: 1, employee: 2 };
         const roleDiff = (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3);
         if (roleDiff !== 0) return roleDiff;
@@ -53,8 +57,182 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
   const attendance = getAttendance();
   const vacations = getVacations();
 
+  // 🖨️ تنفيذ الطباعة
+  function executePrint() {
+    let ids: number[] | undefined;
+
+    if (printScope === 'filtered') {
+      ids = employees.map(e => e.id);
+    } else if (printScope === 'selected') {
+      if (selectedForPrint.length === 0) {
+        alert('⚠️ اختار موظف واحد على الأقل');
+        return;
+      }
+      ids = selectedForPrint;
+    } else {
+      ids = undefined; // all
+    }
+
+    if (printMode === 'table') {
+      printAllBalancesTable(ids);
+    } else {
+      printIndividualBalances(ids);
+    }
+    setShowPrintModal(false);
+  }
+
+  function togglePrintSelect(id: number) {
+    setSelectedForPrint(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* 🖨️ مودال الطباعة */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">🖨️</div>
+              <h3 className="text-xl font-black text-slate-800">طباعة أرصدة الإجازات</h3>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">📋 نوع الطباعة:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintMode('table')}
+                  className={`p-4 rounded-xl border-2 text-center transition ${
+                    printMode === 'table'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-2xl mb-1">📊</div>
+                  <div className="font-black text-sm">جدول مجمع</div>
+                  <div className="text-[10px] text-slate-500 mt-1">كل الموظفين في ورقة واحدة</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintMode('individual')}
+                  className={`p-4 rounded-xl border-2 text-center transition ${
+                    printMode === 'individual'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-2xl mb-1">📄</div>
+                  <div className="font-black text-sm">ورقة فردية</div>
+                  <div className="text-[10px] text-slate-500 mt-1">كل موظف في صفحة</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">👥 اختار مين:</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintScope('filtered')}
+                  className={`p-3 rounded-xl border-2 text-center transition ${
+                    printScope === 'filtered'
+                      ? 'border-orange-500 bg-orange-50 text-orange-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="font-black text-sm">🔍 حسب الفلتر</div>
+                  <div className="text-[10px] text-slate-500 mt-1">{employees.length} موظف</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintScope('all')}
+                  className={`p-3 rounded-xl border-2 text-center transition ${
+                    printScope === 'all'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="font-black text-sm">🌐 كل الموظفين</div>
+                  <div className="text-[10px] text-slate-500 mt-1">بدون فلاتر</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintScope('selected')}
+                  className={`p-3 rounded-xl border-2 text-center transition ${
+                    printScope === 'selected'
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="font-black text-sm">✅ اختيار محدد</div>
+                  <div className="text-[10px] text-slate-500 mt-1">{selectedForPrint.length} محدد</div>
+                </button>
+              </div>
+            </div>
+
+            {printScope === 'selected' && (
+              <div className="mb-4 border-2 border-purple-200 rounded-xl p-3 bg-purple-50/50">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-black text-purple-700">
+                    اختار الموظفين ({selectedForPrint.length} من {employees.length})
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedForPrint(employees.map(e => e.id))}
+                      className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-black hover:bg-green-200"
+                    >
+                      ✓ الكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedForPrint([])}
+                      className="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full font-black hover:bg-red-200"
+                    >
+                      ✕ مسح
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-1">
+                  {employees.map(emp => (
+                    <label
+                      key={emp.id}
+                      className="flex items-center gap-2 p-2 bg-white rounded-lg cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedForPrint.includes(emp.id)}
+                        onChange={() => togglePrintSelect(emp.id)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm font-bold text-slate-700 flex-1">{emp.name}</span>
+                      <span className="text-[10px] text-slate-400">{emp.jobTitle || '—'}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={executePrint}
+                className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700"
+              >
+                🖨️ طباعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -75,7 +253,21 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             العدد: {employees.length}
           </span>
         </div>
-        <button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm">تحديث 🔄</button>
+        <div className="flex gap-2 flex-wrap">
+          {/* 🖨️ زر الطباعة */}
+          <button
+            onClick={() => {
+              setSelectedForPrint([]);
+              setPrintScope('filtered');
+              setPrintMode('table');
+              setShowPrintModal(true);
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm"
+          >
+            🖨️ طباعة
+          </button>
+          <button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm">تحديث 🔄</button>
+        </div>
       </div>
 
       <VacationStagesTable />
@@ -97,16 +289,15 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             const saharSpentVacations = sumApprovedByTypes(empVac, ['سهرة']);
             const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
             const finalBalance = balanceData.netBalance + saharBal;
-
             const stageInfo = getStageInfo(balanceData.effectivePresent);
             const hasDeficit = balanceData.hasDeficit;
-            
-            const roleLabel = emp.role === 'admin' 
-              ? 'مدير النظام' 
-              : emp.role === 'manager' 
-                ? 'مدير فرعي' 
+
+            const roleLabel = emp.role === 'admin'
+              ? 'مدير النظام'
+              : emp.role === 'manager'
+                ? 'مدير فرعي'
                 : 'موظف';
-            
+
             const roleColor = emp.role === 'admin'
               ? 'bg-purple-100 text-purple-700 border-purple-200'
               : emp.role === 'manager'
@@ -115,8 +306,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
 
             return (
               <div key={emp.id} className={`rounded-[2rem] border p-6 shadow-sm transition-all ${
-                hasDeficit 
-                  ? 'border-red-300 bg-red-50/30 hover:border-red-400' 
+                hasDeficit
+                  ? 'border-red-300 bg-red-50/30 hover:border-red-400'
                   : emp.role === 'admin'
                     ? 'border-purple-200 bg-purple-50/20 hover:border-purple-400'
                     : 'border-slate-200 bg-white hover:border-blue-300'
@@ -150,9 +341,10 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                       {stageInfo.range}
                     </div>
                   </div>
+
                   <div className={`rounded-2xl border p-4 text-center ${
-                    balanceData.effectivePresent < 0 
-                      ? 'bg-red-50 border-red-200' 
+                    balanceData.effectivePresent < 0
+                      ? 'bg-red-50 border-red-200'
                       : 'bg-blue-50 border-blue-200'
                   }`}>
                     <div className="text-xs font-bold text-slate-500">الأيام الفعلية</div>
@@ -162,10 +354,12 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                       {balanceData.effectivePresent}
                     </div>
                   </div>
+
                   <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
                     <div className="text-xs font-bold text-slate-500">بدل السهرة</div>
                     <div className="mt-1 text-2xl font-black text-cyan-600">{saharBal}</div>
                   </div>
+
                   <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-200">
                     <div className="text-xs font-bold text-slate-500">مستحقة</div>
                     <div className="mt-1 text-2xl font-black text-green-600">{balanceData.earned}</div>
@@ -208,10 +402,10 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                     </div>
                   </div>
                 )}
-                
+
                 <div className={`rounded-2xl border p-4 text-center mb-4 ${
-                  finalBalance < 0 
-                    ? 'bg-red-50 border-red-200' 
+                  finalBalance < 0
+                    ? 'bg-red-50 border-red-200'
                     : 'bg-emerald-50 border-emerald-200'
                 }`}>
                   <div className="text-xs font-bold text-slate-500">صافي الرصيد المتاح</div>

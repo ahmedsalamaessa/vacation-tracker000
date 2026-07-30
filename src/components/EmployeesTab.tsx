@@ -6,6 +6,7 @@ import {
   updateEmployee,
   deleteEmployee,
 } from '../lib/db';
+import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import type { Employee, WorkLocation } from '../lib/types';
 
 interface FormState {
@@ -84,6 +85,12 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
   const [showArchived, setShowArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; step: number; input: string } | null>(null);
 
+  // 🖨️ حالات الطباعة
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printMode, setPrintMode] = useState<'table' | 'individual'>('table');
+  const [printScope, setPrintScope] = useState<'all' | 'selected'>('all');
+  const [selectedForPrint, setSelectedForPrint] = useState<number[]>([]);
+
   const isManager = user.role === 'manager';
   const isAdmin = user.role === 'admin';
 
@@ -97,25 +104,26 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       emp.role === 'manager' &&
       form.locationIds.some(locId => emp.locationIds.includes(locId)),
   );
+
   const linkedManager = isManager ? user : managersForSelectedLocations[0] || null;
 
   const load = useCallback(() => {
     setLoading(true);
     const allEmps = getEmployees();
     let filtered: Employee[];
-    
+
     if (isAdmin) {
       filtered = allEmps;
     } else if (isManager) {
       const userLocs = user.locationIds || [];
-      filtered = allEmps.filter(e => 
-        e.id === user.id || 
+      filtered = allEmps.filter(e =>
+        e.id === user.id ||
         (e.locationIds && e.locationIds.some(id => userLocs.includes(id)))
       );
     } else {
       filtered = [user];
     }
-    
+
     setList(filtered);
     setLocationsState(getLocations());
     setLoading(false);
@@ -176,27 +184,16 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     }));
   }
 
-  // 🆕 قوالب الصلاحيات الجاهزة
   function applyPermissionTemplate(template: 'full' | 'hr' | 'readonly') {
     if (template === 'full') {
       setForm(prev => ({
         ...prev,
         role: prev.role === 'employee' ? 'manager' : prev.role,
-        canViewDashboard: true,
-        canCheckIn: true,
-        canViewMyAccount: true,
-        canRequestVacations: true,
-        canViewNotifications: true,
-        canViewDailyReview: true,
-        canViewAttendance: true,
-        canEditAttendance: true,
-        canApproveVacations: true,
-        canViewReports: true,
-        canManageEmployees: true,
-        canManageSettings: false,
-        canManageLocations: true,
-        canLockMonths: true,
-        canViewAuditLog: true,
+        canViewDashboard: true, canCheckIn: true, canViewMyAccount: true,
+        canRequestVacations: true, canViewNotifications: true, canViewDailyReview: true,
+        canViewAttendance: true, canEditAttendance: true, canApproveVacations: true,
+        canViewReports: true, canManageEmployees: true, canManageSettings: false,
+        canManageLocations: true, canLockMonths: true, canViewAuditLog: true,
       }));
       return;
     }
@@ -204,46 +201,25 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       setForm(prev => ({
         ...prev,
         role: prev.role === 'employee' ? 'manager' : prev.role,
-        canViewDashboard: true,
-        canCheckIn: true,
-        canViewMyAccount: true,
-        canRequestVacations: true,
-        canViewNotifications: true,
-        canViewDailyReview: true,
-        canViewAttendance: true,
-        canEditAttendance: true,
-        canApproveVacations: true,
-        canViewReports: true,
-        canManageEmployees: true,
-        canManageSettings: false,
-        canManageLocations: false,
-        canLockMonths: false,
-        canViewAuditLog: true,
+        canViewDashboard: true, canCheckIn: true, canViewMyAccount: true,
+        canRequestVacations: true, canViewNotifications: true, canViewDailyReview: true,
+        canViewAttendance: true, canEditAttendance: true, canApproveVacations: true,
+        canViewReports: true, canManageEmployees: true, canManageSettings: false,
+        canManageLocations: false, canLockMonths: false, canViewAuditLog: true,
       }));
       return;
     }
     setForm(prev => ({
       ...prev,
       role: prev.role === 'employee' ? 'manager' : prev.role,
-      canViewDashboard: true,
-      canCheckIn: false,
-      canViewMyAccount: true,
-      canRequestVacations: false,
-      canViewNotifications: true,
-      canViewDailyReview: false,
-      canViewAttendance: true,
-      canEditAttendance: false,
-      canApproveVacations: false,
-      canViewReports: true,
-      canManageEmployees: false,
-      canManageSettings: false,
-      canManageLocations: false,
-      canLockMonths: false,
-      canViewAuditLog: true,
+      canViewDashboard: true, canCheckIn: false, canViewMyAccount: true,
+      canRequestVacations: false, canViewNotifications: true, canViewDailyReview: false,
+      canViewAttendance: true, canEditAttendance: false, canApproveVacations: false,
+      canViewReports: true, canManageEmployees: false, canManageSettings: false,
+      canManageLocations: false, canLockMonths: false, canViewAuditLog: true,
     }));
   }
 
-  // 🆕 خيارات الصلاحيات
   const permissionOptions: { key: keyof FormState; label: string }[] = [
     { key: 'canViewDashboard', label: 'لوحة التحكم' },
     { key: 'canCheckIn', label: 'بصمة الحضور' },
@@ -265,6 +241,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg('');
+
     if (!form.name.trim()) {
       setMsg('الاسم مطلوب');
       return;
@@ -371,6 +348,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
 
   function confirmDelete() {
     if (!deleteConfirm) return;
+
     if (deleteConfirm.step === 1) {
       if (deleteConfirm.input.trim() !== deleteConfirm.name.trim()) {
         setMsg('❌ الاسم اللي كتبته مش مطابق. حاول تاني.');
@@ -379,8 +357,9 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       setDeleteConfirm({ ...deleteConfirm, step: 2 });
       return;
     }
+
     if (deleteConfirm.step === 2) {
-      updateEmployee(deleteConfirm.id, { 
+      updateEmployee(deleteConfirm.id, {
         active: false,
         name: `[محذوف] ${deleteConfirm.name}`,
         username: `deleted_${deleteConfirm.id}_${Date.now()}`,
@@ -399,12 +378,184 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     setMsg('');
   }
 
+  // 🖨️ فتح مودال الطباعة
+  function openPrintModal() {
+    setSelectedForPrint([]);
+    setPrintScope('all');
+    setPrintMode('table');
+    setShowPrintModal(true);
+  }
+
+  // 🖨️ تنفيذ الطباعة
+  function executePrint() {
+    const ids = printScope === 'all' ? undefined : selectedForPrint;
+    if (printScope === 'selected' && selectedForPrint.length === 0) {
+      alert('⚠️ اختار موظف واحد على الأقل');
+      return;
+    }
+    if (printMode === 'table') {
+      printAllBalancesTable(ids);
+    } else {
+      printIndividualBalances(ids);
+    }
+    setShowPrintModal(false);
+  }
+
+  function togglePrintSelect(id: number) {
+    setSelectedForPrint(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function selectAllForPrint() {
+    setSelectedForPrint(activeList.map(e => e.id));
+  }
+
+  function clearPrintSelection() {
+    setSelectedForPrint([]);
+  }
+
   const activeList = list.filter(e => e.active);
   const archivedList = list.filter(e => !e.active && !e.name.startsWith('[محذوف]'));
   const displayList = showArchived ? archivedList : activeList;
 
   return (
     <div className="space-y-4">
+      {/* 🖨️ مودال الطباعة */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">🖨️</div>
+              <h3 className="text-xl font-black text-slate-800">طباعة أرصدة الإجازات</h3>
+            </div>
+
+            {/* نوع الطباعة */}
+            <div className="mb-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">📋 نوع الطباعة:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintMode('table')}
+                  className={`p-4 rounded-xl border-2 text-center transition ${
+                    printMode === 'table'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-2xl mb-1">📊</div>
+                  <div className="font-black text-sm">جدول مجمع</div>
+                  <div className="text-[10px] text-slate-500 mt-1">كل الموظفين في ورقة واحدة</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintMode('individual')}
+                  className={`p-4 rounded-xl border-2 text-center transition ${
+                    printMode === 'individual'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-2xl mb-1">📄</div>
+                  <div className="font-black text-sm">ورقة فردية</div>
+                  <div className="text-[10px] text-slate-500 mt-1">كل موظف في صفحة</div>
+                </button>
+              </div>
+            </div>
+
+            {/* نطاق الطباعة */}
+            <div className="mb-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">👥 اختار مين:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPrintScope('all')}
+                  className={`p-3 rounded-xl border-2 text-center transition ${
+                    printScope === 'all'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="font-black text-sm">🌐 كل الموظفين</div>
+                  <div className="text-[10px] text-slate-500 mt-1">{activeList.length} موظف</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintScope('selected')}
+                  className={`p-3 rounded-xl border-2 text-center transition ${
+                    printScope === 'selected'
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="font-black text-sm">✅ اختيار محدد</div>
+                  <div className="text-[10px] text-slate-500 mt-1">{selectedForPrint.length} محدد</div>
+                </button>
+              </div>
+            </div>
+
+            {/* قائمة الموظفين للاختيار */}
+            {printScope === 'selected' && (
+              <div className="mb-4 border-2 border-purple-200 rounded-xl p-3 bg-purple-50/50">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-black text-purple-700">
+                    اختار الموظفين ({selectedForPrint.length} من {activeList.length})
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={selectAllForPrint}
+                      className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-black hover:bg-green-200"
+                    >
+                      ✓ الكل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearPrintSelection}
+                      className="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full font-black hover:bg-red-200"
+                    >
+                      ✕ مسح
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-1">
+                  {activeList.map(emp => (
+                    <label
+                      key={emp.id}
+                      className="flex items-center gap-2 p-2 bg-white rounded-lg cursor-pointer hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedForPrint.includes(emp.id)}
+                        onChange={() => togglePrintSelect(emp.id)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm font-bold text-slate-700 flex-1">{emp.name}</span>
+                      <span className="text-[10px] text-slate-400">{emp.jobTitle || '—'}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={executePrint}
+                className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700"
+              >
+                🖨️ طباعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
@@ -414,11 +565,12 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 حذف نهائي - الخطوة {deleteConfirm.step} من 2
               </h3>
               <p className="text-sm font-bold text-slate-600">
-                {deleteConfirm.step === 1 
+                {deleteConfirm.step === 1
                   ? `للتأكيد، اكتب اسم الموظف بالظبط:`
                   : `⚠️ آخر تحذير! سيتم حذف "${deleteConfirm.name}" نهائياً.`}
               </p>
             </div>
+
             {deleteConfirm.step === 1 && (
               <>
                 <div className="mb-3 p-3 bg-slate-100 rounded-xl text-center">
@@ -440,6 +592,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 )}
               </>
             )}
+
             {deleteConfirm.step === 2 && (
               <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-xl">
                 <div className="text-center text-red-800 font-bold text-sm space-y-2">
@@ -449,6 +602,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 </div>
               </div>
             )}
+
             <div className="flex gap-2 mt-4">
               <button onClick={cancelDelete} className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300">
                 إلغاء
@@ -465,10 +619,10 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div>
             <h2 className="font-bold text-lg text-slate-800">
-              {showArchived 
-                ? `🗃️ الموظفين المؤرشفين (${archivedList.length})` 
-                : (isManager 
-                  ? `👥 موظفي مواقعي (${activeList.length})` 
+              {showArchived
+                ? `🗃️ الموظفين المؤرشفين (${archivedList.length})`
+                : (isManager
+                  ? `👥 موظفي مواقعي (${activeList.length})`
                   : `👥 قائمة الموظفين (${activeList.length})`)}
             </h2>
             {isManager && !showArchived && (
@@ -483,6 +637,15 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
+            {/* 🖨️ زر الطباعة */}
+            {!showArchived && (isAdmin || isManager) && (
+              <button
+                onClick={openPrintModal}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 flex items-center gap-1"
+              >
+                🖨️ طباعة الأرصدة
+              </button>
+            )}
             <button
               onClick={() => setShowArchived(s => !s)}
               className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
@@ -491,8 +654,8 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                   : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
               }`}
             >
-              {showArchived 
-                ? `👥 عرض النشطين (${activeList.length})` 
+              {showArchived
+                ? `👥 عرض النشطين (${activeList.length})`
                 : `🗃️ عرض المؤرشفين (${archivedList.length})`}
             </button>
             {!showArchived && (
@@ -517,6 +680,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             <h3 className="font-bold text-slate-700">
               {editId ? '✏️ تعديل موظف' : '🆕 إضافة موظف جديد'}
             </h3>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">اسم الموظف *</label>
@@ -527,6 +691,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="ahmed123" className="w-full border border-slate-300 rounded-lg px-3 py-2" required />
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-slate-600 mb-1">الوظيفة</label>
@@ -586,7 +751,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2" autoComplete="new-password" />
               </div>
             </div>
-            
+
             <div className="rounded-xl border border-slate-200 bg-white p-3">
               <label className="mb-2 block text-sm font-bold text-slate-700">
                 مواقع العمل {isManager ? '(مواقعك فقط)' : ''}
@@ -610,9 +775,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     : 'border-amber-200 bg-amber-50 text-amber-800'
                 }`}>
                   {linkedManager ? (
-                    <>
-                      ✅ سيتم ربط الموظف تلقائياً بالمدير الفرعي: <b>{linkedManager.name}</b>
-                    </>
+                    <>✅ سيتم ربط الموظف تلقائياً بالمدير الفرعي: <b>{linkedManager.name}</b></>
                   ) : (
                     <>⚠️ لا يوجد مدير فرعي مربوط بالموقع المختار حالياً.</>
                   )}
@@ -620,11 +783,9 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
               )}
             </div>
 
-            {/* 🔧 قسم الصلاحيات المستعاد */}
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
               <label className="mb-2 block text-sm font-bold text-indigo-900">🔐 صلاحيات الحساب</label>
-              
-              {/* قوالب الصلاحيات الجاهزة */}
+
               {form.role !== 'admin' && (
                 <div className="mb-3 grid grid-cols-3 gap-2">
                   <button
@@ -650,8 +811,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                   </button>
                 </div>
               )}
-              
-              {/* الصلاحيات الفردية */}
+
               <div className="grid grid-cols-2 gap-2">
                 {permissionOptions
                   .filter(opt => form.role !== 'employee' || opt.key !== 'canEditAttendance')
@@ -670,7 +830,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     </label>
                   ))}
               </div>
-              
+
               {form.role === 'admin' && (
                 <div className="mt-2 text-[10px] font-bold text-purple-700 text-center bg-purple-100 p-2 rounded-lg">
                   💡 مدير النظام يحصل على جميع الصلاحيات تلقائياً
@@ -703,11 +863,11 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
             {displayList.map(emp => {
               const cycle = CYCLE_LABELS[emp.cycleType] || CYCLE_LABELS.fixed;
               return (
-                <div 
-                  key={emp.id} 
+                <div
+                  key={emp.id}
                   className={`border rounded-xl p-3 ${
-                    showArchived 
-                      ? 'border-amber-200 bg-amber-50/50' 
+                    showArchived
+                      ? 'border-amber-200 bg-amber-50/50'
                       : 'border-slate-200 bg-white'
                   }`}
                 >

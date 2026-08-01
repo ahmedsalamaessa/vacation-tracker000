@@ -36,12 +36,14 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
   >([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
+  const [syncingAll, setSyncingAll] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     const vacs = getVacations();
     const managed = getManagedEmployees(user);
     const managedIds = new Set(managed.map(e => e.id));
+
     const emps = getEmployees();
     const vacsWithNames = vacs
       .filter(v => managedIds.has(v.employeeId))
@@ -54,6 +56,7 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
         };
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
     setAllVacations(vacsWithNames);
     setLoading(false);
   }, [user.id]);
@@ -66,10 +69,69 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     () => allVacations.filter(r => r.status === 'بانتظار الموافقة'),
     [allVacations],
   );
+
+  const approved = useMemo(
+    () => allVacations.filter(r => ['مقبولة', 'مجدولة', 'جارية', 'منتهية'].includes(r.status)),
+    [allVacations],
+  );
+
   const recentDecisions = useMemo(
     () => allVacations.filter(r => r.status === 'مقبولة' || r.status === 'مرفوضة').slice(0, 5),
     [allVacations],
   );
+
+  // 🆕 مزامنة كل الإجازات المقبولة القديمة
+  async function syncAllApproved() {
+    if (!confirm(`سيتم إعادة مزامنة ${approved.length} إجازة مقبولة/مجدولة مع شيت الحضور.\n\nالإجازات هتنزل تلقائي في التواريخ الصحيحة.\n\nهل تريد المتابعة؟`)) {
+      return;
+    }
+
+    setSyncingAll(true);
+    setMsg('⏳ جاري مزامنة كل الإجازات المقبولة مع شيت الحضور...');
+
+    try {
+      let totalSynced = 0;
+      let totalSkipped = 0;
+      let processed = 0;
+
+      for (const vac of approved) {
+        try {
+          const result = await syncVacationToAttendanceAsync(vac as Vacation, { force: false });
+          totalSynced += result?.synced ?? 0;
+          totalSkipped += result?.skipped ?? 0;
+          processed++;
+          setMsg(`⏳ جاري المزامنة... (${processed}/${approved.length}) - نزل ${totalSynced} يوم حتى الآن`);
+        } catch (err) {
+          console.error('sync error for vacation', vac.id, err);
+        }
+      }
+
+      await refreshFromRemote();
+
+      addAuditLog({
+        actorId: user.id,
+        actorName: user.name,
+        action: 'مزامنة يدوية لكل الإجازات المقبولة مع شيت الحضور',
+        entityType: 'vacation',
+        entityId: null,
+        employeeId: null,
+        employeeName: null,
+        date: null,
+        oldValue: null,
+        newValue: `${totalSynced} يوم مزامن، ${totalSkipped} متخطى`,
+        notes: `تمت معالجة ${processed} إجازة`,
+      } as any);
+
+      setMsg(`✅ تمت المزامنة! نزل ${totalSynced} يوم في شيت الحضور${totalSkipped > 0 ? ` (${totalSkipped} يوم متخطى لوجود حضور فعلي)` : ''}`);
+      load();
+      onChanged?.();
+      setTimeout(() => setMsg(''), 8000);
+    } catch (err: any) {
+      setMsg(`❌ حصل خطأ: ${err?.message || 'مش عارف السبب'}`);
+    } finally {
+      setSyncingAll(false);
+    }
+  }
 
   async function updateStatus(id: number, status: 'مقبولة' | 'مرفوضة') {
     let rejectionNote: string | null = null;
@@ -84,8 +146,6 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
 
     setMsg(status === 'مقبولة' ? '⏳ جاري الاعتماد وتنزيل الأيام في الشيت...' : '⏳ جاري الرفض...');
 
-    // 1) save decision on server first
-    // Server also auto-syncs to attendance when status becomes مقبولة
     const saved = await updateVacationAsync(id, {
       status,
       approvedBy: user.id,
@@ -94,25 +154,24 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
 
     let syncMsg = '';
     if (status === 'مقبولة') {
-      // 2) force client sync as well (covers older API / ensures sheet fills)
       const updatedVac = { ...(saved || vac), status, id: vac.id } as Vacation;
       const result = await syncVacationToAttendanceAsync(updatedVac, { force: false });
       const serverSync = (saved as any)?._sync;
       const synced = result?.synced ?? serverSync?.synced ?? 0;
       const skipped = result?.skipped ?? serverSync?.skipped ?? 0;
+
       syncMsg =
         synced > 0
           ? ` · تم تنزيل ${synced} يوم في شيت الحضور تلقائي`
           : ' · لم يتم تنزيل أيام (تحقق من التواريخ أو وجود حضور فعلي)';
+
       if (skipped > 0) {
         syncMsg += ` (${skipped} يوم متخطى لوجود حضور فعلي)`;
       }
     } else {
-      // 3) remove auto-synced days on reject
       await clearVacationFromAttendanceAsync(vac.id);
     }
 
-    // 4) refresh cache so attendance sheet sees the change immediately
     await refreshFromRemote();
 
     addAuditLog({
@@ -166,7 +225,7 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
               · الموافقة تنزل تلقائي في الشيت · الرفض يحذف من الشيت
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {pending.length > 0 && (
               <span className="rounded-xl bg-red-100 px-4 py-2 text-xs font-black text-red-700 animate-pulse">
                 🔴 {pending.length} طلب معلق
@@ -180,6 +239,39 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
             </button>
           </div>
         </div>
+
+        {/* 🆕 كارت المزامنة العامة */}
+        {approved.length > 0 && (
+          <div className="mb-4 rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="text-3xl">🔄</div>
+                <div>
+                  <div className="font-black text-emerald-900 text-sm">
+                    مزامنة الإجازات القديمة مع شيت الحضور
+                  </div>
+                  <div className="text-xs font-bold text-emerald-700 mt-1">
+                    لو فيه إجازات مقبولة/مجدولة مش نازلة في شيت الحضور، اضغط الزر ده لإعادة مزامنتها
+                  </div>
+                  <div className="text-[11px] font-bold text-emerald-600 mt-1">
+                    📊 عندك {approved.length} إجازة مقبولة/مجدولة
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={syncAllApproved}
+                disabled={syncingAll}
+                className={`rounded-xl px-5 py-3 text-sm font-black text-white shadow-md transition ${
+                  syncingAll
+                    ? 'bg-slate-400 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'
+                }`}
+              >
+                {syncingAll ? '⏳ جاري المزامنة...' : '🔄 مزامنة الكل الآن'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {msg && (
           <div className="mb-4 rounded-xl bg-blue-50 px-4 py-3 text-center text-sm font-bold text-blue-700 border border-blue-200">
@@ -216,7 +308,6 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                     ⏳ {row.status} - جديد
                   </span>
                 </div>
-
                 <div className="mt-3 grid gap-2 text-sm font-bold text-slate-600 md:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-xl bg-white p-2 text-center border border-slate-100">
                     <div className="text-[10px] text-slate-400">النوع</div>
@@ -235,7 +326,6 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                     <div className="font-black text-xs">{formatDateTime(row.createdAt)}</div>
                   </div>
                 </div>
-
                 <div className="mt-3 text-xs font-bold text-slate-500">
                   📅 فترة الإجازة: {row.startDate || row.vacationStartDate || '—'} ←{' '}
                   {row.endDate || row.vacationEndDate || '—'}
@@ -245,7 +335,6 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                     💬 ملاحظة الموظف: {row.notes}
                   </div>
                 )}
-
                 <div className="mt-3 flex gap-3">
                   <button
                     onClick={() => updateStatus(row.id, 'مقبولة')}

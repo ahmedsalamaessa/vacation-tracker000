@@ -631,7 +631,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <main className="p-4 max-w-6xl mx-auto">
+      <main className="p-3 md:p-5 w-full">
         {activeTab === 'dashboard' && hasAnyPerm && user.role !== 'employee' && (
           <DashboardTab user={user} onNavigate={t => setTab(t as TabKey)} />
         )}

@@ -178,7 +178,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
           entityType: 'checkin_attempt',
           entityId: null,
-          severity: 'warning',
+          severity: 'warn',
         });
         setOk(false);
         setMsg('🚗 يبدو أنك تتحرك بسرعة. توقف وأعد المحاولة.');
@@ -309,7 +309,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
             targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
             entityType: 'checkin_attempt',
             entityId: null,
-            severity: 'warning',
+            severity: 'warn',
           });
         }
 
@@ -380,7 +380,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const hasMultipleLocations = availableLocations.length > 1;
 
   return (
-    <div className="max-w-md mx-auto space-y-6 pt-4">
+    <div className="max-w-2xl mx-auto w-full space-y-6 pt-4">
       <div className="bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 p-8 text-center relative overflow-hidden">
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-50 rounded-full blur-3xl opacity-50"></div>
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-50 rounded-full blur-3xl opacity-50"></div>

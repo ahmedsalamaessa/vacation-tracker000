@@ -162,7 +162,7 @@ export default function NotificationsTab({ user }: Props) {
   const textColors = { danger: 'text-red-800', warn: 'text-amber-800', info: 'text-blue-800', success: 'text-green-800' };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="w-full space-y-5">
       <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-5 flex items-center justify-between">
           <div>

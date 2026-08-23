@@ -78,7 +78,7 @@ export default function MyAccountTab({ user }: { user: Employee }) {
   const hasDeficit = balanceData.hasDeficit;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5 pt-2">
+    <div className="max-w-4xl mx-auto w-full space-y-5 pt-2">
       {/* رأس الصفحة */}
       <div className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-sm text-center relative overflow-hidden">
         <div className="absolute -top-20 -right-20 w-40 h-40 bg-blue-50 rounded-full blur-3xl opacity-50"></div>

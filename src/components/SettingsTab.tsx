@@ -440,7 +440,7 @@ export default function SettingsTab() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-12">
+    <div className="w-full space-y-6 pb-12">
       {/* Section Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {sectionTabs.map(t => (

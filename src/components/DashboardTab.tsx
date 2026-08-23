@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getEmployees, getAttendance, getVacations, getAuditLogs } from '../lib/db';
-import { computeGraduatedVacation } from '../lib/vacation';
-import { getVacationDaysTaken } from '../lib/balance';
+import { calculateEmployeeBalance } from '../lib/balance';
 import type { Employee, AuditLog } from '../lib/types';
 
 type DashboardTabKey =
@@ -99,16 +98,11 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
     for (const emp of employees) {
       const empAttendance = attendance.filter(a => a.employeeId === emp.id);
       const empVacations = vacations.filter(v => v.employeeId === emp.id);
-      
-      const countBy = (status: string) => empAttendance.filter(r => r.status === status).length;
-      const present = countBy('حاضر') + countBy('سهر') + countBy('عارضة حضور');
-      const grad = computeGraduatedVacation(present);
-      
-      const sahar = countBy('سهر');
-      const overtimeLeave = countBy('بدل سهرة');
-      const vacationDaysTaken = getVacationDaysTaken(empAttendance, empVacations);
-      const saharBalance = Math.max(0, sahar - overtimeLeave);
-      const vacationBalance = grad.earned - vacationDaysTaken + saharBalance;
+
+      // 🎯 توحيد المعادلة: نفس حساب تبويب "رصيد الإجازات" بالظبط
+      // (كانت اللوحة بتستخدم معادلة مختلفة بتطلع ناس سالب وهي مش مخصومة)
+      const balanceData = calculateEmployeeBalance(empAttendance, empVacations);
+      const vacationBalance = balanceData.netBalance;
 
       if (vacationBalance < 0) negativeBalance++;
       else if (vacationBalance === 0) zeroBalance++;

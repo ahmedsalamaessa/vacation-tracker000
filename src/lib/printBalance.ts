@@ -1,5 +1,5 @@
 import { getEmployees, getAttendance, getVacations, getLocations } from './db';
-import { calculateEmployeeBalance, sumApprovedByTypes } from './balance';
+import { calculateEmployeeBalance, getSaharBalance } from './balance';
 import type { Employee } from './types';
 
 interface EmployeeRow {
@@ -40,10 +40,7 @@ function buildRow(emp: Employee): EmployeeRow {
   const bd = calculateEmployeeBalance(empAtt, empVac);
   const c = (s: string) => empAtt.filter(r => r.status === s).length;
 
-  const saharEarned = c('سهر');
-  const saharSpentAtt = c('بدل سهرة');
-  const saharSpentVac = sumApprovedByTypes(empVac, ['سهرة']);
-  const saharBal = Math.max(0, saharEarned - (saharSpentAtt + saharSpentVac));
+  const saharBal = getSaharBalance(empAtt, empVac);
 
   const locationNames = (emp.locationIds || [])
     .map(id => locAll.find(l => l.id === id)?.name)
@@ -58,7 +55,7 @@ function buildRow(emp: Employee): EmployeeRow {
     earned: bd.earned,
     taken: bd.taken,
     saharBal,
-    finalBalance: bd.netBalance + saharBal,
+    finalBalance: bd.netBalance,
     deficitDays: bd.deficitDays,
     hasDeficit: bd.hasDeficit,
     absent: c('غياب'),

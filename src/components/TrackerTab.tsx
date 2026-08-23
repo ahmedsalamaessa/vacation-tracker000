@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
+import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import type { Employee } from '../lib/types';
 import VacationStagesTable from './VacationStagesTable';
@@ -284,11 +284,9 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             const empAtt = attendance.filter(a => a.employeeId === emp.id);
             const empVac = vacations.filter(v => v.employeeId === emp.id);
             const balanceData = calculateEmployeeBalance(empAtt, empVac);
-            const saharEarned = empAtt.filter(r => r.status === 'سهر').length;
-            const saharSpentAttendance = empAtt.filter(r => r.status === 'بدل سهرة').length;
-            const saharSpentVacations = sumApprovedByTypes(empVac, ['سهرة']);
-            const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
-            const finalBalance = balanceData.netBalance + saharBal;
+            // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
+            const saharBal = getSaharBalance(empAtt, empVac);
+            const finalBalance = balanceData.netBalance;
             const stageInfo = getStageInfo(balanceData.effectivePresent);
             const hasDeficit = balanceData.hasDeficit;
 

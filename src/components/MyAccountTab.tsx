@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAttendance, getVacations, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
+import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
 import type { Employee } from '../lib/types';
 
 // 🆕 دالة حساب المرحلة الحالية
@@ -46,11 +46,8 @@ export default function MyAccountTab({ user }: { user: Employee }) {
     // 🎯 نفس معادلة الملف الشخصي
     const bd = calculateEmployeeBalance(att, vacs);
 
-    // بدل السهرة
-    const saharEarned = c('سهر');
-    const saharSpentAttendance = c('بدل سهرة');
-    const saharSpentVacations = sumApprovedByTypes(vacs, ['سهرة']);
-    const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
+    // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
+    const saharBal = getSaharBalance(att, vacs);
 
     setBalanceData(bd);
     setExtra({ saharBal, absent: c('غياب'), sick: c('إجازة مرضية') });

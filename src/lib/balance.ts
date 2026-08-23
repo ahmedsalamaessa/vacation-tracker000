@@ -76,6 +76,30 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
 }
 
 /**
+ * 🌙 رصيد بدل السهرة — رصيد منفصل تمامًا عن رصيد الإجازات
+ *
+ * القاعدة: كل ليلة "سهر" تكتسب يوم بدل، وكل يوم "بدل سهرة" يخصم من هذا الرصيد فقط
+ * (لا يُضاف إلى رصيد الإجازات ولا يخصم منه)
+ *
+ * 🐛 إصلاح الخصم المزدوج: أيام "بدل سهرة" المسجلة تلقائيًا من إجازة معتمدة
+ * كانت تُحسب مرتين (مرة كحضور بحالة بدل سهرة + مرة كإجازة معتمدة) —
+ * الآن تُحسب مرة واحدة من الإجازة نفسها، ويُحسب من الشيت الأيام اليدوية فقط
+ */
+export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacation[]): number {
+  const earned = attendance.filter(r => r.status === 'سهر').length;
+
+  // أيام بدل سهرة يدوية من الشيت (غير المرتبطة بإجازة معتمدة)
+  const manualSpent = attendance.filter(r =>
+    r.status === 'بدل سهرة' && !isAutoVacationAttendance(r)
+  ).length;
+
+  // أيام بدل سهرة من الإجازات المعتمدة (تُحسب مرة واحدة فقط)
+  const vacationSpent = sumApprovedByTypes(vacations, ['سهرة']);
+
+  return Math.max(0, earned - manualSpent - vacationSpent);
+}
+
+/**
  * 🎯 حساب رصيد الموظف
  * 
  * القاعدة:

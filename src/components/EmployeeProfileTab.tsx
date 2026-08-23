@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { printHtml } from '../lib/pdf';
 import { getEmployeeById, getAttendance, getVacations, getCheckInAttempts, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, sumApprovedByTypes } from '../lib/balance';
+import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
 import type { Employee, AttendanceRecord, Vacation, CheckInAttempt } from '../lib/types';
 
 function fmtDt(v: string | null | undefined) {
@@ -64,14 +64,11 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   // 🎯 استخدام نفس معادلة تتبع الرصيد
   const balanceData = calculateEmployeeBalance(att, vac);
 
-  // بدل السهرة
-  const saharEarned = c('سهر');
-  const saharSpentAttendance = c('بدل سهرة');
-  const saharSpentVacations = sumApprovedByTypes(vac, ['سهرة']);
-  const saharBal = Math.max(0, saharEarned - (saharSpentAttendance + saharSpentVacations));
+  // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
+  const saharBal = getSaharBalance(att, vac);
 
-  // الرصيد النهائي = رصيد الإجازات + بدل السهرة
-  const finalBalance = balanceData.netBalance + saharBal;
+  // الرصيد النهائي = رصيد الإجازات فقط
+  const finalBalance = balanceData.netBalance;
 
   // المرحلة الحالية
   const stageInfo = getStageInfo(balanceData.effectivePresent);

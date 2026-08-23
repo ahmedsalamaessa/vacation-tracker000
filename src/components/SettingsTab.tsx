@@ -6,7 +6,7 @@ import {
   clearAllData, getStorageInfo, importLocalData,
 } from '../lib/db';
 import { sha256 } from '../lib/crypto';
-import { computeGraduatedVacation } from '../lib/vacation';
+import { calculateEmployeeBalance } from '../lib/balance';
 import type { WorkLocation, Settings } from '../lib/types';
 
 // ============ تشخيص المشاكل ============
@@ -184,14 +184,16 @@ export default function SettingsTab() {
       foundIssues.push({ id: 'storage-ok', severity: 'ok', title: `✅ مساحة التخزين طبيعية (${storage.percentage}%)`, description: `${(storage.used / 1024).toFixed(1)} KB مستخدم` });
     }
 
-    // 2) Admin موجود
-    const adminExists = employees.some(e => e.username === 'admin');
+    // 2) مدير النظام موجود — بالدور مش باسم المستخدم
+    // (كان الفحص بيدور على username === 'admin' حرفيًا فبيطلع إنذار كاذب
+    //  لو المدير اسم دخوله مختلف — زي Eng Ahmed Salama)
+    const adminExists = employees.some(e => e.active && e.role === 'admin');
     if (!adminExists) {
       foundIssues.push({
         id: 'no-admin',
         severity: 'critical',
-        title: '❌ مش موجود مدير Admin',
-        description: 'مفيش مستخدم admin — هتقدرش تدخل الإعدادات أو تدير النظام.',
+        title: '❌ مش موجود مدير للنظام',
+        description: 'مفيش أي موظف فعّال دوره admin — مش هتقدر تدخل الإعدادات أو تدير النظام.',
         fix: 'إعادة تهيئة المدير',
         fixLabel: 'إصلاح',
         onFix: () => {
@@ -200,7 +202,8 @@ export default function SettingsTab() {
         },
       });
     } else {
-      foundIssues.push({ id: 'admin-ok', severity: 'ok', title: '✅ المدير موجود', description: 'admin متاح' });
+      const adminName = employees.find(e => e.active && e.role === 'admin')?.name || '';
+      foundIssues.push({ id: 'admin-ok', severity: 'ok', title: '✅ مدير النظام موجود', description: adminName });
     }
 
     // 3) مواقع فعالة
@@ -264,16 +267,15 @@ export default function SettingsTab() {
       foundIssues.push({ id: 'pending-ok', severity: 'ok', title: '✅ مفيش إجازات معلقة', description: 'كل الطلبات متعالج.' });
     }
 
-    // 6) رصيد سالب
+    // 6) رصيد سالب — بنفس معادلة تبويب "رصيد الإجازات" الموحدة
+    // (كانت بتستخدم معادلة قديمة مختلفة بتطلع أبرياء بالسالب
+    //  وبتحسب حتى السنوية والرسمية كأيام مأخوذة)
     let negCount = 0;
     for (const emp of activeEmps) {
       const empAtt = attendance.filter(a => a.employeeId === emp.id);
-      const c = (s: string) => empAtt.filter(r => r.status === s).length;
-      const present = c('حاضر') + c('سهر') + c('عارضة حضور');
-      const grad = computeGraduatedVacation(present);
-      const approvedVacs = vacations.filter(v => v.employeeId === emp.id && ['مقبولة','مجدولة','جارية','منتهية'].includes(v.status));
-      const taken = approvedVacs.reduce((s, v) => s + (v.vacationDays || 0), 0);
-      if (grad.earned - taken < 0) negCount++;
+      const empVac = vacations.filter(v => v.employeeId === emp.id);
+      const balanceData = calculateEmployeeBalance(empAtt, empVac);
+      if (balanceData.netBalance < 0) negCount++;
     }
     if (negCount > 0) {
       foundIssues.push({ id: 'neg-balance', severity: 'warning', title: `⚠️ ${negCount} موظف رصيده سالب`, description: 'لازم يواظبوا على الحضور لتغطية العجز.' });

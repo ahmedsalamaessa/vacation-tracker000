@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { WORK_DAY_PRESETS, VACATION_TYPES } from '../lib/constants';
 import { earnedVacationDaysForWorkDays } from '../lib/vacation';
-import { getVacations, getEmployees, addVacation, updateVacation, deleteVacation, addAuditLog, addSystemNotification, clearVacationFromAttendance, syncVacationToAttendance } from '../lib/db';
+import { getVacations, getEmployees, getAttendance, addVacation, updateVacation, deleteVacation, addAuditLog, addSystemNotification, clearVacationFromAttendance, syncVacationToAttendance } from '../lib/db';
+import { calculateEmployeeBalance } from '../lib/balance';
 import { getManagedEmployees } from '../lib/permissions';
 import type { Employee, Vacation } from '../lib/types';
 
@@ -107,6 +108,26 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
     const finalWorkDays = isSaharCompensation 
       ? calculateDaysBetween(vacStart, vacEnd) 
       : workDays;
+
+    // 🛡️ تحقق الرصيد: الاعتيادية بس هي اللي بتخصم من رصيد الإجازات
+    const isRegularType = ['اعتيادية', 'نظامية', 'إجازة اعتيادية'].includes(vacationType);
+    if (isRegularType && finalVacationDays > 0) {
+      const empAtt = getAttendance().filter(a => a.employeeId === empId);
+      const empVac = getVacations().filter(v => v.employeeId === empId);
+      const bal = calculateEmployeeBalance(empAtt, empVac);
+      if (finalVacationDays > bal.netBalance) {
+        const empName = employees.find(e => e.id === empId)?.name || 'الموظف';
+        const deficit = finalVacationDays - bal.netBalance;
+        const ok = window.confirm(
+          `⚠️ تحقق من الرصيد\n\nرصيد ${empName} الحالي: ${bal.netBalance} يوم\nوالمطلوب: ${finalVacationDays} يوم اعتيادية\n\n` +
+          `لو كملت الطلب هيدخل في عجز ${deficit} يوم إضافي.\nتأكيد الطلب برضه؟`
+        );
+        if (!ok) {
+          setMsg('⚠️ تم إلغاء الطلب — الرصيد المتاح ' + bal.netBalance + ' يوم بس');
+          return;
+        }
+      }
+    }
 
     const status = isAdmin ? 'مجدولة' : 'بانتظار الموافقة';
 
@@ -265,6 +286,22 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
               </div>
             )}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">✅ أيام الإجازة: <b>{vacationDays} أيام</b> مقابل {workDays} يوم عمل</div>
+            {(() => {
+              const liveEmpId = (isAdmin || isManager) ? Number(employeeId) : user.id;
+              if (!liveEmpId) return null;
+              const isRegular = ['اعتيادية', 'نظامية', 'إجازة اعتيادية'].includes(vacationType);
+              if (!isRegular) return null;
+              const empAtt = getAttendance().filter(a => a.employeeId === liveEmpId);
+              const empVac = getVacations().filter(v => v.employeeId === liveEmpId);
+              const bal = calculateEmployeeBalance(empAtt, empVac);
+              const enough = bal.netBalance >= vacationDays;
+              return (
+                <div className={`rounded-lg border p-3 text-sm font-bold ${enough ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                  {enough ? '✅' : '⚠️'} رصيد الإجازات الحالي لـ{employees.find(e => e.id === liveEmpId)?.name || 'الموظف'}: <b>{bal.netBalance} يوم</b>
+                  {!enough && vacationDays > 0 && ` — المطلوب ${vacationDays} (ناقص ${vacationDays - bal.netBalance})`}
+                </div>
+              );
+            })()}
           </>
         )}
 

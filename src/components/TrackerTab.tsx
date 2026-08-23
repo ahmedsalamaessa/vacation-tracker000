@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
 import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
+import { exportToExcelHTML } from '../lib/export';
 import type { Employee } from '../lib/types';
 import VacationStagesTable from './VacationStagesTable';
 
@@ -56,6 +57,54 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
 
   const attendance = getAttendance();
   const vacations = getVacations();
+
+  // 📊 تصدير تقرير Excel لأرصدة الموظفين المفلترين (بنفس أرقام الشاشة)
+  function exportExcel() {
+    const rows = employees.map(emp => {
+      const empAtt = attendance.filter(a => a.employeeId === emp.id);
+      const empVac = vacations.filter(v => v.employeeId === emp.id);
+      const bd = calculateEmployeeBalance(empAtt, empVac);
+      const saharBal = getSaharBalance(empAtt, empVac);
+      const locNames = (emp.locationIds || [])
+        .map(id => locations.find(l => l.id === id)?.name)
+        .filter(Boolean)
+        .join('، ');
+      return {
+        name: emp.name,
+        job: emp.jobTitle || '',
+        location: locNames || '—',
+        role: emp.role === 'admin' ? 'مدير النظام' : emp.role === 'manager' ? 'مسؤول' : 'موظف',
+        stage: bd.stageLabel,
+        present: bd.totalPresent,
+        consumed: bd.consumedWorkDays,
+        effective: bd.effectivePresent,
+        earned: bd.earned,
+        saharBal,
+        net: bd.netBalance,
+        deficit: bd.hasDeficit ? `نعم (${bd.deficitDays} يوم)` : 'لا',
+      };
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    exportToExcelHTML(
+      rows,
+      `أرصدة_الإجازات_${today}`,
+      {
+        name: 'اسم الموظف',
+        job: 'الوظيفة',
+        location: 'الموقع',
+        role: 'الدور',
+        stage: 'المرحلة',
+        present: 'أيام الحضور',
+        consumed: 'أيام مستهلكة',
+        effective: 'الأيام الفعلية',
+        earned: 'الإجازات المستحقة',
+        saharBal: 'رصيد بدل السهرة',
+        net: 'صافي الرصيد',
+        deficit: 'عجز؟',
+      },
+      'تقرير أرصدة الإجازات — نظام إدارة الإجازات • قسم المساحة',
+    );
+  }
 
   // 🖨️ تنفيذ الطباعة
   function executePrint() {
@@ -265,6 +314,13 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm"
           >
             🖨️ طباعة
+          </button>
+          {/* 📊 زر تصدير Excel */}
+          <button
+            onClick={exportExcel}
+            className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm"
+          >
+            📊 تصدير Excel
           </button>
           <button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm">تحديث 🔄</button>
         </div>

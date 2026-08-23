@@ -104,6 +104,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [profileEmployeeId, setProfileEmployeeId] = useState<number | null>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -242,6 +243,26 @@ export default function App() {
     document.documentElement.classList.toggle('dark', darkMode);
     localStorage.setItem('vacation_dark_mode', String(darkMode));
   }, [darkMode]);
+
+  // 🖥️ متابعة حالة ملء الشاشة
+  useEffect(() => {
+    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else {
+        const req = (document.documentElement as any).requestFullscreen;
+        if (req) req.call(document.documentElement).catch(() => {});
+      }
+    } catch {
+      // آيفون سفاري مش بيدعم Fullscreen API — بيستخدم وضع التطبيق بدلها
+    }
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -451,6 +472,13 @@ export default function App() {
             className="hidden md:flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
           >
             🔎 بحث <span className="text-[10px] opacity-60">Ctrl+K</span>
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className="rounded-xl px-3 py-2 text-lg transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+            title={isFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة'}
+          >
+            {isFullscreen ? '🔳' : '🖥️'}
           </button>
           <button
             onClick={() => setDarkMode(d => !d)}

@@ -58,3 +58,14 @@
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+
+/* 📱 دعم الشاشات المثقوبة (النوتش) في وضع التطبيق الكامل */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  header, nav {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  }
+}

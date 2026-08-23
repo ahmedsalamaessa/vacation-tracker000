@@ -2,8 +2,21 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>نظام إدارة الإجازات</title>
+    <!-- 📱 وضع التطبيق الكامل (Full Screen App) على الموبايل والكمبيوتر -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#1e3a8a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="الإجازات" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      /* منع الوميض الأبيض عند فتح التطبيق */
+      html { background: #0f172a; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

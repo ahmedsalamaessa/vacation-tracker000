@@ -150,3 +150,46 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     hasDeficit: deficitDays > 0,
   };
 }
+
+// ============================================================
+// ⚡ رصيد العارضة — رصيد سنوي مستقل (زي بدل السهرة)
+// القاعدة: 6 أيام في السنة، والسنة من 21 ديسمبر إلى 20 ديسمبر
+// الخصم: أي يوم "عارضة إجازة / إجازة عارضة" في شيت الحضور
+// (طلبات العارضة المعتمدة بتتحول تلقائيًا لصفوف عارضة إجازة
+//  في الشيت فتتحسب مرة واحدة من غير تكرار)
+// ============================================================
+
+export const DEFAULT_CASUAL_QUOTA = 6;
+
+export function getCasualWindow(ref: Date = new Date()): { start: string; end: string } {
+  const y = ref.getFullYear();
+  // بعد 20 ديسمبر → نافذة سنة جديدة (تبدأ 21-12 من السنة الحالية)
+  const startYear = ref.getMonth() === 11 && ref.getDate() >= 21 ? y : y - 1;
+  return {
+    start: `${startYear}-12-21`,
+    end: `${startYear + 1}-12-20`,
+  };
+}
+
+export interface CasualBalance {
+  quota: number;
+  spent: number;
+  remaining: number;
+  windowStart: string;
+  windowEnd: string;
+}
+
+export function getCasualBalance(
+  attendance: AttendanceRecord[],
+  quota: number = DEFAULT_CASUAL_QUOTA,
+  ref: Date = new Date(),
+): CasualBalance {
+  const { start, end } = getCasualWindow(ref);
+  const spent = attendance.filter(
+    r =>
+      (r.status === 'عارضة إجازة' || r.status === 'إجازة عارضة') &&
+      r.date >= start &&
+      r.date <= end,
+  ).length;
+  return { quota, spent, remaining: quota - spent, windowStart: start, windowEnd: end };
+}

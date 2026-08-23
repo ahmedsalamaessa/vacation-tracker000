@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getAttendance, getVacations, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
+import { getAttendance, getVacations, getLocations, getSettings } from '../lib/db';
+import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import type { Employee } from '../lib/types';
 
 // 🆕 دالة حساب المرحلة الحالية
@@ -33,6 +33,7 @@ export default function MyAccountTab({ user }: { user: Employee }) {
     stageLabel: '',
   });
   const [extra, setExtra] = useState({ saharBal: 0, absent: 0, sick: 0 });
+  const [casual, setCasual] = useState({ quota: DEFAULT_CASUAL_QUOTA, spent: 0, remaining: DEFAULT_CASUAL_QUOTA, windowStart: '', windowEnd: '' });
   const [locNames, setLocNames] = useState<string[]>([]);
   const [recentVacs, setRecentVacs] = useState<{ type: string; days: number; status: string; date: string }[]>([]);
 
@@ -48,6 +49,10 @@ export default function MyAccountTab({ user }: { user: Employee }) {
 
     // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
     const saharBal = getSaharBalance(att, vacs);
+
+    // ⚡ رصيد العارضة: 6 أيام سنويًا (21-12 → 20-12) — رصيد مستقل
+    const quota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;
+    setCasual(getCasualBalance(att, quota));
 
     setBalanceData(bd);
     setExtra({ saharBal, absent: c('غياب'), sick: c('إجازة مرضية') });
@@ -67,7 +72,8 @@ export default function MyAccountTab({ user }: { user: Employee }) {
 
   const initials = user.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 
-  const finalBalance = balanceData.netBalance + extra.saharBal;
+  // 🐛 إصلاح: الرصيد النهائي = رصيد الإجازات فقط (بدل السهرة والعارضة أرصدة منفصلة)
+  const finalBalance = balanceData.netBalance;
   const stageInfo = getStageInfo(balanceData.effectivePresent);
   const hasDeficit = balanceData.hasDeficit;
 
@@ -130,6 +136,15 @@ export default function MyAccountTab({ user }: { user: Employee }) {
         <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-center">
           <div className="text-xs font-bold text-slate-500">بدل سهرة</div>
           <div className="text-3xl font-black text-cyan-700 mt-1">{extra.saharBal}</div>
+        </div>
+        <div className={`rounded-2xl border p-4 text-center ${casual.remaining < 0 ? 'border-red-200 bg-red-50' : casual.remaining === 0 ? 'border-amber-200 bg-amber-50' : 'border-orange-100 bg-orange-50'}`}>
+          <div className="text-xs font-bold text-slate-500">رصيد العارضة</div>
+          <div className={`text-3xl font-black mt-1 ${casual.remaining < 0 ? 'text-red-700' : 'text-orange-700'}`}>
+            {casual.remaining}
+          </div>
+          <div className="text-[9px] font-bold text-slate-400 mt-1">
+            {casual.spent} من {casual.quota} — من {casual.windowStart?.slice(5)} لـ {casual.windowEnd?.slice(5)}
+          </div>
         </div>
         <div className={`rounded-2xl border p-4 text-center ${finalBalance < 0 ? 'border-red-100 bg-red-50' : 'border-green-100 bg-green-50'}`}>
           <div className="text-xs font-bold text-slate-500">رصيدي المتاح</div>

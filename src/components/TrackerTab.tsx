@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { getEmployees, getAttendance, getVacations, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
+import { getEmployees, getAttendance, getVacations, getLocations, getSettings } from '../lib/db';
+import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import { exportToExcelHTML } from '../lib/export';
 import type { Employee } from '../lib/types';
@@ -57,6 +57,7 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
 
   const attendance = getAttendance();
   const vacations = getVacations();
+  const casualQuota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;
 
   // 📊 تصدير تقرير Excel لأرصدة الموظفين المفلترين (بنفس أرقام الشاشة)
   function exportExcel() {
@@ -65,6 +66,7 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
       const empVac = vacations.filter(v => v.employeeId === emp.id);
       const bd = calculateEmployeeBalance(empAtt, empVac);
       const saharBal = getSaharBalance(empAtt, empVac);
+      const casual = getCasualBalance(empAtt, casualQuota);
       const locNames = (emp.locationIds || [])
         .map(id => locations.find(l => l.id === id)?.name)
         .filter(Boolean)
@@ -80,6 +82,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
         effective: bd.effectivePresent,
         earned: bd.earned,
         saharBal,
+        casualUsed: casual.spent,
+        casualRemain: casual.remaining,
         net: bd.netBalance,
         deficit: bd.hasDeficit ? `نعم (${bd.deficitDays} يوم)` : 'لا',
       };
@@ -99,6 +103,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
         effective: 'الأيام الفعلية',
         earned: 'الإجازات المستحقة',
         saharBal: 'رصيد بدل السهرة',
+        casualUsed: 'عارضة مستخدمة',
+        casualRemain: 'رصيد العارضة المتبقي',
         net: 'صافي الرصيد',
         deficit: 'عجز؟',
       },
@@ -342,6 +348,8 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             const balanceData = calculateEmployeeBalance(empAtt, empVac);
             // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
             const saharBal = getSaharBalance(empAtt, empVac);
+            // ⚡ رصيد العارضة: سنوي مستقل (21-12 → 20-12)
+            const casual = getCasualBalance(empAtt, casualQuota);
             const finalBalance = balanceData.netBalance;
             const stageInfo = getStageInfo(balanceData.effectivePresent);
             const hasDeficit = balanceData.hasDeficit;
@@ -412,6 +420,16 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
                   <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
                     <div className="text-xs font-bold text-slate-500">بدل السهرة</div>
                     <div className="mt-1 text-2xl font-black text-cyan-600">{saharBal}</div>
+                  </div>
+
+                  <div className={`rounded-2xl border p-4 text-center ${casual.remaining < 0 ? 'bg-red-50 border-red-300' : casual.remaining === 0 ? 'bg-amber-50 border-amber-300' : 'bg-orange-50 border-orange-200'}`}>
+                    <div className="text-xs font-bold text-slate-500">رصيد العارضة</div>
+                    <div className={`mt-1 text-2xl font-black ${casual.remaining < 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                      {casual.remaining}
+                    </div>
+                    <div className="text-[9px] font-bold text-slate-400 mt-1">
+                      استخدم {casual.spent} من {casual.quota}
+                    </div>
                   </div>
 
                   <div className="rounded-2xl border p-4 text-center bg-green-50 border-green-200">

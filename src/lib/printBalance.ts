@@ -1,5 +1,5 @@
-import { getEmployees, getAttendance, getVacations, getLocations } from './db';
-import { calculateEmployeeBalance, getSaharBalance } from './balance';
+import { getEmployees, getAttendance, getVacations, getLocations, getSettings } from './db';
+import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from './balance';
 import type { Employee } from './types';
 
 interface EmployeeRow {
@@ -10,6 +10,9 @@ interface EmployeeRow {
   earned: number;
   taken: number;
   saharBal: number;
+  casualRemain: number;
+  casualSpent: number;
+  casualQuota: number;
   finalBalance: number;
   deficitDays: number;
   hasDeficit: boolean;
@@ -41,6 +44,8 @@ function buildRow(emp: Employee): EmployeeRow {
   const c = (s: string) => empAtt.filter(r => r.status === s).length;
 
   const saharBal = getSaharBalance(empAtt, empVac);
+  const casualQuota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;
+  const casual = getCasualBalance(empAtt, casualQuota);
 
   const locationNames = (emp.locationIds || [])
     .map(id => locAll.find(l => l.id === id)?.name)
@@ -55,6 +60,9 @@ function buildRow(emp: Employee): EmployeeRow {
     earned: bd.earned,
     taken: bd.taken,
     saharBal,
+    casualRemain: casual.remaining,
+    casualSpent: casual.spent,
+    casualQuota: casual.quota,
     finalBalance: bd.netBalance,
     deficitDays: bd.deficitDays,
     hasDeficit: bd.hasDeficit,
@@ -157,6 +165,7 @@ export function printAllBalancesTable(employeeIds?: number[]) {
       <td class="positive">${r.earned}</td>
       <td>${r.taken}</td>
       <td>${r.saharBal}</td>
+      <td class="${r.casualRemain < 0 ? 'deficit' : ''}">${r.casualRemain}</td>
       <td class="${r.finalBalance < 0 ? 'deficit' : 'positive'}">${r.finalBalance}</td>
     </tr>
   `).join('');
@@ -187,6 +196,7 @@ export function printAllBalancesTable(employeeIds?: number[]) {
             <th>مستحقة</th>
             <th>مأخوذة</th>
             <th>بدل السهرة</th>
+            <th>العارضة</th>
             <th>صافي الرصيد</th>
           </tr>
         </thead>
@@ -277,6 +287,10 @@ export function printIndividualBalances(employeeIds?: number[]) {
         <div class="card">
           <div class="card-label">بدل السهرة</div>
           <div class="card-value">${r.saharBal}</div>
+        </div>
+        <div class="card">
+          <div class="card-label">رصيد العارضة</div>
+          <div class="card-value ${r.casualRemain < 0 ? 'red' : ''}">${r.casualRemain}</div>
         </div>
         <div class="card">
           <div class="card-label">إجازات مستحقة</div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { printHtml } from '../lib/pdf';
-import { getEmployeeById, getAttendance, getVacations, getCheckInAttempts, getLocations } from '../lib/db';
-import { calculateEmployeeBalance, getSaharBalance } from '../lib/balance';
+import { getEmployeeById, getAttendance, getVacations, getCheckInAttempts, getLocations, getSettings } from '../lib/db';
+import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import type { Employee, AttendanceRecord, Vacation, CheckInAttempt } from '../lib/types';
 
 function fmtDt(v: string | null | undefined) {
@@ -67,6 +67,10 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
   const saharBal = getSaharBalance(att, vac);
 
+  // ⚡ رصيد العارضة: سنوي مستقل (21-12 → 20-12)
+  const casualQuota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;
+  const casual = getCasualBalance(att, casualQuota);
+
   // الرصيد النهائي = رصيد الإجازات فقط
   const finalBalance = balanceData.netBalance;
 
@@ -100,6 +104,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
           <tr><th>المأخوذة</th><td>${balanceData.taken}</td></tr>
           <tr><th>الرصيد النهائي</th><td>${finalBalance}</td></tr>
           <tr><th>بدل السهرة</th><td>${saharBal}</td></tr>
+          <tr><th>رصيد العارضة (${casual.quota} سنويًا)</th><td>${casual.remaining} — مستخدم ${casual.spent}</td></tr>
           <tr><th>غياب</th><td>${c('غياب')}</td></tr>
         </tbody>
       </table>
@@ -175,6 +180,11 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
         <div className="rounded-2xl border p-4 text-center bg-cyan-50 border-cyan-200">
           <div className="text-xs font-bold text-slate-500">بدل السهرة</div>
           <div className="mt-1 text-2xl font-black text-cyan-600">{saharBal}</div>
+        </div>
+        <div className={`rounded-2xl border p-4 text-center ${casual.remaining < 0 ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
+          <div className="text-xs font-bold text-slate-500">رصيد العارضة</div>
+          <div className={`mt-1 text-2xl font-black ${casual.remaining < 0 ? 'text-red-600' : 'text-orange-600'}`}>{casual.remaining}</div>
+          <div className="text-[9px] font-bold text-slate-400 mt-1">استخدم {casual.spent} من {casual.quota}</div>
         </div>
         <div className={`rounded-2xl border p-4 text-center ${finalBalance < 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
           <div className="text-xs font-bold text-slate-500">صافي الرصيد</div>

@@ -83,6 +83,7 @@ export default function SettingsTab() {
       { key: 'stage1_days', val: '12' },
       { key: 'stage1_vacation', val: '3' },
       { key: 'annual_leave_balance', val: '21' },
+      { key: 'casual_annual_quota', val: '6' },
       { key: 'footer_text', val: 'نظام إدارة الإجازات • قسم المساحة' },
       { key: 'settings_password', val: settings.settings_password || 'settings123' },
     ];
@@ -460,6 +461,7 @@ export default function SettingsTab() {
               { key: 'stage1_days', label: 'أيام المرحلة 1', placeholder: '12', badge: '1️⃣ مرحلة', hint: 'لنظام الإجازات المتدرج' },
               { key: 'stage1_vacation', label: 'إجازة المرحلة 1', placeholder: '3', badge: '🏖️ إجازة', hint: 'أيام إجازة بعد 12 يوم' },
               { key: 'annual_leave_balance', label: 'رصيد سنوي', placeholder: '21', badge: '🎉 سنوية', hint: 'إجمالي الرصيد السنوي' },
+              { key: 'casual_annual_quota', label: 'رصيد العارضة السنوي', placeholder: '6', badge: '⚡ عارضة', hint: 'سنة العارضة من 21 ديسمبر لـ 20 ديسمبر' },
               { key: 'footer_text', label: 'توقيع أسفل النظام', placeholder: '...', badge: '✍️ توقيع', hint: 'يظهر في التقارير' },
             ] as { key: string; label: string; placeholder: string; badge: string; hint: string }[]).map(field => (
               <div key={field.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

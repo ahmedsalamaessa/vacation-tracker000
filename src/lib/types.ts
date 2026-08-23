@@ -104,7 +104,7 @@ export interface AuditLog {
 
 export interface SystemNotification {
   id: number;
-  type: 'vacation_request' | 'vacation_decision' | 'checkin_failed' | 'negative_balance' | 'attendance_override' | 'info';
+  type: 'vacation_request' | 'vacation_decision' | 'checkin_failed' | 'negative_balance' | 'casual_over_limit' | 'attendance_override' | 'info';
   title: string;
   body: string;
   employeeId: number | null;

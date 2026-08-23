@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   initializeData,
   getCurrentUser,
@@ -12,7 +12,9 @@ import {
 import { getManagedEmployees } from './lib/permissions';
 import {
   requestPermission,
-  checkPendingVacations,
+  pollManagerAlerts,
+  playChime,
+  showBrowserNotification,
   isSupported as isNotifSupported,
 } from './lib/notifications';
 import type { Employee } from './lib/types';
@@ -109,25 +111,40 @@ export default function App() {
 
   async function enableNotifications() {
     if (!isNotifSupported()) return;
-    const granted = await requestPermission();
-    if (granted) {
-      setInterval(() => {
-        if (user && (user.role === 'admin' || user.role === 'manager')) {
-          const managedIds = new Set(
-            user.role === 'admin'
-              ? getEmployees().map(e => e.id)
-              : getEmployees()
-                  .filter(
-                    e =>
-                      e.active && e.locationIds?.some(id => user.locationIds.includes(id)),
-                  )
-                  .map(e => e.id),
-          );
-          checkPendingVacations(managedIds);
-        }
-      }, 10000);
-    }
+    await requestPermission();
   }
+
+  // 🔔 دورة تنبيهات المدير: تحديث من السيرفر + صوت + إشعار متصفح عند طلبات جديدة
+  const lastPendingRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user || (user.role !== 'admin' && user.role !== 'manager')) return;
+    const u = user;
+    let stopped = false;
+    async function tick() {
+      try {
+        const result = await pollManagerAlerts(u);
+        if (!result || stopped) return;
+        setPendingCount(result.pending);
+        if (lastPendingRef.current !== null && result.pending > lastPendingRef.current) {
+          playChime();
+          showBrowserNotification(
+            '🔔 طلب إجازة جديد',
+            `عندك ${result.pending} طلب معلق في انتظار الموافقة`,
+          );
+        }
+        lastPendingRef.current = result.pending;
+      } catch {
+        // الشبكة وقعت — نحاول في الدورة الجاية
+      }
+    }
+    tick();
+    const t = setInterval(tick, 45000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+      lastPendingRef.current = null;
+    };
+  }, [user?.id]);
 
   const updatePendingCount = useCallback(() => {
     const vacs = getVacations();

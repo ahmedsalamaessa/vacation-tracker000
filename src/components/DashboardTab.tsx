@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getEmployees, getAttendance, getVacations, getAuditLogs } from '../lib/db';
-import { calculateEmployeeBalance } from '../lib/balance';
+import { calculateEmployeeBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
+import { getSettings } from '../lib/db';
 import type { Employee, AuditLog } from '../lib/types';
 
 type DashboardTabKey =
@@ -20,6 +21,7 @@ interface DashboardStats {
   negativeBalance: number;
   zeroBalance: number;
   positiveBalance: number;
+  casualOut: number;
   totalVacationBalance: number;
   totalPresentDays: number;
   totalEarnedVacations: number;
@@ -62,6 +64,7 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
     negativeBalance: 0,
     zeroBalance: 0,
     positiveBalance: 0,
+    casualOut: 0,
     totalVacationBalance: 0,
     totalPresentDays: 0,
     totalEarnedVacations: 0,
@@ -94,6 +97,7 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
     let negativeBalance = 0;
     let zeroBalance = 0;
     let positiveBalance = 0;
+    let casualOut = 0;
     
     for (const emp of employees) {
       const empAttendance = attendance.filter(a => a.employeeId === emp.id);
@@ -103,6 +107,13 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
       // (كانت اللوحة بتستخدم معادلة مختلفة بتطلع ناس سالب وهي مش مخصومة)
       const balanceData = calculateEmployeeBalance(empAttendance, empVacations);
       const vacationBalance = balanceData.netBalance;
+
+      // ⚡ رصيد العارضة المستقل
+      const casual = getCasualBalance(
+        empAttendance,
+        Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA,
+      );
+      if (casual.remaining <= 0) casualOut++;
 
       if (vacationBalance < 0) negativeBalance++;
       else if (vacationBalance === 0) zeroBalance++;
@@ -116,6 +127,7 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
       negativeBalance,
       zeroBalance,
       positiveBalance,
+      casualOut,
       totalVacationBalance: 0,
       totalPresentDays: 0,
       totalEarnedVacations: 0,
@@ -148,6 +160,14 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
         severity: 'danger',
       });
     }
+    if (casualOut > 0) {
+      notifs.push({
+        type: 'casual_over_limit' as any,
+        title: 'رصيد العارضة استنفد',
+        body: `${casualOut} موظف خلص أو تجاوز رصيد العارضة السنوي`,
+        severity: 'warn',
+      });
+    }
     setNotifications(notifs);
 
     setAudit(auditLogs.sort((a, b) => 
@@ -173,7 +193,7 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
           </button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-lg shadow-slate-200">
             <div className="mb-8 flex items-center justify-between">
               <span className="text-3xl">👥</span>
@@ -208,6 +228,14 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
             </div>
             <div className="text-5xl font-black">{stats.negativeBalance}</div>
             <div className="mt-2 text-sm font-bold text-red-700">موظف لديه رصيد سالب</div>
+          </div>
+          <div className={`rounded-3xl p-6 shadow-sm ring-1 ${stats.casualOut > 0 ? 'bg-orange-50 ring-orange-100 text-orange-800 animate-pulse' : 'bg-slate-50 ring-slate-100 text-slate-700'}`}>
+            <div className="mb-8 flex items-center justify-between">
+              <span className="text-3xl">⚡</span>
+              <span className="text-sm font-black">العارضة المستنفدة</span>
+            </div>
+            <div className="text-5xl font-black">{stats.casualOut}</div>
+            <div className="mt-2 text-sm font-bold text-orange-700">موظف خلص رصيد عارضته</div>
           </div>
         </div>
 

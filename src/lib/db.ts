@@ -56,7 +56,7 @@ export async function clearAllData() {
   localStorage.removeItem('vsys_session_id');
 }
 
-export async function refreshFromRemote(): Promise<boolean> {
+export async function refreshFromRemote(): Promise<any> {
   try {
     const remote = remoteAvailable() || (await probeRemote());
     if (!remote) return false;
@@ -70,7 +70,7 @@ export async function refreshFromRemote(): Promise<boolean> {
     if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
     if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
     if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
-    return true;
+    return data;
   } catch (e) {
     console.warn('refreshFromRemote failed', e);
     return false;

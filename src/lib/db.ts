@@ -77,6 +77,21 @@ export async function refreshFromRemote(): Promise<boolean> {
   }
 }
 
+// 💾 استيراد نسخة احتياطية محلية — بنفس مفاتيح التخزين الصحيحة
+// (إصلاح: كانت الاستعادة بتكتب في مفاتيح vacation_system_* القديمة
+//  بينما النظام بيقرأ من vsys_* فكانت الاستعادة بتفشل بصمت)
+export function importLocalData(data: any) {
+  if (data.employees) setItem(STORAGE_KEYS.employees, data.employees);
+  if (data.locations) setItem(STORAGE_KEYS.locations, data.locations);
+  if (data.attendance) setItem(STORAGE_KEYS.attendance, data.attendance);
+  if (data.vacations) setItem(STORAGE_KEYS.vacations, data.vacations);
+  if (data.auditLogs) setItem(STORAGE_KEYS.auditLogs, data.auditLogs);
+  if (data.monthLocks) setItem(STORAGE_KEYS.monthLocks, data.monthLocks);
+  if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
+  if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
+  if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
+}
+
 export async function initializeData() {
   const remote = await probeRemote();
   if (remote) {

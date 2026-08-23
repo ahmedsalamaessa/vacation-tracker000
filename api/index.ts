@@ -91,6 +91,21 @@ async function getSessionUser(sql: any, req: Request) {
   return rows[0] ? mapEmployee(rows[0]) : null;
 }
 
+// 🛡️ حارس الصلاحيات — نفس قواعد الواجهة بالظبط، مفيش أي تغيير في الحسابات
+// الأدمن له كل الصلاحيات، وغيره حسب الفلاجات المخزنة في الداتابيز
+function isAdmin(user: any): boolean {
+  return user?.role === 'admin';
+}
+
+function hasPerm(user: any, perm: string): boolean {
+  if (isAdmin(user)) return true;
+  return Boolean(user?.[perm]);
+}
+
+function forbidden(message = 'ليس لديك صلاحية لتنفيذ هذا الإجراء') {
+  return json({ error: 'forbidden', message }, 403);
+}
+
 function vacationTypeToStatus(type: string | null | undefined): string {
   const t = type || 'اعتيادية';
   if (['عارضة', 'عارضة إجازة', 'إجازة عارضة'].includes(t)) return 'عارضة إجازة';
@@ -145,6 +160,14 @@ export default async function handler(req: Request) {
   try {
     if (path === '' || path === 'health') {
       return json({ ok: true, service: 'vacation-api', time: new Date().toISOString() });
+    }
+
+    // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login)
+    const isLogin = path === 'login' && method === 'POST';
+    let authUser: any = null;
+    if (!isLogin) {
+      authUser = await getSessionUser(sql, req);
+      if (!authUser) return json({ error: 'unauthorized' }, 401);
     }
 
     if (path === 'login' && method === 'POST') {
@@ -279,6 +302,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'employees' && method === 'POST') {
+      // 🛡️ إدارة الموظفين
+      if (!hasPerm(authUser, 'canManageEmployees')) return forbidden('صلاحية إدارة الموظفين مطلوبة');
       const b = await readBody<any>(req);
       let password = b.password || '';
       if (password && !password.startsWith('sha256:')) password = 'sha256:' + await sha256(password);
@@ -310,6 +335,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('employees/') && method === 'PUT') {
+      // 🛡️ إدارة الموظفين
+      if (!hasPerm(authUser, 'canManageEmployees')) return forbidden('صلاحية إدارة الموظفين مطلوبة');
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
       let passwordSql = null as string | null;
@@ -358,6 +385,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('employees/') && method === 'DELETE') {
+      // 🛡️ إدارة الموظفين
+      if (!hasPerm(authUser, 'canManageEmployees')) return forbidden('صلاحية إدارة الموظفين مطلوبة');
       const id = Number(path.split('/')[1]);
       await sql`UPDATE employees SET active = false, updated_at = NOW() WHERE id = ${id}`;
       return json({ ok: true });
@@ -369,6 +398,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'locations' && method === 'POST') {
+      // 🛡️ إدارة المواقع
+      if (!hasPerm(authUser, 'canManageLocations')) return forbidden('صلاحية إدارة مواقع العمل مطلوبة');
       const b = await readBody<any>(req);
       const rows = await sql`
         INSERT INTO work_locations (name, lat, lng, radius_meters, active, notes)
@@ -379,6 +410,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('locations/') && method === 'PUT') {
+      // 🛡️ إدارة المواقع
+      if (!hasPerm(authUser, 'canManageLocations')) return forbidden('صلاحية إدارة مواقع العمل مطلوبة');
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -398,6 +431,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('locations/') && method === 'DELETE') {
+      // 🛡️ إدارة المواقع
+      if (!hasPerm(authUser, 'canManageLocations')) return forbidden('صلاحية إدارة مواقع العمل مطلوبة');
       const id = Number(path.split('/')[1]);
       await sql`DELETE FROM work_locations WHERE id = ${id}`;
       return json({ ok: true });
@@ -420,6 +455,12 @@ export default async function handler(req: Request) {
 
     if (path === 'attendance' && method === 'POST') {
       const b = await readBody<any>(req);
+      // 🛡️ الحضور: تسجيل الذات مسموح بصلاحية التشيكن، وغيره محتاج صلاحية تعديل الحضور
+      const selfRecord = Number(b.employeeId) === authUser.id;
+      const attendanceAllowed = selfRecord
+        ? (hasPerm(authUser, 'canCheckIn') || hasPerm(authUser, 'canEditAttendance'))
+        : hasPerm(authUser, 'canEditAttendance');
+      if (!attendanceAllowed) return forbidden('صلاحية تعديل الحضور مطلوبة');
       const rows = await sql`
         INSERT INTO attendance (
           employee_id, date, status, notes, check_in_lat, check_in_lng,
@@ -448,6 +489,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'attendance' && method === 'DELETE') {
+      // 🛡️ حذف حضور = صلاحية تعديل الحضور
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية تعديل الحضور مطلوبة');
       const u = new URL(req.url);
       const employeeId = Number(u.searchParams.get('employeeId'));
       const date = u.searchParams.get('date') || '';
@@ -472,6 +515,10 @@ export default async function handler(req: Request) {
 
     if (path === 'vacations' && method === 'POST') {
       const b = await readBody<any>(req);
+      // 🛡️ إنشاء إجازة: لغيره = صلاحية الموافقة، لنفسه = صلاحية طلب إجازة
+      const canApprove = hasPerm(authUser, 'canApproveVacations');
+      const ownRequest = Number(b.employeeId) === authUser.id && hasPerm(authUser, 'canRequestVacations');
+      if (!canApprove && !ownRequest) return forbidden('لا يمكنك إنشاء إجازة لموظف آخر');
       const rows = await sql`
         INSERT INTO vacations (
           employee_id, work_days, vacation_days, vacation_type,
@@ -496,6 +543,14 @@ export default async function handler(req: Request) {
     if (path.startsWith('vacations/') && method === 'PUT') {
       const id = Number(path.split('/')[1]);
       if (Number.isFinite(id) && id > 0) {
+        // 🛡️ التعديل: موافقة = صلاحية الموافقة، وإلا طلباته الشخصية المعلقة فقط
+        if (!hasPerm(authUser, 'canApproveVacations')) {
+          const own = await sql`SELECT employee_id, status FROM vacations WHERE id = ${id} LIMIT 1`;
+          const v = own[0] as any;
+          if (!v || v.employee_id !== authUser.id || v.status !== 'بانتظار الموافقة') {
+            return forbidden('لا يمكنك تعديل هذه الإجازة');
+          }
+        }
         const b = await readBody<any>(req);
         const prevRows = await sql`SELECT status FROM vacations WHERE id = ${id} LIMIT 1`;
         const prevStatus = (prevRows[0] as any)?.status;
@@ -533,16 +588,30 @@ export default async function handler(req: Request) {
 
     if (path.startsWith('vacations/') && method === 'DELETE') {
       const id = Number(path.split('/')[1]);
+      // 🛡️ الحذف: موافقة = صلاحية الموافقة، وإلا طلباته الشخصية المعلقة فقط
+      if (!hasPerm(authUser, 'canApproveVacations')) {
+        const own = await sql`SELECT employee_id, status FROM vacations WHERE id = ${id} LIMIT 1`;
+        const v = own[0] as any;
+        if (!v || v.employee_id !== authUser.id || v.status !== 'بانتظار الموافقة') {
+          return forbidden('لا يمكنك حذف هذه الإجازة');
+        }
+      }
       await sql`DELETE FROM vacations WHERE id = ${id}`;
       return json({ ok: true });
     }
 
     if (path === 'check-in-attempts' && method === 'GET') {
+      // 🛡️ عرض محاولات البصمة = صلاحية سجل التدقيق (زي الواجهة)
+      if (!hasPerm(authUser, 'canViewAuditLog')) return forbidden('صلاحية سجل التدقيق مطلوبة');
       const rows = await sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 2000`;
       return json((rows as any[]).map(mapAttempt).filter(Boolean));
     }
 
     if (path === 'check-in-attempts' && method === 'POST') {
+      // 🛡️ تسجيل محاولة بصمة = صلاحية التشيكن أو تعديل الحضور
+      if (!(hasPerm(authUser, 'canCheckIn') || hasPerm(authUser, 'canEditAttendance'))) {
+        return forbidden('صلاحية تسجيل الحضور مطلوبة');
+      }
       const b = await readBody<any>(req);
       const rows = await sql`
         INSERT INTO check_in_attempts (
@@ -560,6 +629,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'audit-logs' && method === 'GET') {
+      // 🛡️ سجل التدقيق
+      if (!hasPerm(authUser, 'canViewAuditLog')) return forbidden('صلاحية سجل التدقيق مطلوبة');
       const rows = await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`;
       return json((rows as any[]).map(mapAudit).filter(Boolean));
     }
@@ -611,6 +682,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'settings' && method === 'PUT') {
+      // 🛡️ تغيير الإعدادات = صلاحية إدارة الإعدادات
+      if (!hasPerm(authUser, 'canManageSettings')) return forbidden('صلاحية إدارة الإعدادات مطلوبة');
       const b = await readBody<Record<string, string>>(req);
       for (const [key, value] of Object.entries(b)) {
         await sql`
@@ -636,6 +709,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'month-locks' && method === 'POST') {
+      // 🛡️ قفل الشهر
+      if (!hasPerm(authUser, 'canLockMonths')) return forbidden('صلاحية قفل الشهور مطلوبة');
       const b = await readBody<any>(req);
       const rows = await sql`
         INSERT INTO month_locks (year_month, locked_by, locked_by_name, notes)
@@ -658,12 +733,16 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('month-locks/') && method === 'DELETE') {
+      // 🛡️ فتح الشهر
+      if (!hasPerm(authUser, 'canLockMonths')) return forbidden('صلاحية قفل الشهور مطلوبة');
       const yearMonth = decodeURIComponent(path.split('/')[1] || '');
       await sql`DELETE FROM month_locks WHERE year_month = ${yearMonth}`;
       return json({ ok: true });
     }
 
     if (path === 'vacations/sync-attendance' && method === 'POST') {
+      // 🛡️ مزامنة الحضور
+      if (!hasPerm(authUser, 'canApproveVacations')) return forbidden('صلاحية إدارة الإجازات مطلوبة');
       const b = await readBody<any>(req);
       const vacationId = Number(b.vacationId);
       const vacRows = await sql`SELECT * FROM vacations WHERE id = ${vacationId}`;
@@ -674,6 +753,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'vacations/clear-attendance' && method === 'POST') {
+      // 🛡️ مسح الحضور المرتبط
+      if (!hasPerm(authUser, 'canApproveVacations')) return forbidden('صلاحية إدارة الإجازات مطلوبة');
       const b = await readBody<any>(req);
       const vacationId = Number(b.vacationId);
       const marker = `AUTO_VACATION:${vacationId}`;
@@ -682,6 +763,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'vacations/sync-all-approved' && method === 'POST') {
+      // 🛡️ مزامنة شاملة
+      if (!hasPerm(authUser, 'canApproveVacations')) return forbidden('صلاحية إدارة الإجازات مطلوبة');
       const vacs = await sql`
         SELECT * FROM vacations
         WHERE status IN ('مقبولة', 'مجدولة', 'جارية', 'منتهية')

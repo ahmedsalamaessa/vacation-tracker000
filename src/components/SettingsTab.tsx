@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
   getSettings, updateSettings, getEmployees, getVacations, getLocations,
-  getAttendance, getCheckInAttempts, getAuditLogs,
+  getAttendance, getCheckInAttempts, getAuditLogs, getMonthLocks,
   addLocation, updateLocation, deleteLocation,
-  clearAllData, getStorageInfo,
+  clearAllData, getStorageInfo, importLocalData,
 } from '../lib/db';
 import { sha256 } from '../lib/crypto';
 import { computeGraduatedVacation } from '../lib/vacation';
@@ -354,6 +354,7 @@ export default function SettingsTab() {
       settings: getSettings(),
       auditLogs: getAuditLogs(),
       checkInAttempts: getCheckInAttempts(),
+      monthLocks: getMonthLocks(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -377,13 +378,8 @@ export default function SettingsTab() {
         if (!data.version || !data.employees) throw new Error('invalid');
         if (!confirm(`سيتم استبدال كل البيانات بالملف. متأكد؟`)) return;
         clearAllData();
-        if (data.settings) localStorage.setItem('vacation_system_settings', JSON.stringify(data.settings));
-        if (data.employees) localStorage.setItem('vacation_system_employees', JSON.stringify(data.employees));
-        if (data.locations) localStorage.setItem('vacation_system_locations', JSON.stringify(data.locations));
-        if (data.attendance) localStorage.setItem('vacation_system_attendance', JSON.stringify(data.attendance));
-        if (data.vacations) localStorage.setItem('vacation_system_vacations', JSON.stringify(data.vacations));
-        if (data.auditLogs) localStorage.setItem('vacation_system_audit_logs', JSON.stringify(data.auditLogs));
-        if (data.checkInAttempts) localStorage.setItem('vacation_system_check_in_attempts', JSON.stringify(data.checkInAttempts));
+        // 🐛 إصلاح: الكتابة بالمفاتيح الصحيحة vsys_* عبر دالة موحدة
+        importLocalData(data);
         setImportMsg('✅ تم استعادة النسخة بنجاح! هتعمل Refresh...');
         setTimeout(() => window.location.reload(), 2000);
       } catch {

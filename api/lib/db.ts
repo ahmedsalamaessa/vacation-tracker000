@@ -100,7 +100,8 @@ export function mapAttendance(r: any) {
     id: r.id,
     employeeId: r.employee_id,
     date: toDateOnly(r.date),
-    status: r.status,
+    // 🔁 توحيد الحالة القديمة "إجازة عارضة" → "عارضة إجازة" عند القراءة
+    status: r.status === 'إجازة عارضة' ? 'عارضة إجازة' : r.status,
     notes: r.notes,
     checkInLat: r.check_in_lat,
     checkInLng: r.check_in_lng,

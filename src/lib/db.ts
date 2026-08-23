@@ -93,6 +93,20 @@ export function importLocalData(data: any) {
 }
 
 export async function initializeData() {
+  // 🔁 ترحيل محلي: توحيد الحالة القديمة "إجازة عارضة" → "عارضة إجازة"
+  // (بيانات السيرفر بتتوحد تلقائيًا في mapAttendance عند القراءة)
+  try {
+    const attLegacy = getItem<any[]>(STORAGE_KEYS.attendance, []);
+    let legacyChanged = false;
+    for (const a of attLegacy) {
+      if (a && a.status === 'إجازة عارضة') {
+        a.status = 'عارضة إجازة';
+        legacyChanged = true;
+      }
+    }
+    if (legacyChanged) setItem(STORAGE_KEYS.attendance, attLegacy);
+  } catch {}
+
   const remote = await probeRemote();
   if (remote) {
     try {

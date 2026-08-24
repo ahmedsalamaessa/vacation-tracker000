@@ -162,6 +162,16 @@ export const api = {
   async returnEquipmentCheckout(payload: { id: number; conditionReturn: string; notes?: string }) {
     return request('/equipment-checkouts/return', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // 🔧 سجل الصيانة
+  async getEquipmentMaintenance() {
+    return request('/equipment-maintenance');
+  },
+  async addEquipmentMaintenance(payload: any) {
+    return request('/equipment-maintenance', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async deleteEquipmentMaintenance(id: number) {
+    return request(`/equipment-maintenance/${id}`, { method: 'DELETE' });
+  },
   async addAuditLog(log: any) {
     return request('/audit-logs', {
       method: 'POST',

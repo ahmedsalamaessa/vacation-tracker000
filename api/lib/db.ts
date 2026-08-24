@@ -207,6 +207,7 @@ export function mapEquipment(r: any) {
     custodyEmployeeId: r.custody_employee_id ?? null,
     custodySince: r.custody_since ? toDateOnly(r.custody_since) : null,
     custodyNotes: r.custody_notes ?? null,
+    lastCalibration: r.last_calibration ? toDateOnly(r.last_calibration) : null,
     createdAt: r.created_at,
   };
 }
@@ -224,6 +225,20 @@ export function mapCheckout(r: any) {
     conditionReturn: r.condition_return,
     notes: r.notes,
     destination: r.destination,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  };
+}
+
+export function mapMaintenance(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    equipmentId: r.equipment_id,
+    issue: r.issue,
+    cost: Number(r.cost) || 0,
+    maintDate: toDateOnly(r.maint_date),
+    resolution: r.resolution,
     createdBy: r.created_by,
     createdAt: r.created_at,
   };

@@ -12,6 +12,7 @@ import {
   mapNotification,
   mapEquipment,
   mapCheckout,
+  mapMaintenance,
 } from './lib/db';
 import { sha256 } from './lib/crypto';
 
@@ -190,6 +191,19 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_notes TEXT`;
   // 🆕 اسم المساعد الحر (المساعدين مش موظفين في النظام)
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS assistant_name TEXT`;
+  // 🆕 آخر معايرة للجهاز + سجل الصيانة
+  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS last_calibration DATE`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS equipment_maintenance (
+      id SERIAL PRIMARY KEY,
+      equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      issue TEXT NOT NULL,
+      cost NUMERIC DEFAULT 0,
+      maint_date DATE NOT NULL,
+      resolution TEXT,
+      created_by INT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
   equipmentTablesReady = true;
 }
 
@@ -876,7 +890,8 @@ export default async function handler(req: Request) {
           active = ${b.active !== undefined ? b.active : c.active},
           custody_employee_id = ${b.custodyEmployeeId !== undefined ? (b.custodyEmployeeId ?? null) : c.custody_employee_id},
           custody_since = ${b.custodySince !== undefined ? (b.custodySince ?? null) : c.custody_since},
-          custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes}
+          custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes},
+          last_calibration = ${b.lastCalibration !== undefined ? (b.lastCalibration ?? null) : c.last_calibration}
         WHERE id = ${id} RETURNING *`;
       return json(mapEquipment((rows as any[])[0]));
     }
@@ -949,6 +964,32 @@ export default async function handler(req: Request) {
           notes = COALESCE(${b.notes ?? null}, notes)
         WHERE id = ${id}`;
       await sql`UPDATE equipment SET status = ${newStatus} WHERE id = ${co.equipment_id}`;
+      return json({ ok: true });
+    }
+
+    // ============ 🔧 سجل صيانة المعدات ============
+    if (path === 'equipment-maintenance' && method === 'GET') {
+      const rows = await sql`SELECT * FROM equipment_maintenance ORDER BY created_at DESC LIMIT 500`;
+      return json((rows as any[]).map(mapMaintenance).filter(Boolean));
+    }
+
+    if (path === 'equipment-maintenance' && method === 'POST') {
+      // 🛡️ الصيانة = إدارة
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      const b = await readBody<any>(req);
+      const eqId = Number(b?.equipmentId);
+      if (!eqId || !b?.issue || !b?.maintDate) return json({ error: 'bad_request', message: 'الجهاز والعطل والتاريخ مطلوبين' }, 400);
+      const rows = await sql`
+        INSERT INTO equipment_maintenance (equipment_id, issue, cost, maint_date, resolution, created_by)
+        VALUES (${eqId}, ${b.issue}, ${Number(b.cost) || 0}, ${b.maintDate}, ${b.resolution ?? null}, ${authUser.id})
+        RETURNING *`;
+      return json(mapMaintenance((rows as any[])[0]), 201);
+    }
+
+    if (path.startsWith('equipment-maintenance/') && method === 'DELETE') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      const id = Number(path.split('/')[1]);
+      await sql`DELETE FROM equipment_maintenance WHERE id = ${id}`;
       return json({ ok: true });
     }
 

@@ -3,8 +3,9 @@ import {
   getEquipment, getEquipmentCheckouts, getEmployees, getLocations, getSettings,
   addEquipment, updateEquipment, deleteEquipment,
   checkoutEquipment, returnEquipmentCheckout, refreshEquipment,
+  getEquipmentMaintenance, addEquipmentMaintenance, deleteEquipmentMaintenance, refreshMaintenance,
 } from '../lib/db';
-import type { Employee, Equipment, EquipmentCheckout, EquipmentKind, WorkLocation } from '../lib/types';
+import type { Employee, Equipment, EquipmentCheckout, EquipmentKind, WorkLocation, EquipmentMaintenance } from '../lib/types';
 import { KINDS, KIND_GROUPS, kindEmoji } from './equipmentKinds';
 
 const CONDITIONS = ['سليم ✅', 'به خدوش ⚠️', 'يحتاج صيانة 🔧'];
@@ -30,7 +31,15 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [msg, setMsg] = useState('');
 
   // فورم إضافة/تعديل جهاز
-  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'تواتال ستايشن' as EquipmentKind, serialNumber: '', notes: '' });
+  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'تواتال ستايشن' as EquipmentKind, serialNumber: '', notes: '', lastCalibration: '' });
+  // 🔧 الصيانة والمعايرة
+  const [maintenance, setMaintenanceState] = useState<EquipmentMaintenance[]>([]);
+  const [maintForm, setMaintForm] = useState({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
+  // 🔍 سجل حياة الجهاز
+  const [viewEq, setViewEq] = useState<Equipment | null>(null);
+  // 🧾 الجرد
+  const [invMode, setInvMode] = useState(false);
+  const [invMarks, setInvMarks] = useState<Record<number, 'ok' | 'missing'>>({});
   // فورم خروج عدة — المساح بيسجل لنفسه، والمأمورية (وجهة) للإدارة بس
   const [coForm, setCoForm] = useState<{ surveyorId: number; assistantId: number; checkoutDate: string; notes: string; ids: number[] }>({
     surveyorId: canManage ? 0 : user.id,
@@ -59,11 +68,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     setEmployeesState(getEmployees());
     setLocationsState(getLocations());
     setDeptName(getSettings().department_name || 'قسم المساحة');
+    setMaintenanceState(getEquipmentMaintenance());
   }
 
   useEffect(() => {
     reload();
     refreshEquipment();
+    refreshMaintenance();
     const t1 = setTimeout(reload, 1200);
     const t2 = setTimeout(reload, 3500);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -93,13 +104,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     try {
       if (!eqForm.name.trim() || !eqForm.serialNumber.trim()) { flash('⚠️ الاسم والسيريال نمبر مطلوبين'); return; }
       if (eqForm.id) {
-        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes });
+        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, lastCalibration: eqForm.lastCalibration || null });
         flash('✅ تم تعديل الجهاز');
       } else {
-        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true });
+        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, lastCalibration: eqForm.lastCalibration || null });
         flash('✅ تم تسجيل الجهاز');
       }
-      setEqForm({ id: 0, name: '', kind: 'تواتال ستايشن', serialNumber: '', notes: '' });
+      setEqForm({ id: 0, name: '', kind: 'تواتال ستايشن', serialNumber: '', notes: '', lastCalibration: '' });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -175,6 +186,61 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     );
   }
 
+  // 🔧 الصيانة
+  function submitMaintenance(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      if (!maintForm.equipmentId) { flash('⚠️ اختار الجهاز'); return; }
+      if (!maintForm.issue.trim()) { flash('⚠️ اكتب وصف العطل'); return; }
+      addEquipmentMaintenance({
+        equipmentId: maintForm.equipmentId,
+        issue: maintForm.issue.trim(),
+        cost: Number(maintForm.cost) || 0,
+        maintDate: maintForm.maintDate,
+        resolution: maintForm.resolution || null,
+        createdBy: user.id,
+      });
+      updateEquipment(maintForm.equipmentId, { status: 'صيانة' });
+      flash('🔧 اتسجل عطل جديد والجهاز اتحول للصيانة');
+      setMaintForm({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
+      reload();
+    } catch (err: any) {
+      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
+  }
+
+  function fixFromMaintenance(eq: Equipment) {
+    updateEquipment(eq.id, { status: 'متاحة' });
+    flash('✅ الجهاز رجع متاح من الصيانة');
+    reload();
+  }
+
+  function removeMaintenance(m: EquipmentMaintenance) {
+    if (!window.confirm('حذف سجل الصيانة ده؟')) return;
+    deleteEquipmentMaintenance(m.id);
+    reload();
+  }
+
+  // ⏰ معايرة مستحقة؟ (أكثر من سنة)
+  function calibrationDue(eq: Equipment): boolean {
+    if (!eq.lastCalibration) return true;
+    return daysSince(eq.lastCalibration) >= 365;
+  }
+
+  // 🧾 الجرد
+  function expectedPlace(eq: Equipment): string {
+    if (eq.status === 'صيانة') return '🔧 في الصيانة';
+    const openCo = checkouts.find(c => c.equipmentId === eq.id && !c.returnDate);
+    if (openCo) return `🔴 خارجة مع ${empName(openCo.surveyorId)}${openCo.destination ? ` (مأمورية ${openCo.destination})` : ''}`;
+    if (eq.custodyEmployeeId) return `📦 عهدة: ${empName(eq.custodyEmployeeId)}`;
+    return '🏬 في المخزن';
+  }
+
+  function startInventory() {
+    setInvMode(true);
+    setInvMarks({});
+  }
+
   // ⬅️ رجوع سريع من الفورم الواضح
   function submitQuickReturn(e: React.FormEvent) {
     e.preventDefault();
@@ -199,6 +265,28 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   return (
     <div className="w-full space-y-6">
       {msg && <div className="sticky top-2 z-20 rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-black text-white shadow-lg">{msg}</div>}
+
+      {/* 🔔 تنبيه العدة المتأخرة */}
+      {(() => {
+        const lateDays = Number((getSettings() as any)?.equipment_late_days) || 7;
+        const late = openCheckouts.filter(co => daysSince(co.checkoutDate) >= lateDays);
+        if (late.length === 0) return null;
+        return (
+          <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4">
+            <div className="mb-2 text-lg font-black text-red-800">🔔 عدة متأخرة بره أكتر من {lateDays} يوم ({late.length})</div>
+            <div className="space-y-1">
+              {late.map(co => {
+                const eq = eqOf(co.equipmentId);
+                return (
+                  <div key={co.id} className="text-sm font-bold text-red-700">
+                    ⚠️ {eq ? `${eq.name} (${eq.serialNumber})` : `#${co.equipmentId}`} — مع {empName(co.surveyorId)} — خارج من {co.checkoutDate} ({daysSince(co.checkoutDate)} يوم)
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===== العدد ===== */}
       <div className="grid grid-cols-3 gap-3">
@@ -432,6 +520,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             <input value={eqForm.name} onChange={e => setEqForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الجهاز (مثال: توتال نيكون)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.serialNumber} onChange={e => setEqForm(f => ({ ...f, serialNumber: e.target.value }))} placeholder="السيريال نمبر" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.notes} onChange={e => setEqForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
+            <label className="text-xs font-black text-slate-500">
+              ⏰ آخر معايرة
+              <input type="date" value={eqForm.lastCalibration} onChange={e => setEqForm(f => ({ ...f, lastCalibration: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-bold outline-none focus:border-blue-500" />
+            </label>
             <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">{eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>
           </form>
         )}
@@ -451,6 +544,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <th className="p-3">الحالة</th>
                   <th className="p-3">مع مين</th>
                   <th className="p-3">ملاحظات</th>
+                  <th className="p-3">المعايرة</th>
+                  <th className="p-3">السجل</th>
                   {canManage && <th className="p-3">إجراءات</th>}
                 </tr>
               </thead>
@@ -467,10 +562,21 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       </td>
                       <td className="p-3">{openCo ? `${empName(openCo.surveyorId)}${openCo.assistantId ? ` (مساعد: ${empName(openCo.assistantId)})` : ''}` : '—'}</td>
                       <td className="p-3 text-xs text-slate-500">{eq.notes || '—'}</td>
+                      <td className="p-3">
+                        {calibrationDue(eq)
+                          ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">⏰ معايرة مستحقة</span>
+                          : <span className="text-xs font-bold text-emerald-600">{eq.lastCalibration}</span>}
+                      </td>
+                      <td className="p-3">
+                        <button type="button" onClick={() => setViewEq(eq)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="سجل الجهاز كامل">📜</button>
+                      </td>
                       {canManage && (
                         <td className="p-3">
                           <div className="flex gap-1">
-                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '' })}
+                            {eq.status === 'صيانة' && (
+                              <button type="button" onClick={() => fixFromMaintenance(eq)} className="rounded-lg bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-200">✅ خلصت</button>
+                            )}
+                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '', lastCalibration: eq.lastCalibration || '' })}
                               className="rounded-lg bg-blue-100 px-3 py-1 text-xs font-black text-blue-700 hover:bg-blue-200">تعديل</button>
                             <button type="button" onClick={() => removeDevice(eq)} disabled={eq.status === 'خارجة'}
                               className="rounded-lg bg-red-100 px-3 py-1 text-xs font-black text-red-700 hover:bg-red-200 disabled:opacity-40">حذف</button>
@@ -529,6 +635,256 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           </div>
         )}
       </section>
+      {/* ===== 🔧 سجل الصيانة ===== */}
+      {canManage && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="mb-1 text-xl font-black text-slate-900">🔧 الصيانة والأعطال</h3>
+          <p className="mb-4 text-xs font-bold text-slate-500">سجّل العطل وتكلفته — الجهاز يتحول تلقائي لصيانة، ولما يخلص دوس "✅ خلصت" في جدول المعدات</p>
+          <form onSubmit={submitMaintenance} className="mb-5 grid gap-3 md:grid-cols-5">
+            <label className="text-sm font-black text-slate-700 md:col-span-2">
+              🧰 الجهاز
+              <select value={maintForm.equipmentId} onChange={e => setMaintForm(f => ({ ...f, equipmentId: Number(e.target.value) }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                <option value={0}>— اختار الجهاز —</option>
+                {equipment.map(eq => (
+                  <option key={eq.id} value={eq.id}>{kindEmoji(eq.kind)} {eq.name} · {eq.serialNumber}{eq.status === 'صيانة' ? ' (في الصيانة)' : ''}</option>
+                ))}
+              </select>
+            </label>
+            <input value={maintForm.issue} onChange={e => setMaintForm(f => ({ ...f, issue: e.target.value }))} placeholder="وصف العطل (مثال: محور الميل واقف)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
+            <input type="number" value={maintForm.cost} onChange={e => setMaintForm(f => ({ ...f, cost: e.target.value }))} placeholder="التكلفة (جنيه)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
+            <label className="text-xs font-black text-slate-500">
+              📅 تاريخ الصيانة
+              <input type="date" value={maintForm.maintDate} onChange={e => setMaintForm(f => ({ ...f, maintDate: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-bold outline-none focus:border-blue-500" />
+            </label>
+            <input value={maintForm.resolution} onChange={e => setMaintForm(f => ({ ...f, resolution: e.target.value }))} placeholder="الإصلاح تم إزاي؟ (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 md:col-span-4" />
+            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-amber-600">🔧 تسجيل عطل</button>
+          </form>
+          {maintenance.length === 0 ? (
+            <div className="rounded-2xl bg-slate-50 p-5 text-center font-bold text-slate-500">مفيش أعطال مسجلة ✅</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
+                    <th className="p-2">الجهاز</th><th className="p-2">العطل</th><th className="p-2">التكلفة</th><th className="p-2">التاريخ</th><th className="p-2">الإصلاح</th><th className="p-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {maintenance.map(m => {
+                    const eq = equipment.find(x => x.id === m.equipmentId);
+                    return (
+                      <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
+                        <td className="p-2 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${m.equipmentId}`}</td>
+                        <td className="p-2">{m.issue}</td>
+                        <td className="p-2">{m.cost ? `${m.cost} ج` : '—'}</td>
+                        <td className="p-2">{m.maintDate}</td>
+                        <td className="p-2 text-xs text-slate-500">{m.resolution || '—'}</td>
+                        <td className="p-2">
+                          <button type="button" onClick={() => removeMaintenance(m)} className="rounded-lg bg-red-50 px-2 py-1 text-xs font-black text-red-600 hover:bg-red-100">🗑️</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ===== 📊 إحصائيات العدة ===== */}
+      {canManage && checkouts.length > 0 && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="mb-4 text-xl font-black text-slate-900">📊 إحصائيات العدة</h3>
+          {(() => {
+            const stats = equipment.map(eq => {
+              const cos = checkouts.filter(c => c.equipmentId === eq.id);
+              const done = cos.filter(c => c.returnDate);
+              const totalDays = done.reduce((sum, c) => sum + Math.max(1, Math.round((new Date(c.returnDate!).getTime() - new Date(c.checkoutDate).getTime()) / 86400000)), 0);
+              return { eq, count: cos.length, totalDays, avg: done.length ? Math.round(totalDays / done.length) : 0 };
+            }).filter(st => st.count > 0).sort((a, b) => b.count - a.count);
+            const totalOut = stats.reduce((s2, st) => s2 + st.count, 0);
+            const totalCost = maintenance.reduce((s2, m) => s2 + (m.cost || 0), 0);
+            return (
+              <>
+                <div className="mb-4 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-blue-50 border border-blue-200 p-3 text-center">
+                    <div className="text-xl font-black text-blue-700">{totalOut}</div>
+                    <div className="text-[10px] font-bold text-blue-600">إجمالي الخروجات</div>
+                  </div>
+                  <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-center">
+                    <div className="text-xl font-black text-amber-700">{maintenance.length}</div>
+                    <div className="text-[10px] font-bold text-amber-600">أعطال مسجلة</div>
+                  </div>
+                  <div className="rounded-2xl bg-red-50 border border-red-200 p-3 text-center">
+                    <div className="text-xl font-black text-red-700">{totalCost} ج</div>
+                    <div className="text-[10px] font-bold text-red-600">تكاليف الصيانة</div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
+                        <th className="p-2">الجهاز</th><th className="p-2">عدد الخروجات</th><th className="p-2">إجمالي الأيام بره</th><th className="p-2">متوسط المدة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats.map(st => (
+                        <tr key={st.eq.id} className="border-b border-slate-100 font-bold text-slate-800">
+                          <td className="p-2 font-black">{kindEmoji(st.eq.kind)} {st.eq.name} <span className="font-mono text-xs text-slate-400">{st.eq.serialNumber}</span></td>
+                          <td className="p-2">{st.count}</td>
+                          <td className="p-2">{st.totalDays} يوم</td>
+                          <td className="p-2">{st.avg} يوم</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
+        </section>
+      )}
+
+      {/* ===== 🧾 جرد العدة ===== */}
+      {canManage && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-black text-slate-900">🧾 جرد العدة</h3>
+              <p className="text-xs font-bold text-slate-500">تأكد إن كل قطعة في مكانها — واطبع تقرير الجرد بالتواقيع</p>
+            </div>
+            <button type="button" onClick={() => (invMode ? setInvMode(false) : startInventory())} className={`rounded-xl px-4 py-2.5 text-sm font-black text-white ${invMode ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-blue-700'}`}>
+              {invMode ? 'إلغاء الجرد' : '🧾 ابدأ جرد'}
+            </button>
+          </div>
+          {invMode && (
+            <div>
+              <div className="mb-3 rounded-xl bg-blue-50 border border-blue-200 px-4 py-2 text-sm font-black text-blue-700">
+                اتأكد على {Object.keys(invMarks).length} من {equipment.filter(e => e.active).length} قطعة
+                {Object.values(invMarks).filter(v => v === 'missing').length > 0 && ` — ⚠️ ناقص: ${Object.values(invMarks).filter(v => v === 'missing').length}`}
+              </div>
+              <div className="space-y-2">
+                {equipment.filter(e => e.active).map(eq => (
+                  <div key={eq.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 p-3 ${invMarks[eq.id] === 'missing' ? 'border-red-300 bg-red-50' : invMarks[eq.id] === 'ok' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="text-sm font-black text-slate-800">
+                      {kindEmoji(eq.kind)} {eq.name} <span className="font-mono text-xs text-slate-400">{eq.serialNumber}</span>
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-500">المتوقع: {expectedPlace(eq)}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setInvMarks(m => ({ ...m, [eq.id]: 'ok' }))} className={`rounded-lg px-3 py-1.5 text-xs font-black ${invMarks[eq.id] === 'ok' ? 'bg-emerald-600 text-white' : 'bg-white border border-emerald-300 text-emerald-700'}`}>✅ موجود</button>
+                      <button type="button" onClick={() => setInvMarks(m => ({ ...m, [eq.id]: 'missing' }))} className={`rounded-lg px-3 py-1.5 text-xs font-black ${invMarks[eq.id] === 'missing' ? 'bg-red-600 text-white' : 'bg-white border border-red-300 text-red-700'}`}>❌ ناقص</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => window.print()} className="mt-4 w-full rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة تقرير الجرد (بعد ما تخلص التأكيد)</button>
+              <div className="print-sheet mt-6 hidden print:block rounded-2xl bg-white p-6" dir="rtl">
+                <div className="border-b-4 border-double border-slate-900 pb-2 text-center">
+                  <div className="text-lg font-black">{deptName}</div>
+                  <div className="text-xl font-black">تقرير جرد عدة المساحة — {today}</div>
+                </div>
+                <table className="mt-3 w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border border-slate-400 p-1">م</th>
+                      <th className="border border-slate-400 p-1">الجهاز</th>
+                      <th className="border border-slate-400 p-1">السيريال</th>
+                      <th className="border border-slate-400 p-1">المتوقع</th>
+                      <th className="border border-slate-400 p-1">النتيجة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipment.filter(e => e.active).map((eq, i) => (
+                      <tr key={eq.id}>
+                        <td className="border border-slate-400 p-1 text-center">{i + 1}</td>
+                        <td className="border border-slate-400 p-1 font-bold">{eq.name}</td>
+                        <td className="border border-slate-400 p-1 text-center font-mono">{eq.serialNumber}</td>
+                        <td className="border border-slate-400 p-1">{expectedPlace(eq)}</td>
+                        <td className="border border-slate-400 p-1 text-center font-black">{invMarks[eq.id] === 'missing' ? '❌ ناقص' : invMarks[eq.id] === 'ok' ? '✅ موجود' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="mt-8 grid grid-cols-2 gap-4 text-center text-xs font-black">
+                  <div>أمين العدة<br /><br />..............................</div>
+                  <div>مدير القسم<br /><br />..............................</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ===== 🔍 سجل حياة الجهاز ===== */}
+      {viewEq && (
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setViewEq(null)}>
+          <div className="mx-auto max-w-3xl rounded-[2rem] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-3 border-b-2 border-slate-100 pb-3">
+              <div>
+                <div className="text-2xl font-black text-slate-900">{kindEmoji(viewEq.kind)} {viewEq.name}</div>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs font-bold">
+                  <span className="rounded-full bg-slate-100 px-3 py-1">سيريال: {viewEq.serialNumber}</span>
+                  <span className={`rounded-full px-3 py-1 ${STATUS_STYLE[viewEq.status]}`}>{viewEq.status}</span>
+                  {viewEq.custodyEmployeeId && <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">📦 عهدة: {empName(viewEq.custodyEmployeeId)}{viewEq.custodySince ? ` من ${viewEq.custodySince}` : ''}</span>}
+                  <span className={`rounded-full px-3 py-1 ${calibrationDue(viewEq) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>⏰ المعايرة: {viewEq.lastCalibration || 'مش مسجلة'}</span>
+                  {viewEq.custodyNotes && <span className="rounded-full bg-slate-100 px-3 py-1">{viewEq.custodyNotes}</span>}
+                </div>
+              </div>
+              <button type="button" onClick={() => setViewEq(null)} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-600 hover:bg-slate-200">إغلاق ✕</button>
+            </div>
+            <h4 className="mb-2 text-lg font-black text-slate-800">📜 الخروجات ({checkouts.filter(c => c.equipmentId === viewEq.id).length})</h4>
+            <div className="max-h-56 overflow-y-auto">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 font-black text-slate-500">
+                    <th className="p-2">نزلت</th><th className="p-2">المساح</th><th className="p-2">المساعد</th><th className="p-2">الوجهة</th><th className="p-2">رجعت</th><th className="p-2">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {checkouts.filter(c => c.equipmentId === viewEq.id).map(co => (
+                    <tr key={co.id} className="border-b border-slate-100 font-bold text-slate-700">
+                      <td className="p-2">{co.checkoutDate}</td>
+                      <td className="p-2">{empName(co.surveyorId)}</td>
+                      <td className="p-2">{assistantLabel(co)}</td>
+                      <td className="p-2">{co.destination || '—'}</td>
+                      <td className="p-2">{co.returnDate || <span className="text-red-600">لسه خارجة</span>}</td>
+                      <td className="p-2">{co.conditionReturn || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h4 className="mb-2 mt-4 text-lg font-black text-slate-800">🔧 الصيانة ({maintenance.filter(m => m.equipmentId === viewEq.id).length})</h4>
+            <div className="max-h-40 overflow-y-auto">
+              {maintenance.filter(m => m.equipmentId === viewEq.id).length === 0 ? (
+                <div className="rounded-xl bg-slate-50 p-3 text-center text-sm font-bold text-slate-500">مفيش أعطال مسجلة للجهاز ده ✅</div>
+              ) : (
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="border-b-2 border-slate-200 font-black text-slate-500">
+                      <th className="p-2">التاريخ</th><th className="p-2">العطل</th><th className="p-2">التكلفة</th><th className="p-2">الإصلاح</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {maintenance.filter(m => m.equipmentId === viewEq.id).map(m => (
+                      <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-700">
+                        <td className="p-2">{m.maintDate}</td>
+                        <td className="p-2">{m.issue}</td>
+                        <td className="p-2">{m.cost ? `${m.cost} ج` : '—'}</td>
+                        <td className="p-2">{m.resolution || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== 🖨️ ورقة المأمورية ===== */}
       {printGroup && printGroup.length > 0 && (
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGroup(null)}>

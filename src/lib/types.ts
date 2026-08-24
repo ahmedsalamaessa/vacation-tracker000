@@ -231,3 +231,14 @@ export interface EquipmentCheckout {
   createdBy: number | null;
   createdAt: string;
 }
+
+export interface EquipmentMaintenance {
+  id: number;
+  equipmentId: number;
+  issue: string;
+  cost: number;
+  maintDate: string;
+  resolution?: string | null;
+  createdBy?: number | null;
+  createdAt: string;
+}

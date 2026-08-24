@@ -9,6 +9,7 @@ import type {
   SystemNotification,
   Equipment,
   EquipmentCheckout,
+  EquipmentMaintenance,
 } from './types';
 import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
@@ -28,6 +29,7 @@ const STORAGE_KEYS = {
   currentUser: PREFIX + 'current_user',
   equipment: PREFIX + 'equipment',
   equipmentCheckouts: PREFIX + 'equipment_checkouts',
+  equipmentMaintenance: PREFIX + 'equipment_maintenance',
 };
 
 function getItem<T>(key: string, defaultValue: T): T {
@@ -1121,4 +1123,39 @@ export function returnEquipmentCheckout(id: number, conditionReturn: string, not
     api.returnEquipmentCheckout({ id, conditionReturn, notes }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote returnEquipmentCheckout', e));
   }
   return true;
+}
+
+// ============ 🔧 سجل صيانة المعدات ============
+export function getEquipmentMaintenance(): EquipmentMaintenance[] {
+  return getItem<EquipmentMaintenance[]>(STORAGE_KEYS.equipmentMaintenance, []);
+}
+
+export function addEquipmentMaintenance(rec: Omit<EquipmentMaintenance, 'id' | 'createdAt'>): EquipmentMaintenance {
+  const list = getEquipmentMaintenance();
+  const item: EquipmentMaintenance = {
+    ...rec,
+    id: Math.max(0, ...list.map(m => m.id)) + 1,
+    createdAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEYS.equipmentMaintenance, [item, ...list]);
+  if (remoteAvailable()) {
+    api.addEquipmentMaintenance(rec).then(() => {
+      api.getEquipmentMaintenance().then((remote: any) => {
+        if (Array.isArray(remote)) setItem(STORAGE_KEYS.equipmentMaintenance, remote);
+      }).catch(() => {});
+    }).catch(e => console.warn('remote addMaintenance', e));
+  }
+  return item;
+}
+
+export function deleteEquipmentMaintenance(id: number): void {
+  setItem(STORAGE_KEYS.equipmentMaintenance, getEquipmentMaintenance().filter(m => m.id !== id));
+  if (remoteAvailable()) api.deleteEquipmentMaintenance(id).catch(e => console.warn('remote delMaintenance', e));
+}
+
+export function refreshMaintenance(): void {
+  if (!remoteAvailable()) return;
+  api.getEquipmentMaintenance().then((remote: any) => {
+    if (Array.isArray(remote)) setItem(STORAGE_KEYS.equipmentMaintenance, remote);
+  }).catch(e => console.warn('remote getMaintenance', e));
 }

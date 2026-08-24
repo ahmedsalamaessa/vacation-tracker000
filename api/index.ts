@@ -182,6 +182,12 @@ async function ensureEquipmentTables(sql: any) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_equipment_checkouts_equipment ON equipment_checkouts(equipment_id)`;
+  // 🆕 وجهة المأمورية — كان السطر ده ضايع فالعمود مكانش بيتعمل! (اتصلح)
+  await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS destination TEXT`;
+  // 🆕 عهدة المساحين: الجهاز مع مين ومن امتى وملاحظاته (هالك...)
+  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_employee_id INT`;
+  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_since DATE`;
+  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_notes TEXT`;
   equipmentTablesReady = true;
 }
 
@@ -865,7 +871,10 @@ export default async function handler(req: Request) {
           serial_number = ${b.serialNumber !== undefined ? String(b.serialNumber).trim() : c.serial_number},
           status = ${b.status ?? c.status},
           notes = ${b.notes !== undefined ? b.notes : c.notes},
-          active = ${b.active !== undefined ? b.active : c.active}
+          active = ${b.active !== undefined ? b.active : c.active},
+          custody_employee_id = ${b.custodyEmployeeId !== undefined ? (b.custodyEmployeeId ?? null) : c.custody_employee_id},
+          custody_since = ${b.custodySince !== undefined ? (b.custodySince ?? null) : c.custody_since},
+          custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes}
         WHERE id = ${id} RETURNING *`;
       return json(mapEquipment((rows as any[])[0]));
     }

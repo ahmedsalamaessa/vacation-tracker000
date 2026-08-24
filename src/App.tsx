@@ -28,6 +28,7 @@ import EmployeesTab from './components/EmployeesTab';
 import ReportsTab from './components/ReportsTab';
 import LocationsTab from './components/LocationsTab';
 import EquipmentTab from './components/EquipmentTab';
+import CustodyTab from './components/CustodyTab';
 import ApprovalsTab from './components/ApprovalsTab';
 import DashboardTab from './components/DashboardTab';
 import SettingsTab from './components/SettingsTab';
@@ -49,6 +50,7 @@ type TabKey =
   | 'employees'
   | 'locations'
   | 'equipment'
+  | 'custody'
   | 'attempts'
   | 'reports'
   | 'notifications'
@@ -94,6 +96,7 @@ const TABS: TabDef[] = [
   { key: 'employees', emoji: '👥', permission: 'canManageEmployees' },
   { key: 'locations', emoji: '📍', permission: 'canManageLocations' },
   { key: 'equipment', emoji: '🧰', permission: 'canCheckIn' },
+  { key: 'custody', emoji: '👥', permission: 'canCheckIn' },
   { key: 'attempts', emoji: '📡', permission: 'canViewAuditLog' },
   { key: 'reports', emoji: '📁', permission: 'canViewReports' },
   { key: 'settings', emoji: '⚙️', permission: 'canManageSettings' },
@@ -419,6 +422,7 @@ export default function App() {
       employees: 'الموظفين',
       locations: 'المواقع',
       equipment: 'استلام وتسليم العدة',
+      custody: 'عهدة المساحين',
       attempts: 'سجل البصمات',
       reports: 'التقارير',
       profile: 'ملف الموظف',
@@ -690,6 +694,7 @@ export default function App() {
         {activeTab === 'locations' &&
           (user.role === 'admin' || user.canManageLocations) && <LocationsTab user={user} />}
         {activeTab === 'equipment' && <EquipmentTab user={user} />}
+        {activeTab === 'custody' && <CustodyTab user={user} />}
         {activeTab === 'attempts' &&
           (user.role === 'admin' || user.canViewAuditLog) && <CheckInAttemptsTab user={user} />}
         {activeTab === 'reports' &&

@@ -10,6 +10,8 @@ import {
   mapAttempt,
   mapAudit,
   mapNotification,
+  mapEquipment,
+  mapCheckout,
 } from './lib/db';
 import { sha256 } from './lib/crypto';
 
@@ -151,6 +153,38 @@ async function syncVacationDays(sql: any, vac: any): Promise<{ synced: number; s
   return { synced, skipped, dates };
 }
 
+// 🧰 إنشاء جداول العدة تلقائيًا (مرة لكل Cold Start — CREATE IF NOT EXISTS آمنة ومتكررة)
+let equipmentTablesReady = false;
+async function ensureEquipmentTables(sql: any) {
+  if (equipmentTablesReady) return;
+  await sql`
+    CREATE TABLE IF NOT EXISTS equipment (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'أخرى',
+      serial_number TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'متاحة',
+      notes TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS equipment_checkouts (
+      id SERIAL PRIMARY KEY,
+      equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+      surveyor_id INT NOT NULL,
+      assistant_id INT,
+      checkout_date DATE NOT NULL,
+      return_date DATE,
+      condition_return TEXT,
+      notes TEXT,
+      created_by INT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_equipment_checkouts_equipment ON equipment_checkouts(equipment_id)`;
+  equipmentTablesReady = true;
+}
+
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return options();
   const sql = getSql();
@@ -158,6 +192,7 @@ export default async function handler(req: Request) {
   const method = req.method || 'GET';
 
   try {
+    await ensureEquipmentTables(sql);
     if (path === '' || path === 'health') {
       return json({ ok: true, service: 'vacation-api', time: new Date().toISOString() });
     }
@@ -223,7 +258,7 @@ export default async function handler(req: Request) {
     if (path === 'bootstrap' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
-      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows] =
+      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows, equipmentRows, checkoutRows] =
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
           sql`SELECT * FROM work_locations ORDER BY id`,
@@ -234,6 +269,8 @@ export default async function handler(req: Request) {
           sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 2000`,
           sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 500`,
           sql`SELECT key, value FROM settings`,
+          sql`SELECT * FROM equipment ORDER BY id`,
+          sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
@@ -271,6 +308,8 @@ export default async function handler(req: Request) {
         })),
         checkInAttempts: (attempts as any[]).map(mapAttempt).filter(Boolean),
         notifications: (notifications as any[]).map(mapNotification).filter(Boolean),
+        equipment: (equipmentRows as any[]).map(mapEquipment).filter(Boolean),
+        equipmentCheckouts: (checkoutRows as any[]).map(mapCheckout).filter(Boolean),
         settings,
       });
     }
@@ -790,6 +829,112 @@ export default async function handler(req: Request) {
         results.push({ vacationId: vac.id, ...r });
       }
       return json({ ok: true, count: results.length, results });
+    }
+
+    // ============ 🧰 استلام وتسليم العدة ============
+    if (path === 'equipment' && method === 'GET') {
+      const rows = await sql`SELECT * FROM equipment ORDER BY id`;
+      return json((rows as any[]).map(mapEquipment).filter(Boolean));
+    }
+
+    if (path === 'equipment' && method === 'POST') {
+      // 🛡️ إدارة المعدات = صلاحية تعديل الحضور (أدمن/مدير)
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      const b = await readBody<any>(req);
+      if (!b?.name || !b?.serialNumber) return json({ error: 'bad_request', message: 'الاسم والسيريال نمبر مطلوبين' }, 400);
+      const dupe = await sql`SELECT id FROM equipment WHERE serial_number = ${String(b.serialNumber).trim()}`;
+      if ((dupe as any[]).length > 0) return json({ error: 'duplicate', message: 'السيريال نمبر ده مسجل قبل كده' }, 409);
+      const rows = await sql`
+        INSERT INTO equipment (name, kind, serial_number, status, notes, active)
+        VALUES (${b.name}, ${b.kind || 'أخرى'}, ${String(b.serialNumber).trim()}, 'متاحة', ${b.notes ?? null}, ${b.active !== false})
+        RETURNING *`;
+      return json(mapEquipment((rows as any[])[0]), 201);
+    }
+
+    if (path.startsWith('equipment/') && method === 'PUT') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      const id = Number(path.split('/')[1]);
+      const b = await readBody<any>(req);
+      const cur = await sql`SELECT * FROM equipment WHERE id = ${id}`;
+      if ((cur as any[]).length === 0) return json({ error: 'not_found' }, 404);
+      const c = (cur as any[])[0];
+      const rows = await sql`
+        UPDATE equipment SET
+          name = ${b.name ?? c.name},
+          kind = ${b.kind ?? c.kind},
+          serial_number = ${b.serialNumber !== undefined ? String(b.serialNumber).trim() : c.serial_number},
+          status = ${b.status ?? c.status},
+          notes = ${b.notes !== undefined ? b.notes : c.notes},
+          active = ${b.active !== undefined ? b.active : c.active}
+        WHERE id = ${id} RETURNING *`;
+      return json(mapEquipment((rows as any[])[0]));
+    }
+
+    if (path.startsWith('equipment/') && method === 'DELETE') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      const id = Number(path.split('/')[1]);
+      const cur = await sql`SELECT status FROM equipment WHERE id = ${id}`;
+      if ((cur as any[]).length === 0) return json({ error: 'not_found' }, 404);
+      if ((cur as any[])[0].status === 'خارجة') return json({ error: 'conflict', message: 'الجهاز خارج دلوقتي — رجّعه الأول' }, 409);
+      await sql`DELETE FROM equipment WHERE id = ${id}`;
+      return json({ ok: true });
+    }
+
+    if (path === 'equipment-checkouts' && method === 'GET') {
+      const rows = await sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`;
+      return json((rows as any[]).map(mapCheckout).filter(Boolean));
+    }
+
+    if (path === 'equipment-checkouts' && method === 'POST') {
+      // خروج عدة: المساح بيسجل لنفسه، والأدمن/المدير لأي حد
+      const b = await readBody<any>(req);
+      const ids: number[] = Array.isArray(b?.equipmentIds) ? b.equipmentIds.map(Number).filter(Boolean) : [];
+      const surveyorId = Number(b?.surveyorId);
+      if (!hasPerm(authUser, 'canEditAttendance') && surveyorId !== authUser.id) {
+        return forbidden('تقدر تسجل خروج عدة لنفسك بس');
+      }
+      if (ids.length === 0 || !surveyorId || !b?.checkoutDate) {
+        return json({ error: 'bad_request', message: 'المساح والتاريخ وجهاز واحد على الأقل مطلوبين' }, 400);
+      }
+      const blocked: string[] = [];
+      for (const eid of ids) {
+        const rows = await sql`SELECT * FROM equipment WHERE id = ${eid}`;
+        const eq = (rows as any[])[0];
+        if (!eq || !eq.active || eq.status !== 'متاحة') blocked.push(eq ? `${eq.name} (${eq.serial_number})` : `#${eid}`);
+      }
+      if (blocked.length > 0) return json({ error: 'conflict', message: `أجهزة مش متاحة: ${blocked.join('، ')}` }, 409);
+      const created: any[] = [];
+      for (const eid of ids) {
+        const rows = await sql`
+          INSERT INTO equipment_checkouts (equipment_id, surveyor_id, assistant_id, checkout_date, notes, created_by)
+          VALUES (${eid}, ${surveyorId}, ${b.assistantId ? Number(b.assistantId) : null}, ${b.checkoutDate}, ${b.notes ?? null}, ${authUser.id})
+          RETURNING *`;
+        created.push(mapCheckout((rows as any[])[0]));
+        await sql`UPDATE equipment SET status = 'خارجة' WHERE id = ${eid}`;
+      }
+      return json({ ok: true, created: created.length, checkouts: created }, 201);
+    }
+
+    if (path === 'equipment-checkouts/return' && method === 'POST') {
+      // رجوع عدة: المساح صاحب السجل أو أدمن/مدير
+      const b = await readBody<any>(req);
+      const id = Number(b?.id);
+      const cur = await sql`SELECT * FROM equipment_checkouts WHERE id = ${id}`;
+      const co = (cur as any[])[0];
+      if (!co) return json({ error: 'not_found' }, 404);
+      if (!hasPerm(authUser, 'canEditAttendance') && co.surveyor_id !== authUser.id) {
+        return forbidden('تقدر تسجل رجوع عدتك بس');
+      }
+      if (co.return_date) return json({ error: 'conflict', message: 'العدة دي مسجّل رجوعها خلاص' }, 409);
+      const today = new Date().toISOString().slice(0, 10);
+      const condition = b?.conditionReturn || 'سليم';
+      const newStatus = condition === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+      await sql`
+        UPDATE equipment_checkouts SET return_date = ${today}, condition_return = ${condition},
+          notes = COALESCE(${b.notes ?? null}, notes)
+        WHERE id = ${id}`;
+      await sql`UPDATE equipment SET status = ${newStatus} WHERE id = ${co.equipment_id}`;
+      return json({ ok: true });
     }
 
     return json({ error: 'not_found', path, method }, 404);

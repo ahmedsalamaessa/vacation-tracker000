@@ -193,3 +193,33 @@ export function mapNotification(r: any) {
     createdAt: r.created_at,
   };
 }
+
+export function mapEquipment(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    serialNumber: r.serial_number,
+    status: r.status,
+    notes: r.notes,
+    active: r.active,
+    createdAt: r.created_at,
+  };
+}
+
+export function mapCheckout(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    equipmentId: r.equipment_id,
+    surveyorId: r.surveyor_id,
+    assistantId: r.assistant_id,
+    checkoutDate: toDateOnly(r.checkout_date),
+    returnDate: r.return_date ? toDateOnly(r.return_date) : null,
+    conditionReturn: r.condition_return,
+    notes: r.notes,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  };
+}

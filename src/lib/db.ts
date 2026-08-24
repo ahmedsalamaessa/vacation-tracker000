@@ -7,6 +7,8 @@ import type {
   AuditLog,
   CheckInAttempt,
   SystemNotification,
+  Equipment,
+  EquipmentCheckout,
 } from './types';
 import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
@@ -24,6 +26,8 @@ const STORAGE_KEYS = {
   notifications: PREFIX + 'notifications',
   settings: PREFIX + 'settings',
   currentUser: PREFIX + 'current_user',
+  equipment: PREFIX + 'equipment',
+  equipmentCheckouts: PREFIX + 'equipment_checkouts',
 };
 
 function getItem<T>(key: string, defaultValue: T): T {
@@ -70,6 +74,9 @@ export async function refreshFromRemote(): Promise<any> {
     if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
     if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
     if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
+    const d = data as any; // (الجديد فقط — القديم سيبانه زي ما هو)
+    if (d.equipment) setItem(STORAGE_KEYS.equipment, d.equipment);
+    if (d.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, d.equipmentCheckouts);
     return data;
   } catch (e) {
     console.warn('refreshFromRemote failed', e);
@@ -90,6 +97,8 @@ export function importLocalData(data: any) {
   if (data.checkInAttempts) setItem(STORAGE_KEYS.checkInAttempts, data.checkInAttempts);
   if (data.notifications) setItem(STORAGE_KEYS.notifications, data.notifications);
   if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
+  if (data.equipment) setItem(STORAGE_KEYS.equipment, data.equipment);
+  if (data.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, data.equipmentCheckouts);
 }
 
 export async function initializeData() {
@@ -973,4 +982,139 @@ export function getStorageInfo(): { used: number; limit: number; percentage: num
   }
   const limit = 5 * 1024 * 1024;
   return { used, limit, percentage: Math.round((used / limit) * 100) };
+}
+
+// ============ 🧰 استلام وتسليم العدة ============
+export function getEquipment(): Equipment[] {
+  return getItem<Equipment[]>(STORAGE_KEYS.equipment, []);
+}
+function setEquipmentList(list: Equipment[]) {
+  setItem(STORAGE_KEYS.equipment, list);
+}
+
+export function getEquipmentCheckouts(): EquipmentCheckout[] {
+  return getItem<EquipmentCheckout[]>(STORAGE_KEYS.equipmentCheckouts, []);
+}
+
+async function syncEquipmentFromRemote() {
+  try {
+    const [eqs, cos] = await Promise.all([
+      api.getEquipment() as Promise<Equipment[]>,
+      api.getEquipmentCheckouts() as Promise<EquipmentCheckout[]>,
+    ]);
+    if (Array.isArray(eqs)) setEquipmentList(eqs);
+    if (Array.isArray(cos)) setItem(STORAGE_KEYS.equipmentCheckouts, cos);
+  } catch (e) {
+    console.warn('syncEquipmentFromRemote failed', e);
+  }
+}
+
+/** يسحب أحدث بيانات العدة من السيرفر (يتم استدعاؤها عند فتح التبويب) */
+export function refreshEquipment(): void {
+  if (remoteAvailable()) syncEquipmentFromRemote();
+}
+
+export function addEquipment(eq: Omit<Equipment, 'id' | 'createdAt'>): Equipment {
+  const list = getEquipment();
+  if (list.some(e => e.serialNumber.trim() === eq.serialNumber.trim())) {
+    throw new Error('السيريال نمبر ده مسجل قبل كده لجهاز تاني');
+  }
+  const item: Equipment = {
+    ...eq,
+    serialNumber: eq.serialNumber.trim(),
+    id: Math.max(0, ...list.map(e => e.id)) + 1,
+    createdAt: new Date().toISOString(),
+  };
+  setEquipmentList([...list, item]);
+  if (remoteAvailable()) {
+    api.addEquipment({ ...item, id: undefined }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote addEquipment', e));
+  }
+  return item;
+}
+
+export function updateEquipment(id: number, updates: Partial<Equipment>): Equipment | null {
+  const list = getEquipment();
+  const i = list.findIndex(e => e.id === id);
+  if (i === -1) return null;
+  list[i] = { ...list[i], ...updates };
+  setEquipmentList(list);
+  if (remoteAvailable()) {
+    api.updateEquipment(id, updates).catch(e => console.warn('remote updateEquipment', e));
+  }
+  return list[i];
+}
+
+export function deleteEquipment(id: number): boolean {
+  const list = getEquipment();
+  const eq = list.find(e => e.id === id);
+  if (!eq) return false;
+  if (eq.status !== 'متاحة') throw new Error('مينفعش حذف جهاز خارج أو في صيانة — رجّعه الأول');
+  setEquipmentList(list.filter(e => e.id !== id));
+  if (remoteAvailable()) {
+    api.deleteEquipment(id).catch(e => console.warn('remote deleteEquipment', e));
+  }
+  return true;
+}
+
+/** خروج عدة: جهاز/أجهزة مع مساح + مساعد — بتنشئ سجل لكل جهاز */
+export function checkoutEquipment(opts: {
+  equipmentIds: number[];
+  surveyorId: number;
+  assistantId: number | null;
+  checkoutDate: string;
+  notes?: string;
+  createdBy?: number | null;
+}): { created: number; blocked: string[] } {
+  const eqs = getEquipment();
+  const blocked: string[] = [];
+  const valid = opts.equipmentIds.filter(id => {
+    const eq = eqs.find(e => e.id === id);
+    if (!eq || !eq.active || eq.status !== 'متاحة') {
+      blocked.push(eq ? `${eq.name} (${eq.serialNumber})` : `#${id}`);
+      return false;
+    }
+    return true;
+  });
+  if (valid.length === 0) {
+    throw new Error(blocked.length ? `الأجهزة دي مش متاحة: ${blocked.join('، ')}` : 'اختار جهاز واحد على الأقل');
+  }
+  const cos = getEquipmentCheckouts();
+  let nextId = Math.max(0, ...cos.map(c => c.id)) + 1;
+  const newCos: EquipmentCheckout[] = valid.map(equipmentId => ({
+    id: nextId++,
+    equipmentId,
+    surveyorId: opts.surveyorId,
+    assistantId: opts.assistantId ?? null,
+    checkoutDate: opts.checkoutDate,
+    returnDate: null,
+    conditionReturn: null,
+    notes: opts.notes ?? null,
+    createdBy: opts.createdBy ?? null,
+    createdAt: new Date().toISOString(),
+  }));
+  setItem(STORAGE_KEYS.equipmentCheckouts, [...newCos, ...cos]);
+  setEquipmentList(eqs.map(e => (valid.includes(e.id) ? { ...e, status: 'خارجة' as const } : e)));
+  if (remoteAvailable()) {
+    api.checkoutEquipment(opts).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote checkoutEquipment', e));
+  }
+  return { created: valid.length, blocked };
+}
+
+/** رجوع عدة: قفل السجل + حالة الجهاز عند الرجوع */
+export function returnEquipmentCheckout(id: number, conditionReturn: string, notes?: string): boolean {
+  const cos = getEquipmentCheckouts();
+  const i = cos.findIndex(c => c.id === id);
+  if (i === -1) return false;
+  const co = cos[i];
+  if (co.returnDate) throw new Error('العدة دي مسجّل رجوعها خلاص');
+  const today = new Date().toISOString().slice(0, 10);
+  cos[i] = { ...co, returnDate: today, conditionReturn: conditionReturn ?? null, notes: notes ?? co.notes ?? null };
+  setItem(STORAGE_KEYS.equipmentCheckouts, cos);
+  const eqs = getEquipment();
+  const newStatus: Equipment['status'] = conditionReturn === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+  setEquipmentList(eqs.map(e => (e.id === co.equipmentId ? { ...e, status: newStatus } : e)));
+  if (remoteAvailable()) {
+    api.returnEquipmentCheckout({ id, conditionReturn, notes }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote returnEquipmentCheckout', e));
+  }
+  return true;
 }

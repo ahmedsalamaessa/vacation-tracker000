@@ -140,6 +140,28 @@ export const api = {
     const qs = `?days=${days}${failedOnly ? '&failedOnly=1' : ''}`;
     return request<{ ok: boolean; deleted: number }>(`/check-in-attempts${qs}`, { method: 'DELETE' });
   },
+  // 🧰 استلام وتسليم العدة
+  async getEquipment() {
+    return request('/equipment');
+  },
+  async addEquipment(equipment: any) {
+    return request('/equipment', { method: 'POST', body: JSON.stringify(equipment) });
+  },
+  async updateEquipment(id: number, updates: any) {
+    return request(`/equipment/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+  },
+  async deleteEquipment(id: number) {
+    return request(`/equipment/${id}`, { method: 'DELETE' });
+  },
+  async getEquipmentCheckouts() {
+    return request('/equipment-checkouts');
+  },
+  async checkoutEquipment(payload: any) {
+    return request('/equipment-checkouts', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async returnEquipmentCheckout(payload: { id: number; conditionReturn: string; notes?: string }) {
+    return request('/equipment-checkouts/return', { method: 'POST', body: JSON.stringify(payload) });
+  },
   async addAuditLog(log: any) {
     return request('/audit-logs', {
       method: 'POST',

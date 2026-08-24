@@ -5,6 +5,7 @@ import {
   addLocation, updateLocation, deleteLocation,
   clearAllData, getStorageInfo, importLocalData,
   cleanOldCheckInAttempts, dedupeAttendance,
+  getEquipment, getEquipmentCheckouts,
 } from '../lib/db';
 import { sha256 } from '../lib/crypto';
 import { calculateEmployeeBalance } from '../lib/balance';
@@ -356,6 +357,8 @@ export default function SettingsTab() {
       auditLogs: getAuditLogs(),
       checkInAttempts: getCheckInAttempts(),
       monthLocks: getMonthLocks(),
+      equipment: getEquipment(),
+      equipmentCheckouts: getEquipmentCheckouts(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

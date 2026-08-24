@@ -184,3 +184,31 @@ export interface TrackerRow {
   officialLeave: number;
   annualLeave: number;
 }
+
+// ============ 🧰 استلام وتسليم العدة ============
+export type EquipmentKind = 'تواتال ستايشن' | 'ميزان' | 'أخرى';
+export type EquipmentStatus = 'متاحة' | 'خارجة' | 'صيانة';
+
+export interface Equipment {
+  id: number;
+  name: string;
+  kind: EquipmentKind;
+  serialNumber: string;
+  status: EquipmentStatus;
+  notes?: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface EquipmentCheckout {
+  id: number;
+  equipmentId: number;
+  surveyorId: number;
+  assistantId: number | null;
+  checkoutDate: string;
+  returnDate: string | null;
+  conditionReturn?: string | null;
+  notes?: string | null;
+  createdBy: number | null;
+  createdAt: string;
+}

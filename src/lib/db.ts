@@ -988,7 +988,13 @@ export function getStorageInfo(): { used: number; limit: number; percentage: num
 
 // ============ 🧰 استلام وتسليم العدة ============
 export function getEquipment(): Equipment[] {
-  return getItem<Equipment[]>(STORAGE_KEYS.equipment, []);
+  // 🔄 توحيد أسماء الأنواع القديمة (تواتال ستايشن → توتال استيشن، حامل التوتال خشب بس)
+  return getItem<Equipment[]>(STORAGE_KEYS.equipment, []).map(eq => ({
+    ...eq,
+    kind: (eq.kind === 'تواتال ستايشن' as any) ? ('توتال استيشن' as any)
+      : (eq.kind === 'حامل توتال ألومنيوم' as any) ? ('حامل توتال خشب' as any)
+      : eq.kind,
+  }));
 }
 function setEquipmentList(list: Equipment[]) {
   setItem(STORAGE_KEYS.equipment, list);

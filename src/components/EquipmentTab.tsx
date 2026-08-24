@@ -31,7 +31,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [msg, setMsg] = useState('');
 
   // فورم إضافة/تعديل جهاز
-  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'تواتال ستايشن' as EquipmentKind, serialNumber: '', notes: '', lastCalibration: '' });
+  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '', lastCalibration: '' });
   // 🔧 الصيانة والمعايرة
   const [maintenance, setMaintenanceState] = useState<EquipmentMaintenance[]>([]);
   const [maintForm, setMaintForm] = useState({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
@@ -110,7 +110,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, lastCalibration: eqForm.lastCalibration || null });
         flash('✅ تم تسجيل الجهاز');
       }
-      setEqForm({ id: 0, name: '', kind: 'تواتال ستايشن', serialNumber: '', notes: '', lastCalibration: '' });
+      setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '', lastCalibration: '' });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -554,7 +554,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   const openCo = openCheckouts.find(c => c.equipmentId === eq.id);
                   return (
                     <tr key={eq.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3 font-black">{eq.kind === 'تواتال ستايشن' ? '🔭' : eq.kind === 'ميزان' ? '📏' : '🔧'} {eq.name}</td>
+                      <td className="p-3 font-black">{kindEmoji(eq.kind)} {eq.name}</td>
                       <td className="p-3">{eq.kind}</td>
                       <td className="p-3 font-mono">{eq.serialNumber}</td>
                       <td className="p-3">

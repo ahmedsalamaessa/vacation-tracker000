@@ -194,12 +194,19 @@ export function mapNotification(r: any) {
   };
 }
 
+// 🔄 توحيد الأسماء القديمة عند القراءة
+function normalizeKind(kind: any): string {
+  if (kind === 'تواتال ستايشن') return 'توتال استيشن';
+  if (kind === 'حامل توتال ألومنيوم') return 'حامل توتال خشب';
+  return kind;
+}
+
 export function mapEquipment(r: any) {
   if (!r) return null;
   return {
     id: r.id,
     name: r.name,
-    kind: r.kind,
+    kind: normalizeKind(r.kind),
     serialNumber: r.serial_number,
     status: r.status,
     notes: r.notes,

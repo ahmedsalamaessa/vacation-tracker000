@@ -193,6 +193,9 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS assistant_name TEXT`;
   // 🆕 آخر معايرة للجهاز + سجل الصيانة
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS last_calibration DATE`;
+  // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
+  await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
+  await sql`UPDATE equipment SET kind = 'حامل توتال خشب' WHERE kind = 'حامل توتال ألومنيوم'`;
   await sql`
     CREATE TABLE IF NOT EXISTS equipment_maintenance (
       id SERIAL PRIMARY KEY,

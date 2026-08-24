@@ -299,9 +299,25 @@ export default function EquipmentTab({ user }: { user: Employee }) {
               }}
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value={0}>— بدون مساعد —</option>
-              {employees.filter(e => e.active && e.id !== coForm.surveyorId).map(e => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
+              {(() => {
+                const active = employees.filter(e => e.active && e.id !== coForm.surveyorId);
+                const helpers = active.filter(e => (e.jobTitle || '').includes('مساعد'));
+                const rest = active.filter(e => !(e.jobTitle || '').includes('مساعد'));
+                return (
+                  <>
+                    {helpers.length > 0 && (
+                      <optgroup label="🤝 مساعدي المساحة">
+                        {helpers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </optgroup>
+                    )}
+                    {rest.length > 0 && (
+                      <optgroup label={helpers.length > 0 ? '👷 باقي الموظفين' : '👷 الموظفين'}>
+                        {rest.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                      </optgroup>
+                    )}
+                  </>
+                );
+              })()}
               <option value="__other__">✍️ اسم حر (مش موظف بالنظام)...</option>
             </select>
           </label>

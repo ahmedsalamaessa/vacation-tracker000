@@ -628,6 +628,20 @@ export default async function handler(req: Request) {
       return json(mapAttempt(rows[0]), 201);
     }
 
+    if (path === 'check-in-attempts' && method === 'DELETE') {
+      // 🛡️ حذف بصمات قديمة = صلاحية تعديل الحضور (أدمن/مدير)
+      // (إصلاح: الزرار كان محلي بس والسيرفر بيرجّع البصمات مع أول bootstrap)
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية تعديل الحضور مطلوبة');
+      const u = new URL(req.url);
+      const days = Math.max(1, Number(u.searchParams.get('days') || '30'));
+      const failedOnly = u.searchParams.get('failedOnly') === '1';
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+      const rows = failedOnly
+        ? await sql`DELETE FROM check_in_attempts WHERE success = false AND created_at < ${cutoff} RETURNING id`
+        : await sql`DELETE FROM check_in_attempts WHERE created_at < ${cutoff} RETURNING id`;
+      return json({ ok: true, deleted: (rows as any[]).length });
+    }
+
     if (path === 'audit-logs' && method === 'GET') {
       // 🛡️ سجل التدقيق
       if (!hasPerm(authUser, 'canViewAuditLog')) return forbidden('صلاحية سجل التدقيق مطلوبة');

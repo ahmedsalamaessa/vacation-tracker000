@@ -686,6 +686,40 @@ export function addCheckInAttempt(attempt: Omit<CheckInAttempt, 'id' | 'createdA
   return newAttempt;
 }
 
+// 🧹 حذف البصمات القديمة — محليًا وعلى السيرفر
+// (إصلاح: زرار التشخيصات كان بيكتب في مفتاح vacation_system_* الميت
+//  فمكانشي بيحذف حاجة، وحتى لو حذف كان السيرفر بيرجّعها مع أول bootstrap)
+export function cleanOldCheckInAttempts(days: number, failedOnly = false): number {
+  const attempts = getCheckInAttempts();
+  const cutoff = Date.now() - days * 86400000;
+  const kept = attempts.filter(a =>
+    (failedOnly ? a.success : false) || new Date(a.createdAt).getTime() > cutoff
+  );
+  const removed = attempts.length - kept.length;
+  if (removed > 0) {
+    setItem(STORAGE_KEYS.checkInAttempts, kept);
+    if (remoteAvailable()) {
+      api.deleteAttemptsOlderThan(days, failedOnly).catch(e => console.warn('remote deleteAttempts', e));
+    }
+  }
+  return removed;
+}
+
+// 🧹 إزالة تكرار سجلات الحضور المحلية
+// (السيرفر بيعمل upsert على employee_id+date فمستحيل يتكرر هناك — التكرار محلي بس)
+export function dedupeAttendance(): number {
+  const attendance = getItem<any[]>(STORAGE_KEYS.attendance, []);
+  const seen = new Set<string>();
+  const unique: any[] = [];
+  for (const a of attendance) {
+    const key = `${a.employeeId}-${a.date}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(a); }
+  }
+  const removed = attendance.length - unique.length;
+  if (removed > 0) setItem(STORAGE_KEYS.attendance, unique);
+  return removed;
+}
+
 export function getSettings(): Settings {
   return getItem<Settings>(STORAGE_KEYS.settings, {
     department_name: 'قسم المساحة',

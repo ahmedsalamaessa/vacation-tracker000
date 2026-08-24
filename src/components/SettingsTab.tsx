@@ -4,6 +4,7 @@ import {
   getAttendance, getCheckInAttempts, getAuditLogs, getMonthLocks,
   addLocation, updateLocation, deleteLocation,
   clearAllData, getStorageInfo, importLocalData,
+  cleanOldCheckInAttempts, dedupeAttendance,
 } from '../lib/db';
 import { sha256 } from '../lib/crypto';
 import { calculateEmployeeBalance } from '../lib/balance';
@@ -170,13 +171,14 @@ export default function SettingsTab() {
         title: `⚠️ مساحة التخزين مرتفعة (${storage.percentage}%)`,
         description: `مستخدم ${(storage.used / 1024 / 1024).toFixed(2)} MB من ${(storage.limit / 1024 / 1024).toFixed(0)} MB. لو امتلأ النظام هيتوقف عن الحفظ.`,
         fix: 'حذف البيانات القديمة',
-        fixLabel: 'تنظيف سجلات أقدم من 90 يوم',
+        fixLabel: 'حذف بصمات أقدم من 90 يوم',
         onFix: () => {
-          const cutoff = Date.now() - 90 * 86400000;
-          const newAtts = attendance.filter(a => new Date(a.createdAt).getTime() > cutoff);
-          const newVacs = vacations.filter(v => new Date(v.createdAt).getTime() > cutoff);
-          localStorage.setItem('vacation_system_attendance', JSON.stringify(newAtts));
-          localStorage.setItem('vacation_system_vacations', JSON.stringify(newVacs));
+          // ⚠️ متحذفش حضور/إجازات قديمة — دي مصدر حساب الرصيد!
+          // التنظيف الآمن = البصمات القديمة (سجلات تشخيصية بتاخد أكبر مساحة)
+          const removed = cleanOldCheckInAttempts(90, false);
+          alert(removed > 0
+            ? `🗑️ اتحذفت ${removed} بصمة قديمة (محليًا وعلى السيرفر)`
+            : 'مفيش بصمات أقدم من 90 يوم — المساحة غالبًا من بيانات تانية');
           runDiagnostics();
         },
       });
@@ -294,9 +296,10 @@ export default function SettingsTab() {
         fix: 'تنظيف البصمات المرفوضة',
         fixLabel: 'حذف بصمات أقدم من 30 يوم',
         onFix: () => {
-          const cutoff = Date.now() - 30 * 86400000;
-          const kept = attempts.filter(a => a.success || new Date(a.createdAt).getTime() > cutoff);
-          localStorage.setItem('vacation_system_check_in_attempts', JSON.stringify(kept));
+          const removed = cleanOldCheckInAttempts(30, true);
+          alert(removed > 0
+            ? `🗑️ اتحذفت ${removed} بصمة مرفوضة أقدم من 30 يوم (محليًا وعلى السيرفر)`
+            : 'مفيش بصمات مرفوضة أقدم من 30 يوم');
           runDiagnostics();
         },
       });
@@ -324,13 +327,8 @@ export default function SettingsTab() {
         fix: 'إزالة التكرار',
         fixLabel: 'إصلاح',
         onFix: () => {
-          const seen = new Set<string>();
-          const unique: any[] = [];
-          for (const a of attendance) {
-            const key = `${a.employeeId}-${a.date}`;
-            if (!seen.has(key)) { seen.add(key); unique.push(a); }
-          }
-          localStorage.setItem('vacation_system_attendance', JSON.stringify(unique));
+          const removed = dedupeAttendance();
+          alert(removed > 0 ? `🧹 اتحذف ${removed} سجل مكرر` : 'مفيش سجلات مكررة');
           runDiagnostics();
         },
       });

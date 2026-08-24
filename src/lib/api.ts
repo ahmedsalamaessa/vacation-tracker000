@@ -135,6 +135,11 @@ export const api = {
       body: JSON.stringify(attempt),
     });
   },
+  // 🧹 حذف بصمات أقدم من X يوم (failedOnly = المرفوضة بس)
+  async deleteAttemptsOlderThan(days: number, failedOnly = false) {
+    const qs = `?days=${days}${failedOnly ? '&failedOnly=1' : ''}`;
+    return request<{ ok: boolean; deleted: number }>(`/check-in-attempts${qs}`, { method: 'DELETE' });
+  },
   async addAuditLog(log: any) {
     return request('/audit-logs', {
       method: 'POST',

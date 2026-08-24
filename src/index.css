@@ -69,3 +69,20 @@
     padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
   }
 }
+
+/* ===== 🖨️ طباعة المأمورية — الورقة بس هي اللي تطلع ===== */
+@media print {
+  body * { visibility: hidden !important; }
+  .print-sheet, .print-sheet * { visibility: visible !important; }
+  .print-sheet {
+    position: fixed !important;
+    top: 0; right: 0; left: 0;
+    margin: 0 !important;
+    padding: 10mm !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+  @page { size: A4; margin: 8mm; }
+}

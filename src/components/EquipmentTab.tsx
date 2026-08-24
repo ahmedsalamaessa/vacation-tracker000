@@ -1,12 +1,38 @@
 import { useEffect, useState } from 'react';
 import {
-  getEquipment, getEquipmentCheckouts, getEmployees,
+  getEquipment, getEquipmentCheckouts, getEmployees, getLocations, getSettings,
   addEquipment, updateEquipment, deleteEquipment,
   checkoutEquipment, returnEquipmentCheckout, refreshEquipment,
 } from '../lib/db';
-import type { Employee, Equipment, EquipmentCheckout, EquipmentKind } from '../lib/types';
+import type { Employee, Equipment, EquipmentCheckout, EquipmentKind, WorkLocation } from '../lib/types';
 
-const KINDS: EquipmentKind[] = ['تواتال ستايشن', 'ميزان', 'أخرى'];
+const KINDS: EquipmentKind[] = [
+  'تواتال ستايشن', 'ميزان',
+  'قامة 5م', 'قامة 7م', 'حامل ميزان ألومنيوم',
+  'حامل توتال ألومنيوم', 'حامل توتال خشب', 'بريزم', 'ميني بريزم',
+  'أخرى',
+];
+
+// 🗂️ مجموعات الاختيار: الجهاز الرئيسي + ملحقاته جنب بعض
+const KIND_GROUPS: { title: string; kinds: string[] }[] = [
+  { title: 'الأجهزة الرئيسية', kinds: ['تواتال ستايشن', 'ميزان'] },
+  { title: 'ملحقات الميزان', kinds: ['قامة 5م', 'قامة 7م', 'حامل ميزان ألومنيوم'] },
+  { title: 'ملحقات التوتال', kinds: ['حامل توتال ألومنيوم', 'حامل توتال خشب', 'بريزم', 'ميني بريزم'] },
+  { title: 'أخرى', kinds: ['أخرى'] },
+];
+
+function kindEmoji(kind: string): string {
+  switch (kind) {
+    case 'تواتال ستايشن': return '🔭';
+    case 'ميزان': return '📏';
+    case 'قامة 5م': case 'قامة 7م': return '📐';
+    case 'حامل ميزان ألومنيوم': case 'حامل توتال ألومنيوم': case 'حامل توتال خشب': return '🛠️';
+    case 'بريزم': return '💎';
+    case 'ميني بريزم': return '🔹';
+    default: return '📦';
+  }
+}
+
 const CONDITIONS = ['سليم ✅', 'به خدوش ⚠️', 'يحتاج صيانة 🔧'];
 const STATUS_STYLE: Record<string, string> = {
   'متاحة': 'bg-emerald-100 text-emerald-700',
@@ -25,6 +51,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [equipment, setEquipmentState] = useState<Equipment[]>([]);
   const [checkouts, setCheckoutsState] = useState<EquipmentCheckout[]>([]);
   const [employees, setEmployeesState] = useState<Employee[]>([]);
+  const [locations, setLocationsState] = useState<WorkLocation[]>([]);
+  const [deptName, setDeptName] = useState('');
   const [msg, setMsg] = useState('');
 
   // فورم إضافة/تعديل جهاز
@@ -37,6 +65,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     notes: '',
     ids: [],
   });
+  // 🆕 وجهة المأمورية: موقع مسجل أو "موقع آخر" نص حر
+  const [destSite, setDestSite] = useState('');
+  const [destOther, setDestOther] = useState('');
+  // 🖨️ طباعة المأمورية
+  const [printGroup, setPrintGroup] = useState<EquipmentCheckout[] | null>(null);
   // الرجوع (نموذج داخلي)
   const [returningId, setReturningId] = useState<number | null>(null);
   const [returnForm, setReturnForm] = useState({ condition: CONDITIONS[0], notes: '' });
@@ -45,6 +78,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     setEquipmentState(getEquipment());
     setCheckoutsState(getEquipmentCheckouts());
     setEmployeesState(getEmployees());
+    setLocationsState(getLocations());
+    setDeptName(getSettings().department_name || 'قسم المساحة');
   }
 
   useEffect(() => {
@@ -106,16 +141,20 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       const surveyorId = canManage ? coForm.surveyorId : user.id;
       if (!surveyorId) { flash('⚠️ اختار المساح'); return; }
       if (coForm.ids.length === 0) { flash('⚠️ اختار جهاز واحد على الأقل'); return; }
+      const destination = destSite === '__other__' ? destOther.trim() : (destSite || '');
+      if (destSite === '__other__' && !destination) { flash('⚠️ اكتب اسم موقع المأمورية'); return; }
       const r = checkoutEquipment({
         equipmentIds: coForm.ids,
         surveyorId,
         assistantId: coForm.assistantId || null,
         checkoutDate: coForm.checkoutDate,
+        destination: destination || null,
         notes: coForm.notes || undefined,
         createdBy: user.id,
       });
-      flash(`✅ تم تسجيل خروج ${r.created} جهاز${r.blocked.length ? ' — (واتشالت: ' + r.blocked.join('، ') + ')' : ''}`);
+      flash(`✅ تم تسجيل خروج ${r.created} جهاز${destination ? ` لمأمورية: ${destination}` : ''}${r.blocked.length ? ' — (واتشالت: ' + r.blocked.join('، ') + ')' : ''}`);
       setCoForm({ surveyorId: canManage ? 0 : user.id, assistantId: 0, checkoutDate: today, notes: '', ids: [] });
+      setDestSite(''); setDestOther('');
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -137,6 +176,16 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
     }
+  }
+
+  /** مجموعة المأمورية: نفس المساح + نفس اليوم + نفس الوجهة = ورقة واحدة بعدة أجهزة */
+  function missionGroup(co: EquipmentCheckout): EquipmentCheckout[] {
+    const pool = co.returnDate ? checkouts.filter(c => c.returnDate) : checkouts.filter(c => !c.returnDate);
+    return pool.filter(c =>
+      c.surveyorId === co.surveyorId &&
+      c.checkoutDate === co.checkoutDate &&
+      (c.destination || '') === (co.destination || '')
+    );
   }
 
   const available = equipment.filter(e => e.active && e.status === 'متاحة');
@@ -185,10 +234,16 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
                     <div>👷 المساح: {empName(co.surveyorId)}</div>
                     <div>🤝 المساعد: {empName(co.assistantId)}</div>
+                    {co.destination && <div className="text-blue-700">📍 مأمورية: {co.destination}</div>}
                     <div className="text-xs text-slate-500">📅 نزلت: {co.checkoutDate}{co.notes ? ` · 📝 ${co.notes}` : ''}</div>
                   </div>
-                  {(canManage || mine) && (
-                    returningId === co.id ? (
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ مأمورية</button>
+                    {(canManage || mine) && (
+                      <button type="button" onClick={() => setReturningId(co.id)} className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700">↩️ رجوع</button>
+                    )}
+                  </div>
+                  {(canManage || mine) && returningId === co.id && (
                       <div className="mt-3 space-y-2 rounded-xl bg-white p-3">
                         <div className="text-xs font-black text-slate-700">حالة الجهاز عند الرجوع:</div>
                         <div className="flex flex-wrap gap-2">
@@ -203,9 +258,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                           <button type="button" onClick={() => setReturningId(null)} className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-black text-slate-600">إلغاء</button>
                         </div>
                       </div>
-                    ) : (
-                      <button type="button" onClick={() => setReturningId(co.id)} className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-emerald-700">↩️ تسجيل رجوع العدة</button>
-                    )
                   )}
                 </div>
               );
@@ -244,22 +296,48 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             <input type="date" value={coForm.checkoutDate} onChange={e => setCoForm(f => ({ ...f, checkoutDate: e.target.value }))}
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500" />
           </label>
+          <label className="text-sm font-black text-slate-700 md:col-span-2">
+            📍 وجهة المأمورية
+            <select value={destSite} onChange={e => setDestSite(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+              <option value="">— من غير مأمورية / المخزن —</option>
+              {locations.filter(l => l.active).map(l => (
+                <option key={l.id} value={l.name}>{l.name}</option>
+              ))}
+              <option value="__other__">➕ موقع آخر (اكتب الاسم)...</option>
+            </select>
+          </label>
+          {destSite === '__other__' && (
+            <input value={destOther} onChange={e => setDestOther(e.target.value)} placeholder="اسم موقع المأمورية (مثال: مأمورية العاصمة الإدارية)"
+              className="rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+          )}
           <div className="md:col-span-3">
-            <div className="mb-2 text-sm font-black text-slate-700">🧰 الأجهزة المتاحة ({available.length}) — اختار اللي نازل بيها:</div>
+            <div className="mb-2 text-sm font-black text-slate-700">🧰 العدة المتاحة ({available.length}) — علّم على الجهاز وملحقاته اللي نازلة معاه:</div>
             {available.length === 0 ? (
-              <div className="rounded-xl bg-amber-50 p-4 text-center text-sm font-bold text-amber-700">مفيش أجهزة متاحة — سجّل الأجهزة الأول أو استنّى الرجوع</div>
+              <div className="rounded-xl bg-amber-50 p-4 text-center text-sm font-bold text-amber-700">مفيش عدة متاحة — سجّل المعدات الأول أو استنّى الرجوع</div>
             ) : (
-              <div className="grid gap-2 md:grid-cols-3">
-                {available.map(eq => (
-                  <button key={eq.id} type="button" onClick={() => toggleDevice(eq.id)}
-                    className={`rounded-xl border-2 p-3 text-right text-sm font-black transition ${coForm.ids.includes(eq.id) ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300'}`}>
-                    <div className="flex items-center gap-2">
-                      <span>{coForm.ids.includes(eq.id) ? '☑️' : '⬜'}</span>
-                      <span>{eq.kind === 'تواتال ستايشن' ? '🔭' : eq.kind === 'ميزان' ? '📏' : '🔧'} {eq.name}</span>
+              <div className="space-y-3">
+                {KIND_GROUPS.map(g => {
+                  const items = available.filter(eq => g.kinds.includes(eq.kind));
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={g.title}>
+                      <div className="mb-1 text-xs font-black text-slate-400">{g.title}</div>
+                      <div className="grid gap-2 md:grid-cols-3">
+                        {items.map(eq => (
+                          <button key={eq.id} type="button" onClick={() => toggleDevice(eq.id)}
+                            className={`rounded-xl border-2 p-3 text-right text-sm font-black transition ${coForm.ids.includes(eq.id) ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-300'}`}>
+                            <div className="flex items-center gap-2">
+                              <span>{coForm.ids.includes(eq.id) ? '☑️' : '⬜'}</span>
+                              <span>{kindEmoji(eq.kind)} {eq.name}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] font-bold text-slate-500">{eq.kind} · رقم: {eq.serialNumber}</div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="mt-1 text-[11px] font-bold text-slate-500">سيريال: {eq.serialNumber}</div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -348,9 +426,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <th className="p-3">الجهاز</th>
                   <th className="p-3">المساح</th>
                   <th className="p-3">المساعد</th>
+                  <th className="p-3">الوجهة</th>
                   <th className="p-3">نزلت</th>
                   <th className="p-3">رجعت</th>
                   <th className="p-3">الحالة عند الرجوع</th>
+                  <th className="p-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -358,12 +438,16 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   const eq = eqOf(co.equipmentId);
                   return (
                     <tr key={co.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3 font-black">{eq ? eq.name : `#${co.equipmentId}`} <span className="font-mono text-xs text-slate-400">{eq?.serialNumber}</span></td>
+                      <td className="p-3 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`} <span className="font-mono text-xs text-slate-400">{eq?.serialNumber}</span></td>
                       <td className="p-3">{empName(co.surveyorId)}</td>
                       <td className="p-3">{empName(co.assistantId)}</td>
+                      <td className="p-3 text-blue-700">{co.destination || '—'}</td>
                       <td className="p-3">{co.checkoutDate}</td>
                       <td className="p-3">{co.returnDate}</td>
                       <td className="p-3">{co.conditionReturn === 'يحتاج صيانة' ? '🔧 يحتاج صيانة' : co.conditionReturn === 'به خدوش' ? '⚠️ به خدوش' : '✅ سليم'}</td>
+                      <td className="p-3">
+                        <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="طباعة مأمورية">🖨️</button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -372,6 +456,64 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           </div>
         )}
       </section>
+      {/* ===== 🖨️ ورقة المأمورية ===== */}
+      {printGroup && printGroup.length > 0 && (
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGroup(null)}>
+          <div className="mx-auto max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex gap-2 print:hidden">
+              <button type="button" onClick={() => window.print()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة / حفظ PDF</button>
+              <button type="button" onClick={() => setPrintGroup(null)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100">إغلاق</button>
+            </div>
+            <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl" dir="rtl">
+              <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
+                <div className="text-lg font-black">{deptName}</div>
+                <div className="mt-1 text-2xl font-black">مأمورية عمل — استلام عدة مساحة</div>
+              </div>
+              <div className="mt-4 space-y-2 text-base font-bold">
+                <div className="flex justify-between border-b border-dashed border-slate-300 pb-1">
+                  <span>التاريخ: {printGroup[0].checkoutDate}</span>
+                  <span>م رقم: {printGroup[0].id}</span>
+                </div>
+                <div>👷 المساح: <b className="text-lg">{empName(printGroup[0].surveyorId)}</b></div>
+                <div>🤝 المساعد: <b>{empName(printGroup[0].assistantId)}</b></div>
+                <div>📍 وجهة المأمورية: <b>{printGroup[0].destination || '—'}</b></div>
+                {printGroup[0].returnDate && <div>↩️ تاريخ رجوع العدة: <b>{printGroup[0].returnDate}</b></div>}
+                {printGroup[0].notes && <div>📝 ملاحظات: {printGroup[0].notes}</div>}
+              </div>
+              <table className="mt-4 w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border border-slate-400 p-2">م</th>
+                    <th className="border border-slate-400 p-2">النوع</th>
+                    <th className="border border-slate-400 p-2">الجهاز / الملحق</th>
+                    <th className="border border-slate-400 p-2">الرقم التسلسلي</th>
+                    {printGroup[0].returnDate && <th className="border border-slate-400 p-2">الحالة عند الرجوع</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {printGroup.map((co, i) => {
+                    const eq = eqOf(co.equipmentId);
+                    return (
+                      <tr key={co.id}>
+                        <td className="border border-slate-400 p-2 text-center font-black">{i + 1}</td>
+                        <td className="border border-slate-400 p-2 font-bold">{eq?.kind ?? '—'}</td>
+                        <td className="border border-slate-400 p-2 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`}</td>
+                        <td className="border border-slate-400 p-2 text-center font-mono font-bold">{eq?.serialNumber ?? '—'}</td>
+                        {printGroup[0].returnDate && <td className="border border-slate-400 p-2 text-center font-bold">{co.conditionReturn || '—'}</td>}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="mt-10 grid grid-cols-3 gap-4 text-center text-sm font-black">
+                <div>توقيع المساح<br /><br />..............................</div>
+                <div>أمين العدة<br /><br />..............................</div>
+                <div>مدير القسم<br /><br />..............................</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

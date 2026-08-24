@@ -219,6 +219,7 @@ export function mapCheckout(r: any) {
     returnDate: r.return_date ? toDateOnly(r.return_date) : null,
     conditionReturn: r.condition_return,
     notes: r.notes,
+    destination: r.destination,
     createdBy: r.created_by,
     createdAt: r.created_at,
   };

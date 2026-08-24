@@ -906,8 +906,8 @@ export default async function handler(req: Request) {
       const created: any[] = [];
       for (const eid of ids) {
         const rows = await sql`
-          INSERT INTO equipment_checkouts (equipment_id, surveyor_id, assistant_id, checkout_date, notes, created_by)
-          VALUES (${eid}, ${surveyorId}, ${b.assistantId ? Number(b.assistantId) : null}, ${b.checkoutDate}, ${b.notes ?? null}, ${authUser.id})
+          INSERT INTO equipment_checkouts (equipment_id, surveyor_id, assistant_id, checkout_date, destination, notes, created_by)
+          VALUES (${eid}, ${surveyorId}, ${b.assistantId ? Number(b.assistantId) : null}, ${b.checkoutDate}, ${b.destination ?? null}, ${b.notes ?? null}, ${authUser.id})
           RETURNING *`;
         created.push(mapCheckout((rows as any[])[0]));
         await sql`UPDATE equipment SET status = 'خارجة' WHERE id = ${eid}`;

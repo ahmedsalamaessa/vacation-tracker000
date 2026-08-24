@@ -1062,6 +1062,7 @@ export function checkoutEquipment(opts: {
   surveyorId: number;
   assistantId: number | null;
   checkoutDate: string;
+  destination?: string | null;
   notes?: string;
   createdBy?: number | null;
 }): { created: number; blocked: string[] } {
@@ -1089,6 +1090,7 @@ export function checkoutEquipment(opts: {
     returnDate: null,
     conditionReturn: null,
     notes: opts.notes ?? null,
+    destination: opts.destination ?? null,
     createdBy: opts.createdBy ?? null,
     createdAt: new Date().toISOString(),
   }));

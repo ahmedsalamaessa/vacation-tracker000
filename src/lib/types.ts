@@ -186,7 +186,21 @@ export interface TrackerRow {
 }
 
 // ============ 🧰 استلام وتسليم العدة ============
-export type EquipmentKind = 'تواتال ستايشن' | 'ميزان' | 'أخرى';
+export type EquipmentKind =
+  // الأجهزة الرئيسية
+  | 'تواتال ستايشن'
+  | 'ميزان'
+  // ملحقات الميزان
+  | 'قامة 5م'
+  | 'قامة 7م'
+  | 'حامل ميزان ألومنيوم'
+  // ملحقات التوتال
+  | 'حامل توتال ألومنيوم'
+  | 'حامل توتال خشب'
+  | 'بريزم'
+  | 'ميني بريزم'
+  // أخرى
+  | 'أخرى';
 export type EquipmentStatus = 'متاحة' | 'خارجة' | 'صيانة';
 
 export interface Equipment {
@@ -209,6 +223,7 @@ export interface EquipmentCheckout {
   returnDate: string | null;
   conditionReturn?: string | null;
   notes?: string | null;
+  destination?: string | null;
   createdBy: number | null;
   createdAt: string;
 }

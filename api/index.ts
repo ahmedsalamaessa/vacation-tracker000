@@ -886,11 +886,15 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment-checkouts' && method === 'POST') {
-      // 🛡️ المأمورية قرار إداري — الإدارة بس (الأدمن) هي اللي تطلع العدة من العهدة
+      // خروج العدة العادي: المساح بيسجله لنفسه | المأمورية (وجهة موقع تاني): إدارة بس
       const b = await readBody<any>(req);
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('المأموريات من إدارة النظام بس');
       const ids: number[] = Array.isArray(b?.equipmentIds) ? b.equipmentIds.map(Number).filter(Boolean) : [];
       const surveyorId = Number(b?.surveyorId);
+      const isMission = Boolean(b?.destination);
+      if (!hasPerm(authUser, 'canEditAttendance')) {
+        if (isMission) return forbidden('المأموريات (الخروج لموقع تاني) من إدارة النظام بس');
+        if (surveyorId !== authUser.id) return forbidden('تقدر تسجل خروج العدة لنفسك بس');
+      }
       if (ids.length === 0 || !surveyorId || !b?.checkoutDate) {
         return json({ error: 'bad_request', message: 'المساح والتاريخ وجهاز واحد على الأقل مطلوبين' }, 400);
       }
@@ -920,7 +924,11 @@ export default async function handler(req: Request) {
       const cur = await sql`SELECT * FROM equipment_checkouts WHERE id = ${id}`;
       const co = (cur as any[])[0];
       if (!co) return json({ error: 'not_found' }, 404);
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('رجوع العدة من إدارة النظام بس');
+      // العدة العادية: المساح يرجعها بنفسه | مأمورية أو عدة حد تاني: إدارة بس
+      if (!hasPerm(authUser, 'canEditAttendance')) {
+        if (co.destination) return forbidden('رجوع مأموريات العدة من إدارة النظام بس');
+        if (co.surveyor_id !== authUser.id) return forbidden('تقدر تسجل رجوع عدتك بس');
+      }
       if (co.return_date) return json({ error: 'conflict', message: 'العدة دي مسجّل رجوعها خلاص' }, 409);
       const today = new Date().toISOString().slice(0, 10);
       const condition = b?.conditionReturn || 'سليم';

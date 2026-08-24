@@ -1061,6 +1061,7 @@ export function checkoutEquipment(opts: {
   equipmentIds: number[];
   surveyorId: number;
   assistantId: number | null;
+  assistantName?: string | null;
   checkoutDate: string;
   destination?: string | null;
   notes?: string;
@@ -1086,6 +1087,7 @@ export function checkoutEquipment(opts: {
     equipmentId,
     surveyorId: opts.surveyorId,
     assistantId: opts.assistantId ?? null,
+    assistantName: opts.assistantName ?? null,
     checkoutDate: opts.checkoutDate,
     returnDate: null,
     conditionReturn: null,

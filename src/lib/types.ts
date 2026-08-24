@@ -222,6 +222,7 @@ export interface EquipmentCheckout {
   equipmentId: number;
   surveyorId: number;
   assistantId: number | null;
+  assistantName?: string | null;
   checkoutDate: string;
   returnDate: string | null;
   conditionReturn?: string | null;

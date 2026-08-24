@@ -218,6 +218,7 @@ export function mapCheckout(r: any) {
     equipmentId: r.equipment_id,
     surveyorId: r.surveyor_id,
     assistantId: r.assistant_id,
+    assistantName: r.assistant_name ?? null,
     checkoutDate: toDateOnly(r.checkout_date),
     returnDate: r.return_date ? toDateOnly(r.return_date) : null,
     conditionReturn: r.condition_return,

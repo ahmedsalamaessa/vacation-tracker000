@@ -42,6 +42,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   // 🆕 وجهة المأمورية: موقع مسجل أو "موقع آخر" نص حر
   const [destSite, setDestSite] = useState('');
   const [destOther, setDestOther] = useState('');
+  // 🆕 المساعد: موظف مسجل أو اسم حر
+  const [assistantIsOther, setAssistantIsOther] = useState(false);
+  const [assistantOther, setAssistantOther] = useState('');
+  // ⬅️ فورم الرجوع السريع
+  const [qReturn, setQReturn] = useState({ coId: 0, condition: CONDITIONS[0], notes: '' });
   // 🖨️ طباعة المأمورية
   const [printGroup, setPrintGroup] = useState<EquipmentCheckout[] | null>(null);
   // الرجوع (نموذج داخلي)
@@ -73,6 +78,10 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   function empName(id: number | null | undefined): string {
     if (!id) return '—';
     return employees.find(e => e.id === id)?.name || `موظف #${id}`;
+  }
+  function assistantLabel(co: EquipmentCheckout): string {
+    if (co.assistantName) return co.assistantName;
+    return empName(co.assistantId);
   }
   function eqOf(id: number): Equipment | undefined {
     return equipment.find(e => e.id === id);
@@ -117,10 +126,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       if (coForm.ids.length === 0) { flash('⚠️ اختار جهاز واحد على الأقل'); return; }
       const destination = destSite === '__other__' ? destOther.trim() : (destSite || '');
       if (destSite === '__other__' && !destination) { flash('⚠️ اكتب اسم موقع المأمورية'); return; }
+      const assistantName = assistantIsOther ? assistantOther.trim() : '';
+      if (assistantIsOther && !assistantName) { flash('⚠️ اكتب اسم المساعد'); return; }
       const r = checkoutEquipment({
         equipmentIds: coForm.ids,
         surveyorId,
-        assistantId: coForm.assistantId || null,
+        assistantId: assistantIsOther ? null : (coForm.assistantId || null),
+        assistantName: assistantName || null,
         checkoutDate: coForm.checkoutDate,
         destination: destination || null,
         notes: coForm.notes || undefined,
@@ -129,6 +141,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       flash(`✅ تم تسجيل خروج ${r.created} جهاز${destination ? ` لمأمورية: ${destination}` : ''}${r.blocked.length ? ' — (واتشالت: ' + r.blocked.join('، ') + ')' : ''}`);
       setCoForm({ surveyorId: canManage ? 0 : user.id, assistantId: 0, checkoutDate: today, notes: '', ids: [] });
       setDestSite(''); setDestOther('');
+      setAssistantIsOther(false); setAssistantOther('');
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -162,8 +175,25 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     );
   }
 
+  // ⬅️ رجوع سريع من الفورم الواضح
+  function submitQuickReturn(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const co = openCheckouts.find(c => c.id === qReturn.coId);
+      if (!co) { flash('⚠️ اختار العدة اللي رجعت'); return; }
+      const condition = qReturn.condition.replace(/ [✅⚠️🔧]$/, '').trim();
+      returnEquipmentCheckout(co.id, condition, qReturn.notes || undefined);
+      flash('↩️ تم تسجيل رجوع العدة — الجهاز بقي ' + (condition === 'يحتاج صيانة' ? 'في الصيانة 🔧' : 'متاح ✅'));
+      setQReturn({ coId: 0, condition: CONDITIONS[0], notes: '' });
+      reload();
+    } catch (err: any) {
+      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
+  }
+
   const available = equipment.filter(e => e.active && e.status === 'متاحة');
   const openCheckouts = checkouts.filter(c => !c.returnDate);
+  const myOpenList = canManage ? openCheckouts : openCheckouts.filter(c => c.surveyorId === user.id);
   const history = checkouts.filter(c => c.returnDate).slice(0, 40);
 
   return (
@@ -206,7 +236,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   </div>
                   <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
                     <div>👷 المساح: {empName(co.surveyorId)}</div>
-                    <div>🤝 المساعد: {empName(co.assistantId)}</div>
+                    <div>🤝 المساعد: {assistantLabel(co)}</div>
                     {co.destination && <div className="text-blue-700">📍 مأمورية: {co.destination}</div>}
                     <div className="text-xs text-slate-500">📅 نزلت: {co.checkoutDate}{co.notes ? ` · 📝 ${co.notes}` : ''}</div>
                   </div>
@@ -261,14 +291,24 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           </label>
           <label className="text-sm font-black text-slate-700">
             🤝 المساعد
-            <select value={coForm.assistantId} onChange={e => setCoForm(f => ({ ...f, assistantId: Number(e.target.value) }))}
+            <select value={assistantIsOther ? '__other__' : String(coForm.assistantId)}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === '__other__') { setAssistantIsOther(true); setCoForm(f => ({ ...f, assistantId: 0 })); }
+                else { setAssistantIsOther(false); setCoForm(f => ({ ...f, assistantId: Number(v) })); }
+              }}
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value={0}>— بدون مساعد —</option>
               {employees.filter(e => e.active && e.id !== coForm.surveyorId).map(e => (
                 <option key={e.id} value={e.id}>{e.name}</option>
               ))}
+              <option value="__other__">✍️ اسم حر (مش موظف بالنظام)...</option>
             </select>
           </label>
+          {assistantIsOther && (
+            <input value={assistantOther} onChange={e => setAssistantOther(e.target.value)} placeholder="اسم المساعد (مثال: سيد عبد الرحمن)"
+              className="mt-6 rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+          )}
           <label className="text-sm font-black text-slate-700">
             📅 تاريخ النزول
             <input type="date" value={coForm.checkoutDate} onChange={e => setCoForm(f => ({ ...f, checkoutDate: e.target.value }))}
@@ -324,6 +364,43 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           <input value={coForm.notes} onChange={e => setCoForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (الموقع رايح فين؟)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 md:col-span-3" />
           <button className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-black text-white hover:bg-blue-700 md:col-span-3">🚪 تسجيل خروج العدة ({coForm.ids.length} جهاز)</button>
         </form>
+      </section>
+
+      {/* ===== رجوع عدة ===== */}
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-1 text-xl font-black text-slate-900">↩️ رجوع عدة</h3>
+        <p className="mb-4 text-xs font-bold text-slate-500">الجهاز رجع من الشغل؟ اختاره من تحت وحدد حالته وسجّل الرجوع — لو مفيش حاجة خارجة هيبان مكتوب</p>
+        {myOpenList.length === 0 ? (
+          <div className="rounded-2xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">مفيش عدة خارجة دلوقتي — كله في المخزن ✅</div>
+        ) : (
+          <form onSubmit={submitQuickReturn} className="grid gap-3 md:grid-cols-4">
+            <label className="text-sm font-black text-slate-700 md:col-span-2">
+              🧰 العدة الخارجة دلوقتي
+              <select value={qReturn.coId} onChange={e => setQReturn(f => ({ ...f, coId: Number(e.target.value) }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                <option value={0}>— اختار العدة اللي رجعت —</option>
+                {myOpenList.map(co => {
+                  const eq = eqOf(co.equipmentId);
+                  return (
+                    <option key={co.id} value={co.id}>
+                      {eq ? `${eq.name} (${eq.serialNumber})` : `#${co.equipmentId}`} — مع {empName(co.surveyorId)}{co.destination ? ` — مأمورية: ${co.destination}` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <label className="text-sm font-black text-slate-700">
+              🩺 حالة الجهاز
+              <select value={qReturn.condition} onChange={e => setQReturn(f => ({ ...f, condition: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <input value={qReturn.notes} onChange={e => setQReturn(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)"
+              className="mt-6 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
+            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 md:col-span-4">↩️ تسجيل رجوع العدة</button>
+          </form>
+        )}
       </section>
 
       {/* ===== سجل المعدات ===== */}
@@ -420,7 +497,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                     <tr key={co.id} className="border-b border-slate-100 font-bold text-slate-800">
                       <td className="p-3 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`} <span className="font-mono text-xs text-slate-400">{eq?.serialNumber}</span></td>
                       <td className="p-3">{empName(co.surveyorId)}</td>
-                      <td className="p-3">{empName(co.assistantId)}</td>
+                      <td className="p-3">{assistantLabel(co)}</td>
                       <td className="p-3 text-blue-700">{co.destination || '—'}</td>
                       <td className="p-3">{co.checkoutDate}</td>
                       <td className="p-3">{co.returnDate}</td>
@@ -455,7 +532,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <span>م رقم: {printGroup[0].id}</span>
                 </div>
                 <div>👷 المساح: <b className="text-lg">{empName(printGroup[0].surveyorId)}</b></div>
-                <div>🤝 المساعد: <b>{empName(printGroup[0].assistantId)}</b></div>
+                <div>🤝 المساعد: <b>{assistantLabel(printGroup[0])}</b></div>
                 <div>📍 وجهة المأمورية: <b>{printGroup[0].destination || '—'}</b></div>
                 {printGroup[0].returnDate && <div>↩️ تاريخ رجوع العدة: <b>{printGroup[0].returnDate}</b></div>}
                 {printGroup[0].notes && <div>📝 ملاحظات: {printGroup[0].notes}</div>}

@@ -886,13 +886,11 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment-checkouts' && method === 'POST') {
-      // خروج عدة: المساح بيسجل لنفسه، والأدمن/المدير لأي حد
+      // 🛡️ المأمورية قرار إداري — الإدارة بس (الأدمن) هي اللي تطلع العدة من العهدة
       const b = await readBody<any>(req);
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('المأموريات من إدارة النظام بس');
       const ids: number[] = Array.isArray(b?.equipmentIds) ? b.equipmentIds.map(Number).filter(Boolean) : [];
       const surveyorId = Number(b?.surveyorId);
-      if (!hasPerm(authUser, 'canEditAttendance') && surveyorId !== authUser.id) {
-        return forbidden('تقدر تسجل خروج عدة لنفسك بس');
-      }
       if (ids.length === 0 || !surveyorId || !b?.checkoutDate) {
         return json({ error: 'bad_request', message: 'المساح والتاريخ وجهاز واحد على الأقل مطلوبين' }, 400);
       }
@@ -922,9 +920,7 @@ export default async function handler(req: Request) {
       const cur = await sql`SELECT * FROM equipment_checkouts WHERE id = ${id}`;
       const co = (cur as any[])[0];
       if (!co) return json({ error: 'not_found' }, 404);
-      if (!hasPerm(authUser, 'canEditAttendance') && co.surveyor_id !== authUser.id) {
-        return forbidden('تقدر تسجل رجوع عدتك بس');
-      }
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('رجوع العدة من إدارة النظام بس');
       if (co.return_date) return json({ error: 'conflict', message: 'العدة دي مسجّل رجوعها خلاص' }, 409);
       const today = new Date().toISOString().slice(0, 10);
       const condition = b?.conditionReturn || 'سليم';

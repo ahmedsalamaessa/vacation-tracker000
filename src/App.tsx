@@ -96,7 +96,7 @@ const TABS: TabDef[] = [
   { key: 'employees', emoji: '👥', permission: 'canManageEmployees' },
   { key: 'locations', emoji: '📍', permission: 'canManageLocations' },
   { key: 'equipment', emoji: '🧰' },
-  { key: 'custody', emoji: '👥' },
+  { key: 'custody', emoji: '👥', adminOnly: true },
   { key: 'attempts', emoji: '📡', permission: 'canViewAuditLog' },
   { key: 'reports', emoji: '📁', permission: 'canViewReports' },
   { key: 'settings', emoji: '⚙️', permission: 'canManageSettings' },

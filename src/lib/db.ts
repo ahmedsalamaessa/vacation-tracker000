@@ -29,6 +29,7 @@ const STORAGE_KEYS = {
   currentUser: PREFIX + 'current_user',
   equipment: PREFIX + 'equipment',
   equipmentCheckouts: PREFIX + 'equipment_checkouts',
+  directory: PREFIX + 'directory',
   equipmentMaintenance: PREFIX + 'equipment_maintenance',
 };
 
@@ -79,6 +80,7 @@ export async function refreshFromRemote(): Promise<any> {
     const d = data as any; // (الجديد فقط — القديم سيبانه زي ما هو)
     if (d.equipment) setItem(STORAGE_KEYS.equipment, d.equipment);
     if (d.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, d.equipmentCheckouts);
+    if (d.directory) setItem(STORAGE_KEYS.directory, d.directory);
     return data;
   } catch (e) {
     console.warn('refreshFromRemote failed', e);
@@ -101,6 +103,23 @@ export function importLocalData(data: any) {
   if (data.settings) setItem(STORAGE_KEYS.settings, data.settings);
   if (data.equipment) setItem(STORAGE_KEYS.equipment, data.equipment);
   if (data.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, data.equipmentCheckouts);
+  if ((data as any).directory) setItem(STORAGE_KEYS.directory, (data as any).directory);
+}
+
+// 📇 دليل الأسماء (كل الموظفين — اسم ولقب بس) + دمج مع بيانات الموظفين الكاملة
+export interface DirectoryEntry { id: number; name: string; jobTitle?: string | null; role?: string; active?: boolean; }
+export function getDirectory(): DirectoryEntry[] {
+  return getItem<DirectoryEntry[]>(STORAGE_KEYS.directory, []);
+}
+/** كل الأسماء المتاحة: الموظفين الكاملين + دليل الأسماء (للعرض والقوائم) */
+export function getPeople<T extends { id: number }>(): T[] {
+  const emps = getItem<any[]>(STORAGE_KEYS.employees, []);
+  const dir = getDirectory();
+  const merged = [...emps];
+  for (const d of dir) {
+    if (!merged.some(e => e.id === d.id)) merged.push(d);
+  }
+  return merged as T[];
 }
 
 export async function initializeData() {

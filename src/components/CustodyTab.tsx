@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  getEquipment, getEmployees, updateEquipment, refreshEquipment,
+  getEquipment, getPeople, updateEquipment, refreshEquipment,
 } from '../lib/db';
 import type { Employee, Equipment } from '../lib/types';
 import { kindEmoji } from './equipmentKinds';
@@ -28,7 +28,7 @@ export default function CustodyTab({ user }: { user: Employee }) {
 
   function reload() {
     setEquipmentState(getEquipment());
-    setEmployeesState(getEmployees());
+    setEmployeesState(getPeople<Employee>());
   }
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  getEquipment, getEquipmentCheckouts, getEmployees, getLocations, getSettings,
+  getEquipment, getEquipmentCheckouts, getEmployees, getPeople, getLocations, getSettings,
   addEquipment, updateEquipment, deleteEquipment,
   checkoutEquipment, returnEquipmentCheckout, refreshEquipment,
   getEquipmentMaintenance, addEquipmentMaintenance, deleteEquipmentMaintenance, refreshMaintenance,
@@ -65,7 +65,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   function reload() {
     setEquipmentState(getEquipment());
     setCheckoutsState(getEquipmentCheckouts());
-    setEmployeesState(getEmployees());
+    setEmployeesState(getPeople<Employee>());
     setLocationsState(getLocations());
     setDeptName(getSettings().department_name || 'قسم المساحة');
     setMaintenanceState(getEquipmentMaintenance());
@@ -303,6 +303,44 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           <div className="text-xs font-bold text-amber-600">صيانة 🔧</div>
         </div>
       </div>
+
+      {/* ===== 📅 نزول عدة النهارده ===== */}
+      {(() => {
+        const todayList = checkouts.filter(c => c.checkoutDate === today);
+        return (
+          <section className="rounded-[2rem] border-2 border-blue-200 bg-blue-50/60 p-6 shadow-sm">
+            <h3 className="mb-4 text-xl font-black text-slate-900">📅 نزول عدة النهارده ({todayList.length})</h3>
+            {todayList.length === 0 ? (
+              <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-slate-500">لسه محدش نزل بعدة النهارده</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-blue-200 text-xs font-black text-blue-700">
+                      <th className="p-2">الجهاز</th><th className="p-2">السيريال</th><th className="p-2">المساح</th><th className="p-2">المساعد</th><th className="p-2">الوجهة</th><th className="p-2">الحالة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {todayList.map(co => {
+                      const eq = eqOf(co.equipmentId);
+                      return (
+                        <tr key={co.id} className="border-b border-blue-100 bg-white/60 font-bold text-slate-800">
+                          <td className="p-2 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`}</td>
+                          <td className="p-2 font-mono">{eq?.serialNumber ?? '—'}</td>
+                          <td className="p-2">{empName(co.surveyorId)}</td>
+                          <td className="p-2">{assistantLabel(co)}</td>
+                          <td className="p-2 text-blue-700">{co.destination || '—'}</td>
+                          <td className="p-2">{co.returnDate ? <span className="text-emerald-600">رجعت ✅</span> : <span className="text-red-600">خارجة 🔴</span>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {/* ===== العدة الخارجة دلوقتي ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">

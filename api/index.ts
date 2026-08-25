@@ -314,6 +314,10 @@ export default async function handler(req: Request) {
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
 
+      // 📇 دليل الأسماء للكل (اسم ولقب بس) — عشان قوائم المساحين والمساعدين تظهر عند كل الموظفين
+      const directory = (employees as any[]).map(mapEmployee).filter(Boolean)
+        .map((e: any) => ({ id: e.id, name: e.name, jobTitle: e.jobTitle, role: e.role, active: e.active !== false }));
+
       return json({
         employees: filteredEmployees.map((e: any) => {
           const { password, ...rest } = e;
@@ -335,6 +339,7 @@ export default async function handler(req: Request) {
         notifications: (notifications as any[]).map(mapNotification).filter(Boolean),
         equipment: (equipmentRows as any[]).map(mapEquipment).filter(Boolean),
         equipmentCheckouts: (checkoutRows as any[]).map(mapCheckout).filter(Boolean),
+        directory,
         settings,
       });
     }

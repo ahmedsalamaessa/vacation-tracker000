@@ -8,6 +8,7 @@ import {
   getVacations,
   getEmployees,
   refreshFromRemote,
+  getEquipmentCheckouts,
 } from './lib/db';
 import { getManagedEmployees } from './lib/permissions';
 import {
@@ -146,9 +147,33 @@ export default function App() {
     }
     tick();
     const t = setInterval(tick, 45000);
+
+    // 🌙 تنبيه مسائي: الساعة 6 — العدة اللي لسه بره
+    const eveningCheck = () => {
+      try {
+        const now = new Date();
+        if (now.getHours() < 18) return;
+        const day = now.toISOString().slice(0, 10);
+        if (localStorage.getItem('vsys_evening_eq_' + day)) return;
+        const open = getEquipmentCheckouts().filter(c => !c.returnDate);
+        if (open.length === 0) return;
+        localStorage.setItem('vsys_evening_eq_' + day, '1');
+        playChime();
+        showBrowserNotification(
+          '🌙 تنبيه مسائي للعدة',
+          `لسه ${open.length} جهاز بره — افتح تبويب استلام وتسليم العدة تشوف مع مين`,
+        );
+      } catch {
+        // تجاهل
+      }
+    };
+    eveningCheck();
+    const ev = setInterval(eveningCheck, 60 * 1000);
+
     return () => {
       stopped = true;
       clearInterval(t);
+      clearInterval(ev);
       lastPendingRef.current = null;
     };
   }, [user?.id]);

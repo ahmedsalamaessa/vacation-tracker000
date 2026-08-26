@@ -227,6 +227,7 @@ export function mapCheckout(r: any) {
     assistantId: r.assistant_id,
     assistantName: r.assistant_name ?? null,
     checkoutDate: toDateOnly(r.checkout_date),
+    untilDate: r.until_date ? toDateOnly(r.until_date) : null,
     returnDate: r.return_date ? toDateOnly(r.return_date) : null,
     conditionReturn: r.condition_return,
     notes: r.notes,

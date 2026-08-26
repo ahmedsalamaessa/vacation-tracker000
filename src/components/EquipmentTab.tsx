@@ -52,6 +52,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   // 🆕 وجهة المأمورية: موقع مسجل أو "موقع آخر" نص حر
   const [destSite, setDestSite] = useState('');
   const [destOther, setDestOther] = useState('');
+  // 📅 المأمورية لفترة معينة: حتى تاريخ
+  const [untilDate, setUntilDate] = useState('');
   // 🆕 المساعد: موظف مسجل أو اسم حر
   const [assistantIsOther, setAssistantIsOther] = useState(false);
   const [assistantOther, setAssistantOther] = useState('');
@@ -141,6 +143,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       if (coForm.ids.length === 0) { flash('⚠️ اختار جهاز واحد على الأقل'); return; }
       const destination = destSite === '__other__' ? destOther.trim() : (destSite || '');
       if (destSite === '__other__' && !destination) { flash('⚠️ اكتب اسم موقع المأمورية'); return; }
+      if (destination && !untilDate) { flash('⚠️ حدد حتى تاريخ — المأمورية لفترة معينة'); return; }
       const assistantName = assistantIsOther ? assistantOther.trim() : '';
       if (assistantIsOther && !assistantName) { flash('⚠️ اكتب اسم المساعد'); return; }
       const r = checkoutEquipment({
@@ -149,13 +152,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         assistantId: assistantIsOther ? null : (coForm.assistantId || null),
         assistantName: assistantName || null,
         checkoutDate: coForm.checkoutDate,
+        untilDate: destination ? untilDate : null,
         destination: destination || null,
         notes: coForm.notes || undefined,
         createdBy: user.id,
       });
       flash(`✅ تم تسجيل خروج ${r.created} جهاز${destination ? ` لمأمورية: ${destination}` : ''}${r.blocked.length ? ' — (واتشالت: ' + r.blocked.join('، ') + ')' : ''}`);
       setCoForm({ surveyorId: canManage ? 0 : user.id, assistantId: 0, checkoutDate: today, notes: '', ids: [] });
-      setDestSite(''); setDestOther('');
+      setDestSite(''); setDestOther(''); setUntilDate('');
       setAssistantIsOther(false); setAssistantOther('');
       reload();
     } catch (err: any) {
@@ -323,7 +327,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       {/* 🔔 تنبيه العدة المتأخرة */}
       {(() => {
         const lateDays = Number((getSettings() as any)?.equipment_late_days) || 7;
-        const late = openCheckouts.filter(co => daysSince(co.checkoutDate) >= lateDays);
+        const isLate = (co: EquipmentCheckout) => co.untilDate ? today > co.untilDate : daysSince(co.checkoutDate) >= lateDays;
+        const late = openCheckouts.filter(isLate);
         if (late.length === 0) return null;
         return (
           <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4">
@@ -333,7 +338,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 const eq = eqOf(co.equipmentId);
                 return (
                   <div key={co.id} className="text-sm font-bold text-red-700">
-                    ⚠️ {eq ? `${eq.name} (${eq.serialNumber})` : `#${co.equipmentId}`} — مع {empName(co.surveyorId)} — خارج من {co.checkoutDate} ({daysSince(co.checkoutDate)} يوم)
+                    ⚠️ {eq ? `${eq.name} (${eq.serialNumber})` : `#${co.equipmentId}`} — مع {empName(co.surveyorId)} — {co.untilDate ? `مأمورية كان لازم ترجع ${co.untilDate}` : `خارج من ${co.checkoutDate} (${daysSince(co.checkoutDate)} يوم)`}
                   </div>
                 );
               })}
@@ -423,7 +428,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                     <div>👷 المساح: {empName(co.surveyorId)}</div>
                     <div>🤝 المساعد: {assistantLabel(co)}</div>
                     {co.destination && <div className="text-blue-700">📍 مأمورية: {co.destination}</div>}
-                    <div className="text-xs text-slate-500">📅 نزلت: {co.checkoutDate}{co.notes ? ` · 📝 ${co.notes}` : ''}</div>
+                    <div className="text-xs text-slate-500">📅 من: {co.checkoutDate}{co.untilDate ? ` ← حتى: ${co.untilDate}` : ''}{co.notes ? ` · 📝 ${co.notes}` : ''}</div>
+                    {co.untilDate && today > co.untilDate && <div className="text-xs font-black text-red-700">⏰ عدّى موعد رجوع المأمورية ({co.untilDate})</div>}
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ مأمورية</button>
@@ -459,7 +465,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         <h3 className="mb-1 text-xl font-black text-slate-900">➕ خروج عدة / مأمورية جديدة</h3>
         <p className="mb-4 text-xs font-bold text-slate-500">
           {canManage
-            ? 'الإدارة تسجل لأي مساح + تقدر تطلع مأمورية لموقع تاني'
+            ? 'الإدارة تسجل لأي مساح — والمأمورية يعني جهاز من العهدة يشتغل في موقع تاني لفترة معينة (من ← حتى)'
             : 'سجّل العدة اللي نازل بيها — المأموريات (المواقع التانية) الإدارة بس اللي تطلعها'}
         </p>
         <form onSubmit={submitCheckout} className="grid gap-3 md:grid-cols-3">
@@ -531,6 +537,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           {canManage && destSite === '__other__' && (
             <input value={destOther} onChange={e => setDestOther(e.target.value)} placeholder="اسم موقع المأمورية (مثال: مأمورية العاصمة الإدارية)"
               className="rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+          )}
+          {canManage && destSite !== '' && (
+            <label className="text-sm font-black text-slate-700">
+              📅 حتى تاريخ (نهاية المأمورية)
+              <input type="date" value={untilDate} onChange={e => setUntilDate(e.target.value)}
+                className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+            </label>
           )}
           <div className="md:col-span-3">
             <div className="mb-2 text-sm font-black text-slate-700">🧰 العدة المتاحة ({available.length}) — علّم على الجهاز وملحقاته اللي نازلة معاه:</div>
@@ -1040,6 +1053,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 <div>👷 المساح: <b className="text-lg">{empName(printGroup[0].surveyorId)}</b></div>
                 <div>🤝 المساعد: <b>{assistantLabel(printGroup[0])}</b></div>
                 <div>📍 وجهة المأمورية: <b>{printGroup[0].destination || '—'}</b></div>
+                {printGroup[0].untilDate && <div>📅 الفترة: من <b>{printGroup[0].checkoutDate}</b> حتى <b>{printGroup[0].untilDate}</b></div>}
                 {printGroup[0].returnDate && <div>↩️ تاريخ رجوع العدة: <b>{printGroup[0].returnDate}</b></div>}
                 {printGroup[0].notes && <div>📝 ملاحظات: {printGroup[0].notes}</div>}
               </div>

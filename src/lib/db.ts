@@ -1090,6 +1090,7 @@ export function checkoutEquipment(opts: {
   assistantId: number | null;
   assistantName?: string | null;
   checkoutDate: string;
+  untilDate?: string | null;
   destination?: string | null;
   notes?: string;
   createdBy?: number | null;
@@ -1116,6 +1117,7 @@ export function checkoutEquipment(opts: {
     assistantId: opts.assistantId ?? null,
     assistantName: opts.assistantName ?? null,
     checkoutDate: opts.checkoutDate,
+    untilDate: opts.untilDate ?? null,
     returnDate: null,
     conditionReturn: null,
     notes: opts.notes ?? null,

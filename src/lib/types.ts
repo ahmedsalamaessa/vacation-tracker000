@@ -224,6 +224,7 @@ export interface EquipmentCheckout {
   assistantId: number | null;
   assistantName?: string | null;
   checkoutDate: string;
+  untilDate?: string | null;
   returnDate: string | null;
   conditionReturn?: string | null;
   notes?: string | null;

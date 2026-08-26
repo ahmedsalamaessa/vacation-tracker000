@@ -191,6 +191,8 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_notes TEXT`;
   // 🆕 اسم المساعد الحر (المساعدين مش موظفين في النظام)
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS assistant_name TEXT`;
+  // 🆕 المأمورية لفترة معينة: حتى تاريخ
+  await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS until_date DATE`;
   // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
   await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
@@ -940,8 +942,8 @@ export default async function handler(req: Request) {
       const created: any[] = [];
       for (const eid of ids) {
         const rows = await sql`
-          INSERT INTO equipment_checkouts (equipment_id, surveyor_id, assistant_id, assistant_name, checkout_date, destination, notes, created_by)
-          VALUES (${eid}, ${surveyorId}, ${b.assistantId ? Number(b.assistantId) : null}, ${b.assistantName ?? null}, ${b.checkoutDate}, ${b.destination ?? null}, ${b.notes ?? null}, ${authUser.id})
+          INSERT INTO equipment_checkouts (equipment_id, surveyor_id, assistant_id, assistant_name, checkout_date, until_date, destination, notes, created_by)
+          VALUES (${eid}, ${surveyorId}, ${b.assistantId ? Number(b.assistantId) : null}, ${b.assistantName ?? null}, ${b.checkoutDate}, ${b.untilDate ?? null}, ${b.destination ?? null}, ${b.notes ?? null}, ${authUser.id})
           RETURNING *`;
         created.push(mapCheckout((rows as any[])[0]));
         await sql`UPDATE equipment SET status = 'خارجة' WHERE id = ${eid}`;

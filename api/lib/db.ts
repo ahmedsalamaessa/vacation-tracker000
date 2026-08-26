@@ -214,7 +214,6 @@ export function mapEquipment(r: any) {
     custodyEmployeeId: r.custody_employee_id ?? null,
     custodySince: r.custody_since ? toDateOnly(r.custody_since) : null,
     custodyNotes: r.custody_notes ?? null,
-    lastCalibration: r.last_calibration ? toDateOnly(r.last_calibration) : null,
     createdAt: r.created_at,
   };
 }

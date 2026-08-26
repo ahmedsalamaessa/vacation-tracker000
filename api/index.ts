@@ -191,8 +191,7 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS custody_notes TEXT`;
   // 🆕 اسم المساعد الحر (المساعدين مش موظفين في النظام)
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS assistant_name TEXT`;
-  // 🆕 آخر معايرة للجهاز + سجل الصيانة
-  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS last_calibration DATE`;
+  // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
   await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
   await sql`UPDATE equipment SET kind = 'حامل توتال خشب' WHERE kind = 'حامل توتال ألومنيوم'`;
@@ -898,8 +897,7 @@ export default async function handler(req: Request) {
           active = ${b.active !== undefined ? b.active : c.active},
           custody_employee_id = ${b.custodyEmployeeId !== undefined ? (b.custodyEmployeeId ?? null) : c.custody_employee_id},
           custody_since = ${b.custodySince !== undefined ? (b.custodySince ?? null) : c.custody_since},
-          custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes},
-          last_calibration = ${b.lastCalibration !== undefined ? (b.lastCalibration ?? null) : c.last_calibration}
+          custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes}
         WHERE id = ${id} RETURNING *`;
       return json(mapEquipment((rows as any[])[0]));
     }

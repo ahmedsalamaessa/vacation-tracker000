@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  getEquipment, getEquipmentCheckouts, getEmployees, getPeople, getLocations, getSettings,
+  getEquipment, getEquipmentCheckouts, getPeople, getLocations, getSettings,
   addEquipment, updateEquipment, deleteEquipment,
   checkoutEquipment, returnEquipmentCheckout, refreshEquipment,
   getEquipmentMaintenance, addEquipmentMaintenance, deleteEquipmentMaintenance, refreshMaintenance,
@@ -31,8 +31,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [msg, setMsg] = useState('');
 
   // فورم إضافة/تعديل جهاز
-  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '', lastCalibration: '' });
-  // 🔧 الصيانة والمعايرة
+  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '' });
+  // 🔧 الصيانة
   const [maintenance, setMaintenanceState] = useState<EquipmentMaintenance[]>([]);
   const [maintForm, setMaintForm] = useState({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
   // 🔍 سجل حياة الجهاز
@@ -104,13 +104,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     try {
       if (!eqForm.name.trim() || !eqForm.serialNumber.trim()) { flash('⚠️ الاسم والسيريال نمبر مطلوبين'); return; }
       if (eqForm.id) {
-        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, lastCalibration: eqForm.lastCalibration || null });
+        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes });
         flash('✅ تم تعديل الجهاز');
       } else {
-        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, lastCalibration: eqForm.lastCalibration || null });
+        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true });
         flash('✅ تم تسجيل الجهاز');
       }
-      setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '', lastCalibration: '' });
+      setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '' });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -219,12 +219,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     if (!window.confirm('حذف سجل الصيانة ده؟')) return;
     deleteEquipmentMaintenance(m.id);
     reload();
-  }
-
-  // ⏰ معايرة مستحقة؟ (أكثر من سنة)
-  function calibrationDue(eq: Equipment): boolean {
-    if (!eq.lastCalibration) return true;
-    return daysSince(eq.lastCalibration) >= 365;
   }
 
   // 🧾 الجرد
@@ -558,11 +552,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             <input value={eqForm.name} onChange={e => setEqForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الجهاز (مثال: توتال نيكون)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.serialNumber} onChange={e => setEqForm(f => ({ ...f, serialNumber: e.target.value }))} placeholder="السيريال نمبر" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.notes} onChange={e => setEqForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
-            <label className="text-xs font-black text-slate-500">
-              ⏰ آخر معايرة
-              <input type="date" value={eqForm.lastCalibration} onChange={e => setEqForm(f => ({ ...f, lastCalibration: e.target.value }))}
-                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-bold outline-none focus:border-blue-500" />
-            </label>
             <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">{eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>
           </form>
         )}
@@ -582,7 +571,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <th className="p-3">الحالة</th>
                   <th className="p-3">مع مين</th>
                   <th className="p-3">ملاحظات</th>
-                  <th className="p-3">المعايرة</th>
                   <th className="p-3">السجل</th>
                   {canManage && <th className="p-3">إجراءات</th>}
                 </tr>
@@ -601,11 +589,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       <td className="p-3">{openCo ? `${empName(openCo.surveyorId)}${openCo.assistantId ? ` (مساعد: ${empName(openCo.assistantId)})` : ''}` : '—'}</td>
                       <td className="p-3 text-xs text-slate-500">{eq.notes || '—'}</td>
                       <td className="p-3">
-                        {calibrationDue(eq)
-                          ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">⏰ معايرة مستحقة</span>
-                          : <span className="text-xs font-bold text-emerald-600">{eq.lastCalibration}</span>}
-                      </td>
-                      <td className="p-3">
                         <button type="button" onClick={() => setViewEq(eq)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="سجل الجهاز كامل">📜</button>
                       </td>
                       {canManage && (
@@ -614,7 +597,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                             {eq.status === 'صيانة' && (
                               <button type="button" onClick={() => fixFromMaintenance(eq)} className="rounded-lg bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-200">✅ خلصت</button>
                             )}
-                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '', lastCalibration: eq.lastCalibration || '' })}
+                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '' })}
                               className="rounded-lg bg-blue-100 px-3 py-1 text-xs font-black text-blue-700 hover:bg-blue-200">تعديل</button>
                             <button type="button" onClick={() => removeDevice(eq)} disabled={eq.status === 'خارجة'}
                               className="rounded-lg bg-red-100 px-3 py-1 text-xs font-black text-red-700 hover:bg-red-200 disabled:opacity-40">حذف</button>
@@ -867,7 +850,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <span className="rounded-full bg-slate-100 px-3 py-1">سيريال: {viewEq.serialNumber}</span>
                   <span className={`rounded-full px-3 py-1 ${STATUS_STYLE[viewEq.status]}`}>{viewEq.status}</span>
                   {viewEq.custodyEmployeeId && <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">📦 عهدة: {empName(viewEq.custodyEmployeeId)}{viewEq.custodySince ? ` من ${viewEq.custodySince}` : ''}</span>}
-                  <span className={`rounded-full px-3 py-1 ${calibrationDue(viewEq) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>⏰ المعايرة: {viewEq.lastCalibration || 'مش مسجلة'}</span>
                   {viewEq.custodyNotes && <span className="rounded-full bg-slate-100 px-3 py-1">{viewEq.custodyNotes}</span>}
                 </div>
               </div>

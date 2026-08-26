@@ -509,6 +509,20 @@ export function setVacations(vacations: Vacation[]): void {
 
 export function addVacation(vacation: Omit<Vacation, 'id' | 'createdAt'>): Vacation {
   const vacations = getVacations();
+  // 🔁 منع الإجازات المتداخلة: مفيش إجازتين لنفس الموظف في نفس الوقت (المعلقة والمقبولة والمجدولة تحسب)
+  const ns = vacation.vacationStartDate || vacation.startDate;
+  const ne = vacation.vacationEndDate || vacation.endDate;
+  if (ns && ne) {
+    const hit = vacations.find(v => {
+      if (v.employeeId !== vacation.employeeId || v.status === 'مرفوضة') return false;
+      const xs = v.vacationStartDate || v.startDate;
+      const xe = v.vacationEndDate || v.endDate;
+      return !!xs && !!xe && ns <= xe && xs <= ne;
+    });
+    if (hit) {
+      throw new Error(`التواريخ متداخلة ❌ — فيه إجازة (${hit.status}) لنفس الموظف من ${hit.vacationStartDate || hit.startDate} إلى ${hit.vacationEndDate || hit.endDate}`);
+    }
+  }
   const newVacation: Vacation = {
     ...vacation,
     id: Math.max(0, ...vacations.map(v => v.id)) + 1,

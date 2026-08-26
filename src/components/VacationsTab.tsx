@@ -131,20 +131,26 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
 
     const status = isAdmin ? 'مجدولة' : 'بانتظار الموافقة';
 
-    const created = addVacation({
-      employeeId: empId,
-      workDays: finalWorkDays,
-      vacationDays: finalVacationDays,
-      vacationType,
-      startDate: vacStart,
-      endDate: vacEnd,
-      vacationStartDate: vacStart,
-      vacationEndDate: vacEnd,
-      status,
-      notes: notes || null,
-      requestedBy: user.id,
-      approvedBy: isAdmin ? user.id : null,
-    });
+    let created: Vacation;
+    try {
+      created = addVacation({
+        employeeId: empId,
+        workDays: finalWorkDays,
+        vacationDays: finalVacationDays,
+        vacationType,
+        startDate: vacStart,
+        endDate: vacEnd,
+        vacationStartDate: vacStart,
+        vacationEndDate: vacEnd,
+        status,
+        notes: notes || null,
+        requestedBy: user.id,
+        approvedBy: isAdmin ? user.id : null,
+      });
+    } catch (err: any) {
+      setMsg('⛔ ' + (err?.message || 'حصل خطأ'));
+      return;
+    }
 
     addAuditLog({
       actorId: user.id, actorName: user.name,

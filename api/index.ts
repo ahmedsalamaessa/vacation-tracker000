@@ -593,6 +593,20 @@ export default async function handler(req: Request) {
       const canApprove = hasPerm(authUser, 'canApproveVacations');
       const ownRequest = Number(b.employeeId) === authUser.id && hasPerm(authUser, 'canRequestVacations');
       if (!canApprove && !ownRequest) return forbidden('لا يمكنك إنشاء إجازة لموظف آخر');
+      // 🔁 منع الإجازات المتداخلة
+      const nsNew = (b.vacationStartDate || b.startDate) || null;
+      const neNew = (b.vacationEndDate || b.endDate) || null;
+      if (nsNew && neNew) {
+        const dOnly = (x: any) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || '').slice(0, 10));
+        const ovRows = await sql`
+          SELECT id, status, vacation_start_date, vacation_end_date FROM vacations
+          WHERE employee_id = ${Number(b.employeeId)} AND status <> 'مرفوضة'
+            AND vacation_start_date IS NOT NULL AND vacation_end_date IS NOT NULL
+            AND vacation_start_date <= ${neNew}::date AND vacation_end_date >= ${nsNew}::date
+          LIMIT 1`;
+        const ov = (ovRows as any[])[0];
+        if (ov) return json({ error: 'overlap', message: `التواريخ متداخلة ❌ — فيه إجازة (${ov.status}) لنفس الموظف من ${dOnly(ov.vacation_start_date)} إلى ${dOnly(ov.vacation_end_date)}` }, 409);
+      }
       const rows = await sql`
         INSERT INTO vacations (
           employee_id, work_days, vacation_days, vacation_type,
@@ -626,8 +640,26 @@ export default async function handler(req: Request) {
           }
         }
         const b = await readBody<any>(req);
-        const prevRows = await sql`SELECT status FROM vacations WHERE id = ${id} LIMIT 1`;
+        const prevRows = await sql`SELECT status, employee_id, vacation_start_date, vacation_end_date FROM vacations WHERE id = ${id} LIMIT 1`;
         const prevStatus = (prevRows[0] as any)?.status;
+        // 🔁 منع الإجازات المتداخلة عند التعديل (باستثناء السجل نفسه)
+        {
+          const prev = prevRows[0] as any;
+          const dOnly = (x: any) => (x instanceof Date ? x.toISOString().slice(0, 10) : String(x || '').slice(0, 10));
+          const nsNew = b.vacationStartDate || b.startDate || (prev ? dOnly(prev.vacation_start_date) : null);
+          const neNew = b.vacationEndDate || b.endDate || (prev ? dOnly(prev.vacation_end_date) : null);
+          const empId = Number(b.employeeId) || (prev ? prev.employee_id : 0);
+          if (nsNew && neNew && empId) {
+            const ovRows = await sql`
+              SELECT id, status, vacation_start_date, vacation_end_date FROM vacations
+              WHERE employee_id = ${empId} AND status <> 'مرفوضة' AND id <> ${id}
+                AND vacation_start_date IS NOT NULL AND vacation_end_date IS NOT NULL
+                AND vacation_start_date <= ${neNew}::date AND vacation_end_date >= ${nsNew}::date
+              LIMIT 1`;
+            const ov = (ovRows as any[])[0];
+            if (ov) return json({ error: 'overlap', message: `التواريخ متداخلة ❌ — فيه إجازة (${ov.status}) لنفس الموظف من ${dOnly(ov.vacation_start_date)} إلى ${dOnly(ov.vacation_end_date)}` }, 409);
+          }
+        }
         // 🔧 إصلاح: كان workdays غلط، الصح work_days
         const rows = await sql`
           UPDATE vacations SET

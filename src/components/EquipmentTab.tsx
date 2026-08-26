@@ -56,7 +56,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [assistantIsOther, setAssistantIsOther] = useState(false);
   const [assistantOther, setAssistantOther] = useState('');
   // ⬅️ فورم الرجوع السريع
-  const [qReturn, setQReturn] = useState({ coId: 0, condition: CONDITIONS[0], notes: '' });
+  const [qReturn, setQReturn] = useState({ surveyorId: 0, condition: CONDITIONS[0], notes: '', ids: [] as number[] });
   // 🖨️ طباعة المأمورية
   const [printGroup, setPrintGroup] = useState<EquipmentCheckout[] | null>(null);
   // الرجوع (نموذج داخلي)
@@ -81,6 +81,15 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // للمساح: عدته تتعلّم تلقائي أول ما تظهر
+  const [autoFilled, setAutoFilled] = useState(false);
+  useEffect(() => {
+    if (!canManage && !autoFilled && openCheckouts.length > 0) {
+      setQReturn(f => (f.ids.length === 0 ? { ...f, ids: openCheckouts.map(c => c.id) } : f));
+      setAutoFilled(true);
+    }
+  }, [openCheckouts, autoFilled, canManage]);
 
   function flash(text: string) {
     setMsg(text);
@@ -266,16 +275,35 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     setInvMarks({});
   }
 
-  // ⬅️ رجوع سريع من الفورم الواضح
+  // ⬅️ رجوع جماعي: كل عدته مرة واحدة
+  const surveyorsWithOpen = canManage
+    ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
+    : [];
+  const returnList = (canManage ? qReturn.surveyorId : user.id)
+    ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
+    : [];
+  const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
+
+  function pickReturnSurveyor(empId: number) {
+    const hisOpen = openCheckouts.filter(c => c.surveyorId === empId).map(c => c.id);
+    setQReturn(f => ({ ...f, surveyorId: empId, ids: hisOpen }));
+  }
+
+  function toggleReturnId(id: number) {
+    setQReturn(f => ({ ...f, ids: f.ids.includes(id) ? f.ids.filter(x => x !== id) : [...f.ids, id] }));
+  }
+
   function submitQuickReturn(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const co = openCheckouts.find(c => c.id === qReturn.coId);
-      if (!co) { flash('⚠️ اختار العدة اللي رجعت'); return; }
+      if (checkedReturnIds.length === 0) { flash('⚠️ علّم العدة اللي رجعت'); return; }
       const condition = qReturn.condition.replace(/ [✅⚠️🔧]$/, '').trim();
-      returnEquipmentCheckout(co.id, condition, qReturn.notes || undefined);
-      flash('↩️ تم تسجيل رجوع العدة — الجهاز بقي ' + (condition === 'يحتاج صيانة' ? 'في الصيانة 🔧' : 'متاح ✅'));
-      setQReturn({ coId: 0, condition: CONDITIONS[0], notes: '' });
+      let done = 0;
+      for (const id of checkedReturnIds) {
+        try { returnEquipmentCheckout(id, condition, qReturn.notes || undefined); done++; } catch { /* عدّي اللي رجع خلاص */ }
+      }
+      flash(`↩️ رجعت ${done} جهاز مرة واحدة — ${condition === 'يحتاج صيانة' ? 'اتحولت للصيانة 🔧' : 'كلها متاحة ✅'}`);
+      setQReturn({ surveyorId: 0, condition: CONDITIONS[0], notes: '', ids: [] });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -545,32 +573,54 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         {myOpenList.length === 0 ? (
           <div className="rounded-2xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">مفيش عدة خارجة دلوقتي — كله في المخزن ✅</div>
         ) : (
-          <form onSubmit={submitQuickReturn} className="grid gap-3 md:grid-cols-4">
-            <label className="text-sm font-black text-slate-700 md:col-span-2">
-              🧰 العدة الخارجة دلوقتي
-              <select value={qReturn.coId} onChange={e => setQReturn(f => ({ ...f, coId: Number(e.target.value) }))}
-                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
-                <option value={0}>— اختار العدة اللي رجعت —</option>
-                {myOpenList.map(co => {
-                  const eq = eqOf(co.equipmentId);
-                  return (
-                    <option key={co.id} value={co.id}>
-                      {eq ? `${eq.name} (${eq.serialNumber})` : `#${co.equipmentId}`} — مع {empName(co.surveyorId)}{co.destination ? ` — مأمورية: ${co.destination}` : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-            <label className="text-sm font-black text-slate-700">
-              🩺 حالة الجهاز
-              <select value={qReturn.condition} onChange={e => setQReturn(f => ({ ...f, condition: e.target.value }))}
-                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
-                {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
-            <input value={qReturn.notes} onChange={e => setQReturn(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)"
-              className="mt-6 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
-            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 md:col-span-4">↩️ تسجيل رجوع العدة</button>
+          <form onSubmit={submitQuickReturn} className="space-y-3">
+            {canManage && (
+              <label className="block text-sm font-black text-slate-700 md:w-1/2">
+                👷 المساح اللي رجع
+                <select value={qReturn.surveyorId} onChange={e => pickReturnSurveyor(Number(e.target.value))}
+                  className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                  <option value={0}>— اختار المساح —</option>
+                  {surveyorsWithOpen.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name} ({openCheckouts.filter(c => c.surveyorId === emp.id).length} جهاز خارجة)</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {(canManage ? qReturn.surveyorId : true) && returnList.length > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black text-slate-500">عدته الخارجة — علّم اللي رجع (متعلّمة كلها افتراضيًا):</div>
+                  <button type="button" onClick={() => setQReturn(f => ({ ...f, ids: returnList.map(c => c.id) }))} className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">✅ الكل</button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {returnList.map(co => {
+                    const eq = eqOf(co.equipmentId);
+                    const checked = checkedReturnIds.includes(co.id);
+                    return (
+                      <button key={co.id} type="button" onClick={() => toggleReturnId(co.id)}
+                        className={`rounded-xl border-2 p-3 text-right text-sm font-black transition ${checked ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                        <div className="flex items-center gap-2">
+                          <span>{checked ? '☑️' : '⬜'}</span>
+                          <span>{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] font-bold text-slate-500">سيريال: {eq?.serialNumber ?? '—'} · نزلت {co.checkoutDate}{co.destination ? ` · 📍 ${co.destination}` : ''}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="text-sm font-black text-slate-700">
+                    🩺 حالة العدة الراجعة
+                    <select value={qReturn.condition} onChange={e => setQReturn(f => ({ ...f, condition: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                      {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                  <input value={qReturn.notes} onChange={e => setQReturn(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="mt-6 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 md:col-span-2" />
+                </div>
+                <button className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">↩️ تسجيل رجوع {checkedReturnIds.length} جهاز مرة واحدة</button>
+              </>
+            )}
           </form>
         )}
       </section>

@@ -54,6 +54,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [destOther, setDestOther] = useState('');
   // 📅 المأمورية لفترة معينة: حتى تاريخ
   const [untilDate, setUntilDate] = useState('');
+  // 🔎 بحث في سجل الحركة
+  const [coSearch, setCoSearch] = useState('');
   // 🆕 المساعد: موظف مسجل أو اسم حر
   const [assistantIsOther, setAssistantIsOther] = useState(false);
   const [assistantOther, setAssistantOther] = useState('');
@@ -311,6 +313,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     : [];
   const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
 
+
   // للمساح: عدته تتعلّم تلقائي أول ما تظهر
   useEffect(() => {
     if (!canManage && !autoFilled && openCheckouts.length > 0) {
@@ -319,6 +322,15 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     }
   }, [openCheckouts, autoFilled, canManage]);
   const history = checkouts.filter(c => c.returnDate).slice(0, 40);
+  // 🔎 نتائج البحث: كل الحركة (فتوح + مرجع) — الأحدث الأول
+  const coQuery = coSearch.trim().toLowerCase();
+  const searchedCheckouts = coQuery
+    ? checkouts.filter(co => {
+        const eq = eqOf(co.equipmentId);
+        return [eq?.name, eq?.serialNumber, empName(co.surveyorId), assistantLabel(co), co.destination, co.notes, co.conditionReturn, co.checkoutDate, co.untilDate, co.returnDate]
+          .some(v => v && String(v).toLowerCase().includes(coQuery));
+      }).slice().reverse()
+    : history;
 
   return (
     <div className="w-full space-y-6">
@@ -721,13 +733,22 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       {/* ===== سجل الحركة ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-2">
-          <h3 className="text-xl font-black text-slate-900">📜 آخر حركات العدة ({history.length})</h3>
+          <h3 className="text-xl font-black text-slate-900">📜 {coQuery ? `نتائج البحث (${searchedCheckouts.length})` : `آخر حركات العدة (${history.length})`}</h3>
           {canManage && checkouts.length > 0 && (
-            <button type="button" onClick={() => exportCheckouts(checkouts, `حركة_العدة_${today}.csv`)} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+            <button type="button" onClick={() => exportCheckouts(searchedCheckouts, `حركة_العدة_${today}.csv`)} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
           )}
         </div>
-        {history.length === 0 ? (
-          <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش حركة رجوع مسجلة</div>
+        <div className="mb-4 flex items-center gap-2">
+          <input value={coSearch} onChange={e => setCoSearch(e.target.value)} placeholder="🔎 ابحث بالسيريال أو اسم المساح أو المساعد أو الموقع أو الملاحظة أو التاريخ..."
+            className="w-full rounded-xl border-2 border-slate-300 px-4 py-2.5 text-sm font-bold outline-none focus:border-slate-900" />
+          {coSearch && <button type="button" onClick={() => setCoSearch('')} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-600 hover:bg-slate-200">✕</button>}
+        </div>
+        {searchedCheckouts.length === 0 ? (
+          coQuery ? (
+            <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">مفيش نتيجة لـ "{coSearch}" — جرب سيريال أو اسم أو موقع تاني</div>
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش حركة رجوع مسجلة</div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-right text-sm">
@@ -744,17 +765,17 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 </tr>
               </thead>
               <tbody>
-                {history.map(co => {
+                {searchedCheckouts.map(co => {
                   const eq = eqOf(co.equipmentId);
                   return (
                     <tr key={co.id} className="border-b border-slate-100 font-bold text-slate-800">
                       <td className="p-3 font-black">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `#${co.equipmentId}`} <span className="font-mono text-xs text-slate-400">{eq?.serialNumber}</span></td>
                       <td className="p-3">{empName(co.surveyorId)}</td>
                       <td className="p-3">{assistantLabel(co)}</td>
-                      <td className="p-3 text-blue-700">{co.destination || '—'}</td>
+                      <td className="p-3 text-blue-700">{co.destination ? `${co.destination}${co.untilDate ? ` (حتى ${co.untilDate})` : ''}` : '—'}</td>
                       <td className="p-3">{co.checkoutDate}</td>
-                      <td className="p-3">{co.returnDate}</td>
-                      <td className="p-3">{co.conditionReturn === 'يحتاج صيانة' ? '🔧 يحتاج صيانة' : co.conditionReturn === 'به خدوش' ? '⚠️ به خدوش' : '✅ سليم'}</td>
+                      <td className="p-3">{co.returnDate || <span className="text-red-600">🔴 لسه بره</span>}</td>
+                      <td className="p-3">{!co.returnDate ? '—' : co.conditionReturn === 'يحتاج صيانة' ? '🔧 يحتاج صيانة' : co.conditionReturn === 'به خدوش' ? '⚠️ به خدوش' : '✅ سليم'}</td>
                       <td className="p-3">
                         <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="طباعة مأمورية">🖨️</button>
                       </td>

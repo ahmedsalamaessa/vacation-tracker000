@@ -64,8 +64,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   // 🖨️ طباعة المأمورية
   const [printGroup, setPrintGroup] = useState<EquipmentCheckout[] | null>(null);
   // الرجوع (نموذج داخلي)
-  const [returningId, setReturningId] = useState<number | null>(null);
-  const [returnForm, setReturnForm] = useState({ condition: CONDITIONS[0], notes: '' });
 
   function reload() {
     setEquipmentState(getEquipment());
@@ -186,15 +184,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     }
   }
 
+  /** رجوع/إبلاغ بضغطة واحدة — حالة سليم مباشرة (لو عايز صيانة: من طلبات الرجوع أو سجل الصيانة) */
   function submitReturn(co: EquipmentCheckout) {
     try {
-      const condition = returnForm.condition.replace(/ [✅⚠️🔧]$/, '').trim();
-      returnEquipmentCheckout(co.id, condition, returnForm.notes || undefined);
+      returnEquipmentCheckout(co.id, 'سليم');
       flash(canManage
-        ? '↩️ تم تسجيل رجوع العدة — الجهاز بقي ' + (condition === 'يحتاج صيانة' ? 'في الصيانة 🔧' : 'متاح ✅')
+        ? '↩️ استلمت العدة بضغطة — الجهاز بقى متاح ✅'
         : '📤 اتسجل طلب رجوع العدة — الإدارة هي اللي هتستلمها وتأكد');
-      setReturningId(null);
-      setReturnForm({ condition: CONDITIONS[0], notes: '' });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -499,26 +495,10 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       co.returnReqDate && !canManage ? (
                         <div className="flex-1 rounded-xl bg-amber-100 px-3 py-2 text-center text-[11px] font-black text-amber-700">⏳ بلّغت بالرجوع — في انتظار الإدارة</div>
                       ) : (
-                        <button type="button" onClick={() => setReturningId(co.id)} className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700">↩️ رجوع</button>
+                        <button type="button" onClick={() => submitReturn(co)} className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700">{canManage ? '↩️ استلام فوري' : '📤 بلّغ برجوعه'}</button>
                       )
                     )}
                   </div>
-                  {(canManage || (co.surveyorId === user.id && !co.destination)) && returningId === co.id && (
-                      <div className="mt-3 space-y-2 rounded-xl bg-white p-3">
-                        <div className="text-xs font-black text-slate-700">حالة الجهاز عند الرجوع:</div>
-                        <div className="flex flex-wrap gap-2">
-                          {CONDITIONS.map(c => (
-                            <button key={c} type="button" onClick={() => setReturnForm(f => ({ ...f, condition: c }))}
-                              className={`rounded-lg px-3 py-1 text-xs font-black ${returnForm.condition === c ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{c}</button>
-                          ))}
-                        </div>
-                        <input value={returnForm.notes} onChange={e => setReturnForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold outline-none focus:border-blue-500" />
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => submitReturn(co)} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white hover:bg-emerald-700">{canManage ? 'تأكيد الرجوع ↩️' : '📤 بلّغ بالرجوع'}</button>
-                          <button type="button" onClick={() => setReturningId(null)} className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-black text-slate-600">إلغاء</button>
-                        </div>
-                      </div>
-                  )}
                 </div>
               );
             })}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   getEquipment, getEquipmentCheckouts, getPeople, getLocations, getSettings,
   addEquipment, updateEquipment, deleteEquipment,
-  checkoutEquipment, returnEquipmentCheckout, refreshEquipment,
+  checkoutEquipment, returnEquipmentCheckout, decideEquipmentReturnRequest, refreshEquipment,
   getEquipmentMaintenance, addEquipmentMaintenance, deleteEquipmentMaintenance, refreshMaintenance,
 } from '../lib/db';
 import type { Employee, Equipment, EquipmentCheckout, EquipmentKind, WorkLocation, EquipmentMaintenance } from '../lib/types';
@@ -173,11 +173,26 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     setCoForm(f => ({ ...f, ids: f.ids.includes(id) ? f.ids.filter(x => x !== id) : [...f.ids, id] }));
   }
 
+  /** 🆕 الإدارة تستلم أو ترفض طلب الرجوع */
+  function decideReturn(co: EquipmentCheckout, approve: boolean, condition?: string) {
+    try {
+      decideEquipmentReturnRequest(co.id, approve, condition);
+      flash(approve
+        ? `✅ استلمت ${eqOf(co.equipmentId)?.name ?? 'الجهاز'} — ${condition === 'يحتاج صيانة' ? 'اتحول للصيانة 🔧' : 'بقى متاح'}`
+        : '❌ اترفض طلب الرجوع — العدة لسه بره مع المساح');
+      reload();
+    } catch (err: any) {
+      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
+  }
+
   function submitReturn(co: EquipmentCheckout) {
     try {
       const condition = returnForm.condition.replace(/ [✅⚠️🔧]$/, '').trim();
       returnEquipmentCheckout(co.id, condition, returnForm.notes || undefined);
-      flash('↩️ تم تسجيل رجوع العدة — الجهاز بقي ' + (condition === 'يحتاج صيانة' ? 'في الصيانة 🔧' : 'متاح ✅'));
+      flash(canManage
+        ? '↩️ تم تسجيل رجوع العدة — الجهاز بقي ' + (condition === 'يحتاج صيانة' ? 'في الصيانة 🔧' : 'متاح ✅')
+        : '📤 اتسجل طلب رجوع العدة — الإدارة هي اللي هتستلمها وتأكد');
       setReturningId(null);
       setReturnForm({ condition: CONDITIONS[0], notes: '' });
       reload();
@@ -294,7 +309,9 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       for (const id of checkedReturnIds) {
         try { returnEquipmentCheckout(id, condition, qReturn.notes || undefined); done++; } catch { /* عدّي اللي رجع خلاص */ }
       }
-      flash(`↩️ رجعت ${done} جهاز مرة واحدة — ${condition === 'يحتاج صيانة' ? 'اتحولت للصيانة 🔧' : 'كلها متاحة ✅'}`);
+      flash(canManage
+        ? `↩️ رجعت ${done} جهاز مرة واحدة — ${condition === 'يحتاج صيانة' ? 'اتحولت للصيانة 🔧' : 'كلها متاحة ✅'}`
+        : `📤 اتسجل طلب رجوع ${done} جهاز — في انتظار استلام الإدارة`);
       setQReturn({ surveyorId: 0, condition: CONDITIONS[0], notes: '', ids: [] });
       reload();
     } catch (err: any) {
@@ -308,9 +325,9 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const surveyorsWithOpen = canManage
     ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
     : [];
-  const returnList = (canManage ? qReturn.surveyorId : user.id)
+  const returnList = ((canManage ? qReturn.surveyorId : user.id)
     ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
-    : [];
+    : []).filter(c => canManage || !c.returnReqDate);
   const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
 
 
@@ -322,12 +339,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     }
   }, [openCheckouts, autoFilled, canManage]);
   const history = checkouts.filter(c => c.returnDate).slice(0, 40);
+  // 📥 طلبات الرجوع المعلقة (إدارة)
+  const pendingReqs = canManage ? checkouts.filter(c => !c.returnDate && c.returnReqDate) : [];
   // 🔎 نتائج البحث: كل الحركة (فتوح + مرجع) — الأحدث الأول
   const coQuery = coSearch.trim().toLowerCase();
   const searchedCheckouts = coQuery
     ? checkouts.filter(co => {
         const eq = eqOf(co.equipmentId);
-        return [eq?.name, eq?.serialNumber, empName(co.surveyorId), assistantLabel(co), co.destination, co.notes, co.conditionReturn, co.checkoutDate, co.untilDate, co.returnDate]
+        return [eq?.name, eq?.serialNumber, empName(co.surveyorId), assistantLabel(co), co.destination, co.notes, co.conditionReturn, co.checkoutDate, co.untilDate, co.returnDate, co.returnReqNotes, co.returnReqCondition]
           .some(v => v && String(v).toLowerCase().includes(coQuery));
       }).slice().reverse()
     : history;
@@ -418,6 +437,36 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         );
       })()}
 
+      {/* ===== 📥 طلبات رجوع معلقة (إدارة) ===== */}
+      {canManage && pendingReqs.length > 0 && (
+        <section className="rounded-[2rem] border-2 border-amber-300 bg-amber-50 p-6 shadow-sm">
+          <h3 className="mb-1 text-xl font-black text-amber-800">📥 طلبات رجوع معلقة ({pendingReqs.length})</h3>
+          <p className="mb-4 text-xs font-bold text-amber-600">المساحين بلّغوا برجوع العدة — استلم بضغطة وحدد حالة الجهاز الفعلية</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {pendingReqs.map(co => {
+              const eq = eqOf(co.equipmentId);
+              return (
+                <div key={co.id} className="rounded-2xl border-2 border-amber-200 bg-white p-4">
+                  <div className="text-lg font-black text-slate-900">{eq ? `${kindEmoji(eq.kind)} ${eq.name}` : `جهاز #${co.equipmentId}`}</div>
+                  <div className="text-xs font-bold text-slate-500">سيريال: {eq?.serialNumber ?? '—'}</div>
+                  <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
+                    <div>👷 {empName(co.surveyorId)}{assistantLabel(co) ? ` + ${assistantLabel(co)}` : ''}</div>
+                    <div>📅 بلّغ بالرجوع: {co.returnReqDate}</div>
+                    <div>🩺 الحالة المعلنة: {co.returnReqCondition || '—'}</div>
+                    {co.returnReqNotes && <div className="text-xs text-slate-500">📝 {co.returnReqNotes}</div>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => decideReturn(co, true, 'سليم')} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">✅ استلمت — سليم</button>
+                    <button type="button" onClick={() => decideReturn(co, true, 'يحتاج صيانة')} className="flex-1 rounded-xl bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700">🔧 استلمت — صيانة</button>
+                    <button type="button" onClick={() => decideReturn(co, false)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-200">❌ رفض</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* ===== العدة الخارجة دلوقتي ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 text-xl font-black text-slate-900">🔴 العدة الخارجة دلوقتي ({openCheckouts.length})</h3>
@@ -442,11 +491,16 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                     {co.destination && <div className="text-blue-700">📍 مأمورية: {co.destination}</div>}
                     <div className="text-xs text-slate-500">📅 من: {co.checkoutDate}{co.untilDate ? ` ← حتى: ${co.untilDate}` : ''}{co.notes ? ` · 📝 ${co.notes}` : ''}</div>
                     {co.untilDate && today > co.untilDate && <div className="text-xs font-black text-red-700">⏰ عدّى موعد رجوع المأمورية ({co.untilDate})</div>}
+                    {co.returnReqDate && <div className="text-xs font-black text-amber-700">⏳ بلّغ بالرجوع {co.returnReqDate} — في انتظار استلام الإدارة{co.returnReqCondition ? ` (قال: ${co.returnReqCondition})` : ''}</div>}
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ مأمورية</button>
                     {(canManage || (co.surveyorId === user.id && !co.destination)) && (
-                      <button type="button" onClick={() => setReturningId(co.id)} className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700">↩️ رجوع</button>
+                      co.returnReqDate && !canManage ? (
+                        <div className="flex-1 rounded-xl bg-amber-100 px-3 py-2 text-center text-[11px] font-black text-amber-700">⏳ بلّغت بالرجوع — في انتظار الإدارة</div>
+                      ) : (
+                        <button type="button" onClick={() => setReturningId(co.id)} className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700">↩️ رجوع</button>
+                      )
                     )}
                   </div>
                   {(canManage || (co.surveyorId === user.id && !co.destination)) && returningId === co.id && (
@@ -460,7 +514,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                         </div>
                         <input value={returnForm.notes} onChange={e => setReturnForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold outline-none focus:border-blue-500" />
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => submitReturn(co)} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white hover:bg-emerald-700">تأكيد الرجوع ↩️</button>
+                          <button type="button" onClick={() => submitReturn(co)} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white hover:bg-emerald-700">{canManage ? 'تأكيد الرجوع ↩️' : '📤 بلّغ بالرجوع'}</button>
                           <button type="button" onClick={() => setReturningId(null)} className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-black text-slate-600">إلغاء</button>
                         </div>
                       </div>
@@ -595,7 +649,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       {/* ===== رجوع عدة ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-1 text-xl font-black text-slate-900">↩️ رجوع عدة</h3>
-        <p className="mb-4 text-xs font-bold text-slate-500">الجهاز رجع من الشغل؟ اختاره من تحت وحدد حالته وسجّل الرجوع — لو مفيش حاجة خارجة هيبان مكتوب</p>
+        <p className="mb-4 text-xs font-bold text-slate-500">
+          {canManage
+            ? 'الجهاز رجع من الشغل؟ اختار من تحت وحدد حالته واستلمه فورًا — وطلبات المساحين المعلقة فوق قسم خاص'
+            : 'الجهاز رجع من الشغل؟ علّم عدتك وبلّغ الإدارة — الاستلام الفعلي لما الإدارة توافق ✅'}
+        </p>
         {myOpenList.length === 0 ? (
           <div className="rounded-2xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">مفيش عدة خارجة دلوقتي — كله في المخزن ✅</div>
         ) : (
@@ -644,7 +702,9 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   </label>
                   <input value={qReturn.notes} onChange={e => setQReturn(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="mt-6 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 md:col-span-2" />
                 </div>
-                <button className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">↩️ تسجيل رجوع {checkedReturnIds.length} جهاز مرة واحدة</button>
+                <button className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">
+                  {canManage ? `↩️ تسجيل رجوع ${checkedReturnIds.length} جهاز مرة واحدة` : `📤 بلّغ برجوع ${checkedReturnIds.length} جهاز — الإدارة تستلم`}
+                </button>
               </>
             )}
           </form>
@@ -774,7 +834,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       <td className="p-3">{assistantLabel(co)}</td>
                       <td className="p-3 text-blue-700">{co.destination ? `${co.destination}${co.untilDate ? ` (حتى ${co.untilDate})` : ''}` : '—'}</td>
                       <td className="p-3">{co.checkoutDate}</td>
-                      <td className="p-3">{co.returnDate || <span className="text-red-600">🔴 لسه بره</span>}</td>
+                      <td className="p-3">{co.returnDate || (co.returnReqDate ? <span className="text-amber-700">⏳ بلّغ بالرجوع</span> : <span className="text-red-600">🔴 لسه بره</span>)}</td>
                       <td className="p-3">{!co.returnDate ? '—' : co.conditionReturn === 'يحتاج صيانة' ? '🔧 يحتاج صيانة' : co.conditionReturn === 'به خدوش' ? '⚠️ به خدوش' : '✅ سليم'}</td>
                       <td className="p-3">
                         <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="طباعة مأمورية">🖨️</button>

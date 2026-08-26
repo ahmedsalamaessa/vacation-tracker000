@@ -162,6 +162,9 @@ export const api = {
   async returnEquipmentCheckout(payload: { id: number; conditionReturn: string; notes?: string }) {
     return request('/equipment-checkouts/return', { method: 'POST', body: JSON.stringify(payload) });
   },
+  async decideEquipmentReturn(payload: { id: number; approve: boolean; condition?: string }) {
+    return request('/equipment-checkouts/return-decide', { method: 'POST', body: JSON.stringify(payload) });
+  },
   // 🔧 سجل الصيانة
   async getEquipmentMaintenance() {
     return request('/equipment-maintenance');

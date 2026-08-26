@@ -193,6 +193,10 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS assistant_name TEXT`;
   // 🆕 المأمورية لفترة معينة: حتى تاريخ
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS until_date DATE`;
+  // 🆕 طلب رجوع العدة: المساح يبلّغ والإدارة تستلم
+  await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_date DATE`;
+  await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_condition TEXT`;
+  await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_notes TEXT`;
   // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
   await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
@@ -958,7 +962,7 @@ export default async function handler(req: Request) {
       const cur = await sql`SELECT * FROM equipment_checkouts WHERE id = ${id}`;
       const co = (cur as any[])[0];
       if (!co) return json({ error: 'not_found' }, 404);
-      // العدة العادية: المساح يرجعها بنفسه | مأمورية أو عدة حد تاني: إدارة بس
+      // العدة العادية: المساح يبلّغ برجوعها | مأمورية أو عدة حد تاني: إدارة بس
       if (!hasPerm(authUser, 'canEditAttendance')) {
         if (co.destination) return forbidden('رجوع مأموريات العدة من إدارة النظام بس');
         if (co.surveyor_id !== authUser.id) return forbidden('تقدر تسجل رجوع عدتك بس');
@@ -966,13 +970,48 @@ export default async function handler(req: Request) {
       if (co.return_date) return json({ error: 'conflict', message: 'العدة دي مسجّل رجوعها خلاص' }, 409);
       const today = new Date().toISOString().slice(0, 10);
       const condition = b?.conditionReturn || 'سليم';
-      const newStatus = condition === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+      // 🆕 الإدارة تستلم فورًا | المساح يسجّل طلب رجوع في انتظار الاستلام
+      if (hasPerm(authUser, 'canEditAttendance')) {
+        const newStatus = condition === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+        await sql`
+          UPDATE equipment_checkouts SET return_date = ${today}, condition_return = ${condition},
+            notes = COALESCE(${b.notes ?? null}, notes),
+            return_req_date = NULL, return_req_condition = NULL, return_req_notes = NULL
+          WHERE id = ${id}`;
+        await sql`UPDATE equipment SET status = ${newStatus} WHERE id = ${co.equipment_id}`;
+        return json({ ok: true, mode: 'returned' });
+      }
+      if (co.return_req_date) return json({ error: 'conflict', message: 'طلب رجوع العدة ده في انتظار الإدارة خلاص' }, 409);
       await sql`
-        UPDATE equipment_checkouts SET return_date = ${today}, condition_return = ${condition},
-          notes = COALESCE(${b.notes ?? null}, notes)
+        UPDATE equipment_checkouts SET return_req_date = ${today}, return_req_condition = ${condition}, return_req_notes = ${b?.notes ?? null}
         WHERE id = ${id}`;
-      await sql`UPDATE equipment SET status = ${newStatus} WHERE id = ${co.equipment_id}`;
-      return json({ ok: true });
+      return json({ ok: true, mode: 'requested' });
+    }
+
+    if (path === 'equipment-checkouts/return-decide' && method === 'POST') {
+      // 🆕 استلام أو رفض طلب الرجوع — إدارة بس
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('استلام طلبات الرجوع من إدارة النظام بس');
+      const b = await readBody<any>(req);
+      const id = Number(b?.id);
+      const cur = await sql`SELECT * FROM equipment_checkouts WHERE id = ${id}`;
+      const co = (cur as any[])[0];
+      if (!co) return json({ error: 'not_found' }, 404);
+      if (!co.return_req_date || co.return_date) return json({ error: 'conflict', message: 'مفيش طلب رجوع معلق على السجل ده' }, 409);
+      if (b?.approve) {
+        const condition = b?.condition || co.return_req_condition || 'سليم';
+        const newStatus = condition === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+        const today = new Date().toISOString().slice(0, 10);
+        await sql`
+          UPDATE equipment_checkouts SET return_date = ${today}, condition_return = ${condition},
+            notes = COALESCE(${co.return_req_notes}, notes),
+            return_req_date = NULL, return_req_condition = NULL, return_req_notes = NULL
+          WHERE id = ${id}`;
+        await sql`UPDATE equipment SET status = ${newStatus} WHERE id = ${co.equipment_id}`;
+        return json({ ok: true, mode: 'approved' });
+      }
+      // رفض: العدة تفضل خارجة والطلب يتشال
+      await sql`UPDATE equipment_checkouts SET return_req_date = NULL, return_req_condition = NULL, return_req_notes = NULL WHERE id = ${id}`;
+      return json({ ok: true, mode: 'rejected' });
     }
 
     // ============ 🔧 سجل صيانة المعدات ============

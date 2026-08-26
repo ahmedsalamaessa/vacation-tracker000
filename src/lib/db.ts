@@ -1133,21 +1133,58 @@ export function checkoutEquipment(opts: {
   return { created: valid.length, blocked };
 }
 
-/** رجوع عدة: قفل السجل + حالة الجهاز عند الرجوع */
+/** رجوع عدة: الإدارة تستلم فورًا | المساح يبلّغ بطلب رجوع في انتظار الاستلام */
 export function returnEquipmentCheckout(id: number, conditionReturn: string, notes?: string): boolean {
   const cos = getEquipmentCheckouts();
   const i = cos.findIndex(c => c.id === id);
   if (i === -1) return false;
   const co = cos[i];
   if (co.returnDate) throw new Error('العدة دي مسجّل رجوعها خلاص');
+  const u = getCurrentUser();
+  const isMgr = !!u && (u.role === 'admin' || u.role === 'manager' || Boolean((u as any).canEditAttendance));
   const today = new Date().toISOString().slice(0, 10);
-  cos[i] = { ...co, returnDate: today, conditionReturn: conditionReturn ?? null, notes: notes ?? co.notes ?? null };
+  if (!isMgr) {
+    if (co.destination) throw new Error('رجوع مأموريات العدة من الإدارة بس');
+    if (co.returnReqDate) throw new Error('طلب رجوع العدة ده في انتظار الإدارة خلاص');
+    cos[i] = { ...co, returnReqDate: today, returnReqCondition: conditionReturn ?? null, returnReqNotes: notes ?? null };
+    setItem(STORAGE_KEYS.equipmentCheckouts, cos);
+    if (remoteAvailable()) {
+      api.returnEquipmentCheckout({ id, conditionReturn, notes }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote returnEquipmentCheckout', e));
+    }
+    return true;
+  }
+  cos[i] = { ...co, returnDate: today, conditionReturn: conditionReturn ?? null, notes: notes ?? co.notes ?? null, returnReqDate: null, returnReqCondition: null, returnReqNotes: null };
   setItem(STORAGE_KEYS.equipmentCheckouts, cos);
   const eqs = getEquipment();
   const newStatus: Equipment['status'] = conditionReturn === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
   setEquipmentList(eqs.map(e => (e.id === co.equipmentId ? { ...e, status: newStatus } : e)));
   if (remoteAvailable()) {
     api.returnEquipmentCheckout({ id, conditionReturn, notes }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote returnEquipmentCheckout', e));
+  }
+  return true;
+}
+
+/** 🆕 الإدارة تستلم أو ترفض طلب رجوع عدة */
+export function decideEquipmentReturnRequest(id: number, approve: boolean, condition?: string): boolean {
+  const cos = getEquipmentCheckouts();
+  const i = cos.findIndex(c => c.id === id);
+  if (i === -1) return false;
+  const co = cos[i];
+  if (!co.returnReqDate || co.returnDate) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (approve) {
+    const cond = condition || co.returnReqCondition || 'سليم';
+    cos[i] = { ...co, returnDate: today, conditionReturn: cond, notes: co.notes ?? co.returnReqNotes ?? null, returnReqDate: null, returnReqCondition: null, returnReqNotes: null };
+    setItem(STORAGE_KEYS.equipmentCheckouts, cos);
+    const eqs = getEquipment();
+    const newStatus: Equipment['status'] = cond === 'يحتاج صيانة' ? 'صيانة' : 'متاحة';
+    setEquipmentList(eqs.map(e => (e.id === co.equipmentId ? { ...e, status: newStatus } : e)));
+  } else {
+    cos[i] = { ...co, returnReqDate: null, returnReqCondition: null, returnReqNotes: null };
+    setItem(STORAGE_KEYS.equipmentCheckouts, cos);
+  }
+  if (remoteAvailable()) {
+    api.decideEquipmentReturn({ id, approve, condition }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote decideEquipmentReturn', e));
   }
   return true;
 }

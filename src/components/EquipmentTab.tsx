@@ -7,6 +7,7 @@ import {
 } from '../lib/db';
 import type { Employee, Equipment, EquipmentCheckout, EquipmentKind, WorkLocation, EquipmentMaintenance } from '../lib/types';
 import { KINDS, KIND_GROUPS, kindEmoji } from './equipmentKinds';
+import { downloadCsv } from '../lib/exportCsv';
 
 const CONDITIONS = ['سليم ✅', 'به خدوش ⚠️', 'يحتاج صيانة 🔧'];
 const STATUS_STYLE: Record<string, string> = {
@@ -221,6 +222,36 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     reload();
   }
 
+  // 📤 تصدير Excel
+  function exportDevices() {
+    downloadCsv(`سجل_المعدات_${today}.csv`,
+      ['النوع', 'الجهاز', 'السيريال', 'الحالة', 'العهدة عند', 'خارجة مع', 'ملاحظات'],
+      equipment.map(eq => {
+        const openCo = openCheckouts.find(c => c.equipmentId === eq.id);
+        return [
+          eq.kind, eq.name, eq.serialNumber,
+          eq.status + (eq.active ? '' : ' · موقوف'),
+          eq.custodyEmployeeId ? empName(eq.custodyEmployeeId) : '',
+          openCo ? empName(openCo.surveyorId) : '',
+          eq.custodyNotes || eq.notes || '',
+        ];
+      }));
+  }
+
+  function exportCheckouts(list: EquipmentCheckout[], fname: string) {
+    downloadCsv(fname,
+      ['التاريخ', 'الجهاز', 'النوع', 'السيريال', 'المساح', 'المساعد', 'الوجهة/المأمورية', 'رجعت', 'حالة الرجوع', 'ملاحظات'],
+      list.map(co => {
+        const eq = eqOf(co.equipmentId);
+        return [
+          co.checkoutDate, eq?.name ?? `#${co.equipmentId}`, eq?.kind ?? '', eq?.serialNumber ?? '',
+          empName(co.surveyorId), assistantLabel(co), co.destination || '',
+          co.returnDate || (co.returnDate === null ? 'لسه خارجة' : ''),
+          co.conditionReturn || '', co.notes || '',
+        ];
+      }));
+  }
+
   // 🧾 الجرد
   function expectedPlace(eq: Equipment): string {
     if (eq.status === 'صيانة') return '🔧 في الصيانة';
@@ -303,7 +334,12 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         const todayList = checkouts.filter(c => c.checkoutDate === today);
         return (
           <section className="rounded-[2rem] border-2 border-blue-200 bg-blue-50/60 p-6 shadow-sm">
-            <h3 className="mb-4 text-xl font-black text-slate-900">📅 نزول عدة النهارده ({todayList.length})</h3>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h3 className="text-xl font-black text-slate-900">📅 نزول عدة النهارده ({todayList.length})</h3>
+              {canManage && todayList.length > 0 && (
+                <button type="button" onClick={() => exportCheckouts(todayList, `نزول_النهارده_${today}.csv`)} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+              )}
+            </div>
             {todayList.length === 0 ? (
               <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-slate-500">لسه محدش نزل بعدة النهارده</div>
             ) : (
@@ -541,7 +577,12 @@ export default function EquipmentTab({ user }: { user: Employee }) {
 
       {/* ===== سجل المعدات ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-xl font-black text-slate-900">🧰 سجل المعدات ({equipment.length})</h3>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-xl font-black text-slate-900">🧰 سجل المعدات ({equipment.length})</h3>
+          {canManage && equipment.length > 0 && (
+            <button type="button" onClick={exportDevices} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+          )}
+        </div>
 
         {canManage && (
           <form onSubmit={submitDevice} className="mb-5 grid gap-3 md:grid-cols-5">
@@ -615,7 +656,12 @@ export default function EquipmentTab({ user }: { user: Employee }) {
 
       {/* ===== سجل الحركة ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-xl font-black text-slate-900">📜 آخر حركات العدة ({history.length})</h3>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-xl font-black text-slate-900">📜 آخر حركات العدة ({history.length})</h3>
+          {canManage && checkouts.length > 0 && (
+            <button type="button" onClick={() => exportCheckouts(checkouts, `حركة_العدة_${today}.csv`)} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+          )}
+        </div>
         {history.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش حركة رجوع مسجلة</div>
         ) : (
@@ -718,7 +764,24 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       {/* ===== 📊 إحصائيات العدة ===== */}
       {canManage && checkouts.length > 0 && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-xl font-black text-slate-900">📊 إحصائيات العدة</h3>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-xl font-black text-slate-900">📊 إحصائيات العدة</h3>
+            {canManage && (() => {
+              const stats = equipment.map(eq => ({ eq, count: checkouts.filter(c => c.equipmentId === eq.id).length })).filter(st => st.count > 0);
+              if (stats.length === 0) return null;
+              return (
+                <button type="button" onClick={() => downloadCsv(`إحصائيات_العدة_${today}.csv`,
+                  ['الجهاز', 'النوع', 'السيريال', 'عدد الخروجات', 'إجمالي الأيام بره', 'متوسط المدة (يوم)', 'أعطال', 'تكاليف الصيانة (ج)'],
+                  stats.map(st => {
+                    const cos = checkouts.filter(c => c.equipmentId === st.eq.id);
+                    const done = cos.filter(c => c.returnDate);
+                    const totalDays = done.reduce((sum, c) => sum + Math.max(1, Math.round((new Date(c.returnDate!).getTime() - new Date(c.checkoutDate).getTime()) / 86400000)), 0);
+                    const maints = maintenance.filter(m => m.equipmentId === st.eq.id);
+                    return [st.eq.name, st.eq.kind, st.eq.serialNumber, st.count, totalDays, done.length ? Math.round(totalDays / done.length) : 0, maints.length, maints.reduce((sum, m) => sum + (m.cost || 0), 0)];
+                  }))} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+              );
+            })()}
+          </div>
           {(() => {
             const stats = equipment.map(eq => {
               const cos = checkouts.filter(c => c.equipmentId === eq.id);

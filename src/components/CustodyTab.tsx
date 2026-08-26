@@ -3,6 +3,7 @@ import {
   getEquipment, getPeople, updateEquipment, refreshEquipment,
 } from '../lib/db';
 import type { Employee, Equipment } from '../lib/types';
+import { downloadCsv } from '../lib/exportCsv';
 import { kindEmoji } from './equipmentKinds';
 
 function daysSince(dateStr?: string | null): number {
@@ -76,6 +77,17 @@ export default function CustodyTab({ user }: { user: Employee }) {
     reload();
   }
 
+  // 📤 تصدير كشف العهدة كله
+  function exportCustody() {
+    const items = equipment.filter(e => e.custodyEmployeeId);
+    downloadCsv(`كشف_العهدة_${today}.csv`,
+      ['المساح', 'الجهاز', 'النوع', 'السيريال', 'في العهدة من', 'المدة (يوم)', 'الحالة/الملاحظات'],
+      items.map(eq => [
+        empName(eq.custodyEmployeeId), eq.name, eq.kind, eq.serialNumber,
+        eq.custodySince || '', daysSince(eq.custodySince), eq.custodyNotes || 'سليم',
+      ]));
+  }
+
   // الموظف العادي يشوف عهدته هو بس
   const custodied = equipment.filter(e => e.custodyEmployeeId && (canManage || e.custodyEmployeeId === user.id));
   const unassigned = equipment.filter(e => !e.custodyEmployeeId);
@@ -145,7 +157,12 @@ export default function CustodyTab({ user }: { user: Employee }) {
 
       {/* ===== عهدة كل مساح ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-xl font-black text-slate-900">👥 عهدة المساحين</h3>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-xl font-black text-slate-900">👥 عهدة المساحين</h3>
+          {canManage && custodied.length > 0 && (
+            <button type="button" onClick={exportCustody} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+          )}
+        </div>
         {byEmployee.length === 0 ? (
           <div className="rounded-2xl bg-amber-50 p-6 text-center font-bold text-amber-700">
             {equipment.length === 0

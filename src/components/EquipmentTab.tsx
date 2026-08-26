@@ -82,14 +82,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // للمساح: عدته تتعلّم تلقائي أول ما تظهر
+  // للمساح: عدته تتعلّم تلقائي أول ما تظهر (الـ effect نفسه تحت بعد إعلان openCheckouts)
   const [autoFilled, setAutoFilled] = useState(false);
-  useEffect(() => {
-    if (!canManage && !autoFilled && openCheckouts.length > 0) {
-      setQReturn(f => (f.ids.length === 0 ? { ...f, ids: openCheckouts.map(c => c.id) } : f));
-      setAutoFilled(true);
-    }
-  }, [openCheckouts, autoFilled, canManage]);
 
   function flash(text: string) {
     setMsg(text);
@@ -312,6 +306,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
     : [];
   const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
+
+  // للمساح: عدته تتعلّم تلقائي أول ما تظهر
+  useEffect(() => {
+    if (!canManage && !autoFilled && openCheckouts.length > 0) {
+      setQReturn(f => (f.ids.length === 0 ? { ...f, ids: openCheckouts.map(c => c.id) } : f));
+      setAutoFilled(true);
+    }
+  }, [openCheckouts, autoFilled, canManage]);
   const history = checkouts.filter(c => c.returnDate).slice(0, 40);
 
   return (

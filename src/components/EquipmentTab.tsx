@@ -276,14 +276,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   }
 
   // ⬅️ رجوع جماعي: كل عدته مرة واحدة
-  const surveyorsWithOpen = canManage
-    ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
-    : [];
-  const returnList = (canManage ? qReturn.surveyorId : user.id)
-    ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
-    : [];
-  const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
-
   function pickReturnSurveyor(empId: number) {
     const hisOpen = openCheckouts.filter(c => c.surveyorId === empId).map(c => c.id);
     setQReturn(f => ({ ...f, surveyorId: empId, ids: hisOpen }));
@@ -313,6 +305,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const available = equipment.filter(e => e.active && e.status === 'متاحة');
   const openCheckouts = checkouts.filter(c => !c.returnDate);
   const myOpenList = canManage ? openCheckouts : openCheckouts.filter(c => c.surveyorId === user.id);
+  const surveyorsWithOpen = canManage
+    ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
+    : [];
+  const returnList = (canManage ? qReturn.surveyorId : user.id)
+    ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
+    : [];
+  const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
   const history = checkouts.filter(c => c.returnDate).slice(0, 40);
 
   return (

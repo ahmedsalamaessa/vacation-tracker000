@@ -185,7 +185,10 @@ export default function App() {
       return;
     }
     if (user.role === 'admin') {
-      setPendingCount(vacs.filter(v => v.status === 'بانتظار الموافقة').length);
+      setPendingCount(
+        vacs.filter(v => v.status === 'بانتظار الموافقة').length +
+        getEquipmentCheckouts().filter(c => !c.returnDate && c.returnReqDate).length,
+      );
     } else if (user.role === 'manager') {
       const managedIds = new Set(
         (user.locationIds || []).length === 0

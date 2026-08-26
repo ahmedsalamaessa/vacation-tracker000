@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getVacations,
   getEmployees,
+  getEquipment,
+  getEquipmentCheckouts,
+  decideEquipmentReturnRequest,
   updateVacationAsync,
   addAuditLog,
   syncVacationToAttendanceAsync,
@@ -10,7 +13,8 @@ import {
   refreshFromRemote,
 } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
-import type { Employee, Vacation } from '../lib/types';
+import type { Employee, Vacation, EquipmentCheckout } from '../lib/types';
+import { kindEmoji } from './equipmentKinds';
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return '—';
@@ -37,6 +41,8 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [syncingAll, setSyncingAll] = useState(false);
+  // 📥 طلبات رجوع العدة المعلقة
+  const [eqPending, setEqPending] = useState<(EquipmentCheckout & { eqName: string; eqSerial: string; eqKind: string })[]>([]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -58,6 +64,21 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     setAllVacations(vacsWithNames);
+
+    // 📥 طلبات رجوع العدة (إدارة)
+    if (user.role === 'admin' || user.role === 'manager') {
+      const eqs = getEquipment();
+      setEqPending(
+        getEquipmentCheckouts()
+          .filter(c => !c.returnDate && c.returnReqDate)
+          .map(c => {
+            const eq = eqs.find(e => e.id === c.equipmentId);
+            return { ...c, eqName: eq?.name || `جهاز #${c.equipmentId}`, eqSerial: eq?.serialNumber || '—', eqKind: eq?.kind || '' };
+          }),
+      );
+    } else {
+      setEqPending([]);
+    }
     setLoading(false);
   }, [user.id]);
 
@@ -212,6 +233,20 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     setTimeout(() => setMsg(''), 5000);
   }
 
+  /** 📥 استلام أو رفض طلب رجوع عدة */
+  const decideEq = (co: EquipmentCheckout & { eqName: string }, approve: boolean, condition?: string) => {
+    try {
+      decideEquipmentReturnRequest(co.id, approve, condition);
+      setMsg(approve
+        ? `✅ استلمت ${co.eqName} — ${condition === 'يحتاج صيانة' ? 'اتحول للصيانة 🔧' : 'بقى متاح'}`
+        : `❌ اترفض طلب رجوع ${co.eqName} — العدة لسه بره مع المساح`);
+      load();
+      onChanged?.();
+    } catch (err: any) {
+      setMsg('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
+  };
+
   return (
     <div className="space-y-5">
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -351,6 +386,38 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </section>
+
+      {/* ===== 📥 طلبات رجوع العدة ===== */}
+      <section className="rounded-[2rem] border-2 border-amber-300 bg-amber-50 p-6 shadow-sm">
+        <h3 className="mb-1 text-lg font-black text-amber-800">📥 طلبات رجوع العدة {eqPending.length > 0 ? `(${eqPending.length})` : ''}</h3>
+        <p className="mb-4 text-xs font-bold text-amber-600">المساحين بلّغوا برجوع العدة — استلمها من هنا بضغطة (ونفس الطلبات موجودة في تبويب 🧰 العدة)</p>
+        {eqPending.length === 0 ? (
+          <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-emerald-700">مفيش طلبات رجوع عدة معلقة ✅</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {eqPending.map(co => {
+              const emp = getEmployees().find(e => e.id === co.surveyorId);
+              return (
+                <div key={co.id} className="rounded-2xl border-2 border-amber-200 bg-white p-4">
+                  <div className="text-lg font-black text-slate-900">{kindEmoji(co.eqKind)} {co.eqName}</div>
+                  <div className="text-xs font-bold text-slate-500">سيريال: {co.eqSerial}</div>
+                  <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
+                    <div>👷 {emp?.name || '—'}</div>
+                    <div>📅 بلّغ بالرجوع: {co.returnReqDate}</div>
+                    <div>🩺 الحالة المعلنة: {co.returnReqCondition || '—'}</div>
+                    {co.returnReqNotes && <div className="text-xs text-slate-500">📝 {co.returnReqNotes}</div>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={() => decideEq(co, true, 'سليم')} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">✅ استلمت — سليم</button>
+                    <button onClick={() => decideEq(co, true, 'يحتاج صيانة')} className="flex-1 rounded-xl bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700">🔧 استلمت — صيانة</button>
+                    <button onClick={() => decideEq(co, false)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-200">❌ رفض</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

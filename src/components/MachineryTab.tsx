@@ -28,8 +28,26 @@ const SEED: { kind: string; owner: string; size: string; driver: string }[] = [
 ];
 
 function mLabel(m: Machinery): string {
-  // لودر 66 زياد — النوع + المقاس + المالك
+  // للإكسل: نوع مقاس مالك
   return `${m.kind}${m.size ? ` ${m.size}` : ''} ${m.owner}`.trim();
+}
+
+/** الاسم في الشاشة: عريض (النوع + المقاس + السواق) وتحته المالك */
+function MName({ m }: { m: Machinery }) {
+  const bold = [m.kind, m.size, m.driver].filter(Boolean).join(' ');
+  return (
+    <div>
+      <div className="font-black text-slate-900">{bold}</div>
+      <div className="text-[11px] font-bold text-slate-500">👤 {m.owner}</div>
+    </div>
+  );
+}
+
+/** يحرّك التاريخ كام يوم */
+function shiftDate(d: string, delta: number): string {
+  const dt = new Date(d + 'T00:00:00');
+  dt.setDate(dt.getDate() + delta);
+  return dt.toISOString().slice(0, 10);
 }
 
 interface Props {
@@ -169,11 +187,18 @@ export default function MachineryTab({ user }: Props) {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-xl font-black text-slate-900">🚜 ساعات المعدات — ورقة اليوم</h3>
-            <p className="mt-1 text-xs font-bold text-slate-500">اكتب ساعات شغل كل معدة وسيب الفاضي لو مش شغالة — وحفظ مرة واحدة</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">اكتب ساعات شغل كل معدة وسيب الفاضي لو مش شغالة — وحفظ مرة واحدة · المعدة المسجلة بتفضل موجودة: أي يوم شغل جديد اختار اليوم واكتب ساعاته — وساعات باقي الأيام محفوظة زي ما هي</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setDayDate(shiftDate(dayDate, -1))} title="اليوم اللي قبله"
+              className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">◀</button>
             <input type="date" value={dayDate} onChange={e => setDayDate(e.target.value)}
               className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
+            <button type="button" onClick={() => setDayDate(shiftDate(dayDate, 1))} title="اليوم اللي بعده"
+              className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">▶</button>
+            {dayDate !== today && (
+              <button type="button" onClick={() => setDayDate(today)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">النهارده</button>
+            )}
             <button type="button" onClick={exportDay} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel يوم</button>
           </div>
         </div>
@@ -194,8 +219,6 @@ export default function MachineryTab({ user }: Props) {
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
                     <th className="p-3">المعدة</th>
-                    <th className="p-3">النوع</th>
-                    <th className="p-3">🚛 السواق</th>
                     <th className="p-3 w-40">⏱️ الساعات</th>
                     <th className="p-3">ملاحظات</th>
                   </tr>
@@ -203,9 +226,7 @@ export default function MachineryTab({ user }: Props) {
                 <tbody>
                   {active.map(m => (
                     <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3 font-black">{mLabel(m)}</td>
-                      <td className="p-3 text-slate-500">{m.kind}</td>
-                      <td className="p-3 text-slate-600">{m.driver || '—'}</td>
+                      <td className="p-3"><MName m={m} /></td>
                       <td className="p-3">
                         <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
                           placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
@@ -218,7 +239,6 @@ export default function MachineryTab({ user }: Props) {
                   <tr className="border-t-2 border-slate-200 font-black text-slate-900">
                     <td className="p-3">الإجمالي</td>
                     <td className="p-3">{active.length} معدة</td>
-                    <td className="p-3"></td>
                     <td className="p-3 text-center">{daySum}</td>
                     <td className="p-3 text-xs text-slate-500">{active.filter(m => parseFloat(draft[m.id] || '') > 0).length} شغالة النهارده</td>
                   </tr>
@@ -258,7 +278,7 @@ export default function MachineryTab({ user }: Props) {
                   const t = totalsFor(m);
                   return (
                     <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3 font-black">{mLabel(m)}{m.driver ? <span className="block text-[11px] font-bold text-slate-400">🚛 {m.driver}</span> : null}</td>
+                      <td className="p-3"><MName m={m} /></td>
                       <td className="p-3">{t.day || '—'}</td>
                       <td className="p-3">{t.mon || '—'}</td>
                       <td className="p-3 font-black text-blue-700">{t.total || '—'}</td>

@@ -492,7 +492,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                     {co.returnReqDate && <div className="text-xs font-black text-amber-700">⏳ بلّغ بالرجوع {co.returnReqDate} — في انتظار استلام الإدارة{co.returnReqCondition ? ` (قال: ${co.returnReqCondition})` : ''}</div>}
                   </div>
                   <div className="mt-3 flex gap-2">
-                    <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ مأمورية</button>
+                    <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ طباعة</button>
                     {(canManage || ((co.surveyorId === user.id || co.assistantId === user.id) && !co.destination)) && (
                       co.returnReqDate && !canManage ? (
                         <div className="flex-1 rounded-xl bg-amber-100 px-3 py-2 text-center text-[11px] font-black text-amber-700">⏳ بلّغت بالرجوع — في انتظار الإدارة</div>
@@ -818,7 +818,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       <td className="p-3">{co.returnDate || (co.returnReqDate ? <span className="text-amber-700">⏳ بلّغ بالرجوع</span> : <span className="text-red-600">🔴 لسه بره</span>)}</td>
                       <td className="p-3">{!co.returnDate ? '—' : co.conditionReturn === 'يحتاج صيانة' ? '🔧 يحتاج صيانة' : co.conditionReturn === 'به خدوش' ? '⚠️ به خدوش' : '✅ سليم'}</td>
                       <td className="p-3">
-                        <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="طباعة مأمورية">🖨️</button>
+                        <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="طباعة الورقة">🖨️</button>
                       </td>
                     </tr>
                   );
@@ -1121,7 +1121,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         </div>
       )}
 
-      {/* ===== 🖨️ ورقة المأمورية ===== */}
+      {/* ===== 🖨️ ورقة الطباعة ===== */}
       {printGroup && printGroup.length > 0 && (
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGroup(null)}>
           <div className="mx-auto max-w-2xl" onClick={e => e.stopPropagation()}>
@@ -1132,7 +1132,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl" dir="rtl">
               <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
                 <div className="text-lg font-black">{deptName}</div>
-                <div className="mt-1 text-2xl font-black">مأمورية عمل — استلام عدة مساحة</div>
+                <div className="mt-1 text-2xl font-black">استلام عدة مساحة</div>
               </div>
               <div className="mt-4 space-y-2 text-base font-bold">
                 <div className="flex justify-between border-b border-dashed border-slate-300 pb-1">
@@ -1141,7 +1141,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 </div>
                 <div>👷 المساح: <b className="text-lg">{empName(printGroup[0].surveyorId)}</b></div>
                 <div>🤝 المساعد: <b>{assistantLabel(printGroup[0])}</b></div>
-                <div>📍 وجهة المأمورية: <b>{printGroup[0].destination || '—'}</b></div>
+                <div>📍 الوجهة: <b>{printGroup[0].destination || '—'}</b></div>
                 {printGroup[0].untilDate && <div>📅 الفترة: من <b>{printGroup[0].checkoutDate}</b> حتى <b>{printGroup[0].untilDate}</b></div>}
                 {printGroup[0].returnDate && <div>↩️ تاريخ رجوع العدة: <b>{printGroup[0].returnDate}</b></div>}
                 {printGroup[0].notes && <div>📝 ملاحظات: {printGroup[0].notes}</div>}

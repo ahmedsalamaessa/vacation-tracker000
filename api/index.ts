@@ -316,13 +316,17 @@ export default async function handler(req: Request) {
       const r = await sql`
         SELECT
           (SELECT count(*) FROM employees)::text || ':' || (SELECT COALESCE(max(id),0) FROM employees)::text || ':' ||
-          (SELECT count(*) FROM attendance)::text || ':' || (SELECT COALESCE(max(id),0) FROM attendance)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM attendance)::text || ':' ||
-          (SELECT count(*) FROM vacations)::text || ':' || (SELECT COALESCE(max(id),0) FROM vacations)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM vacations)::text || ':' ||
+          (SELECT COALESCE(sum(hashtext(concat_ws('|', username, role, password, active::text, COALESCE(phone,''), COALESCE(job_title,'')))),0) FROM employees)::text || ':' ||
+          (SELECT count(*) FROM attendance)::text || ':' || (SELECT COALESCE(max(id),0) FROM attendance)::text || ':' ||
+          (SELECT COALESCE(sum(hashtext(concat_ws('|', employee_id, date::text, status, COALESCE(notes,'')))),0) FROM attendance)::text || ':' ||
+          (SELECT count(*) FROM vacations)::text || ':' || (SELECT COALESCE(max(id),0) FROM vacations)::text || ':' ||
+          (SELECT COALESCE(sum(hashtext(concat_ws('|', employee_id, vacation_type, COALESCE(vacation_start_date::text,''), COALESCE(vacation_end_date::text,''), status, COALESCE(notes,'')))),0) FROM vacations)::text || ':' ||
           (SELECT count(*) FROM work_locations)::text || ':' ||
-          (SELECT count(*) FROM equipment)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM equipment)::text || ':' ||
+          (SELECT count(*) FROM equipment)::text || ':' || (SELECT COALESCE(sum(hashtext(concat_ws('|', kind, status, active::text, COALESCE(custody_employee_id::text,'')))),0) FROM equipment)::text || ':' ||
           (SELECT count(*) FROM equipment_checkouts)::text || ':' || (SELECT COALESCE(max(id),0) FROM equipment_checkouts)::text || ':' ||
-          (SELECT count(*) FROM machinery)::text || ':' ||
-          (SELECT count(*) FROM machinery_hours)::text || ':' ||
+          (SELECT COALESCE(sum(hashtext(concat_ws('|', equipment_id, surveyor_id, COALESCE(checkout_date::text,''), COALESCE(until_date::text,''), COALESCE(return_date::text,''), COALESCE(condition_return,''), COALESCE(destination,'')))),0) FROM equipment_checkouts)::text || ':' ||
+          (SELECT count(*) FROM machinery)::text || ':' || (SELECT COALESCE(sum(hashtext(concat_ws('|', kind, owner, COALESCE(size,''), COALESCE(driver,''), active::text, COALESCE(deleted::text,'')))),0) FROM machinery)::text || ':' ||
+          (SELECT count(*) FROM machinery_hours)::text || ':' || (SELECT COALESCE(sum(hashtext(concat_ws('|', machinery_id, date::text, hours::text))),0) FROM machinery_hours)::text || ':' ||
           (SELECT count(*) FROM notifications)::text || ':' ||
           (SELECT count(*) FROM month_locks)::text || ':' ||
           (SELECT COALESCE(sum(length(value)),0) FROM settings)::text

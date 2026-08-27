@@ -211,7 +211,7 @@ export default function MachineryTab({ user }: Props) {
         )}
 
         {active.length === 0 ? (
-          <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">{canManage ? 'ابدأ بإضافة أول معدة من تحت 👇' : 'لسه مفيش معدات مسجلة — الإدارة هتضيفها'}</div>
+          <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -299,11 +299,11 @@ export default function MachineryTab({ user }: Props) {
         </section>
       )}
 
-      {/* ===== إدارة المعدات (إدارة) ===== */}
-      {canManage && (
+      {/* ===== إدارة المعدات ===== */}
+      {(
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-1 text-xl font-black text-slate-900">⚙️ إدارة المعدات ({machinery.filter(m => m.active).length})</h3>
-          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد</p>
+          <h3 className="mb-1 text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
+          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد{canManage ? '' : ' — ضيف أي معدة جديدة من هنا'}</p>
           <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
               النوع
@@ -344,7 +344,7 @@ export default function MachineryTab({ user }: Props) {
           </form>
 
           {machinery.length === 0 ? (
-            <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">مفيش معدات — ضيف من الفورم أو زرار العشر الجاهزين فوق</div>
+            <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">مفيش معدات — ضيف أول معدة من الفورم فوق 👇</div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
               {machinery.map(m => (
@@ -354,7 +354,7 @@ export default function MachineryTab({ user }: Props) {
                     {(m.driver || m.owner) && <div className="text-[11px] font-bold text-slate-400">👤 مالك: {m.owner}{m.driver ? ` · 🚛 سواق: ${m.driver}` : ''}</div>}
                     {m.notes && <div className="text-[11px] font-bold text-slate-400">{m.notes}</div>}
                   </div>
-                  {m.active && (
+                  {m.active && canManage && (
                     <div className="flex gap-1">
                       <button type="button" onClick={() => setForm({ id: m.id, kind: m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">✏️</button>

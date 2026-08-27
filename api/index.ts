@@ -1086,7 +1086,7 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery' && method === 'POST') {
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      // ✅ أي موظف يضيف معدة (المساح يسجل معدته بنفسه) — التعديل والإيقاف إدارة بس
       const b = await readBody<any>(req);
       if (!b?.kind || !b?.owner) return json({ error: 'bad_request', message: 'النوع والمالك مطلوبين' }, 400);
       const rows = await sql`INSERT INTO machinery (kind, owner, size, notes, driver) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}, ${b.driver ?? ''}) RETURNING *`;

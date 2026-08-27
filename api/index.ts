@@ -211,7 +211,6 @@ async function ensureEquipmentTables(sql: any) {
       active BOOLEAN DEFAULT true,
       created_at TIMESTAMPTZ DEFAULT now()
     )`;
-  await sql`
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS driver TEXT`;
   await sql`
     CREATE TABLE IF NOT EXISTS machinery_hours (

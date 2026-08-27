@@ -274,11 +274,10 @@ export default function App() {
         setRefreshKey(k => k + 1);
       }
     }
-    const first = setTimeout(tick, 60 * 1000);
+    tick(); // 🔄 فتح/ريفرش = سؤال نسخة فوري، وسحب فقط لو الداتا اتغيرت
     const t = setInterval(tick, 10 * 60 * 1000);
     return () => {
       cancelled = true;
-      clearTimeout(first);
       clearInterval(t);
     };
   }, [user?.id]);

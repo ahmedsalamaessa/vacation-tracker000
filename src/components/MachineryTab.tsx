@@ -28,7 +28,8 @@ const SEED: { kind: string; owner: string; size: string; driver: string }[] = [
 ];
 
 function mLabel(m: Machinery): string {
-  return `${m.kind} ${m.owner}${m.size ? ` ${m.size}` : ''}`.trim();
+  // لودر 66 زياد — النوع + المقاس + المالك
+  return `${m.kind}${m.size ? ` ${m.size}` : ''} ${m.owner}`.trim();
 }
 
 interface Props {
@@ -282,7 +283,7 @@ export default function MachineryTab({ user }: Props) {
       {canManage && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="mb-1 text-xl font-black text-slate-900">⚙️ إدارة المعدات ({machinery.filter(m => m.active).length})</h3>
-          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المالك + المقاس + السواق — الاسم بيتكون تلقائي زي: لودر زياد 66</p>
+          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد</p>
           <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
               النوع

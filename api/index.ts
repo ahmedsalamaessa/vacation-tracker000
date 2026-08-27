@@ -963,7 +963,12 @@ export default async function handler(req: Request) {
       const isMission = Boolean(b?.destination);
       if (!hasPerm(authUser, 'canEditAttendance')) {
         if (isMission) return forbidden('المأموريات (الخروج لموقع تاني) من إدارة النظام بس');
-        if (surveyorId !== authUser.id) return forbidden('تقدر تسجل خروج العدة لنفسك بس');
+        // المساح يسجل لنفسه | المساعد يسجل باسم المساح اللي نازل معاه (لازم يكون موجود وفعال)
+        if (surveyorId !== authUser.id) {
+          const target = await sql`SELECT id, active, role FROM employees WHERE id = ${surveyorId} LIMIT 1`;
+          const t = (target as any[])[0];
+          if (!t || !t.active || t.role === 'admin') return json({ error: 'bad_request', message: 'المساح المختار مش موجود — اختار من الأسماء الموجودة' }, 400);
+        }
       }
       if (ids.length === 0 || !surveyorId || !b?.checkoutDate) {
         return json({ error: 'bad_request', message: 'المساح والتاريخ وجهاز واحد على الأقل مطلوبين' }, 400);
@@ -997,7 +1002,7 @@ export default async function handler(req: Request) {
       // العدة العادية: المساح يبلّغ برجوعها | مأمورية أو عدة حد تاني: إدارة بس
       if (!hasPerm(authUser, 'canEditAttendance')) {
         if (co.destination) return forbidden('رجوع مأموريات العدة من إدارة النظام بس');
-        if (co.surveyor_id !== authUser.id) return forbidden('تقدر تسجل رجوع عدتك بس');
+        if (co.surveyor_id !== authUser.id && co.assistant_id !== authUser.id) return forbidden('تقدر تسجل رجوع عدة المساح اللي نازل معاه بس');
       }
       if (co.return_date) return json({ error: 'conflict', message: 'العدة دي مسجّل رجوعها خلاص' }, 409);
       const today = new Date().toISOString().slice(0, 10);

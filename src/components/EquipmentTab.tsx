@@ -138,8 +138,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   function submitCheckout(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const surveyorId = canManage ? coForm.surveyorId : user.id;
-      if (!surveyorId) { flash('⚠️ اختار المساح'); return; }
+      const surveyorId = coForm.surveyorId;
+      if (!surveyorId) { flash('⚠️ اختار المساح اللي نازل بالعدة (انت لو المساح: اختار نفسك)'); return; }
       if (coForm.ids.length === 0) { flash('⚠️ اختار جهاز واحد على الأقل'); return; }
       const destination = destSite === '__other__' ? destOther.trim() : (destSite || '');
       if (destSite === '__other__' && !destination) { flash('⚠️ اكتب اسم موقع المأمورية'); return; }
@@ -317,12 +317,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
 
   const available = equipment.filter(e => e.active && e.status === 'متاحة');
   const openCheckouts = checkouts.filter(c => !c.returnDate);
-  const myOpenList = canManage ? openCheckouts : openCheckouts.filter(c => c.surveyorId === user.id);
+  const myOpenList = canManage ? openCheckouts : openCheckouts.filter(c => c.surveyorId === user.id || c.assistantId === user.id);
   const surveyorsWithOpen = canManage
     ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
     : [];
   const returnList = ((canManage ? qReturn.surveyorId : user.id)
-    ? openCheckouts.filter(c => c.surveyorId === (canManage ? qReturn.surveyorId : user.id))
+    ? openCheckouts.filter(c => canManage
+      ? c.surveyorId === qReturn.surveyorId
+      : (c.surveyorId === user.id || c.assistantId === user.id))
     : []).filter(c => canManage || !c.returnReqDate);
   const checkedReturnIds = qReturn.ids.filter(id => returnList.some(c => c.id === id));
 
@@ -491,7 +493,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button type="button" onClick={() => setPrintGroup(missionGroup(co))} className="flex-1 rounded-xl border-2 border-slate-900 bg-white px-3 py-2 text-sm font-black text-slate-900 hover:bg-slate-100">🖨️ مأمورية</button>
-                    {(canManage || (co.surveyorId === user.id && !co.destination)) && (
+                    {(canManage || ((co.surveyorId === user.id || co.assistantId === user.id) && !co.destination)) && (
                       co.returnReqDate && !canManage ? (
                         <div className="flex-1 rounded-xl bg-amber-100 px-3 py-2 text-center text-[11px] font-black text-amber-700">⏳ بلّغت بالرجوع — في انتظار الإدارة</div>
                       ) : (
@@ -512,15 +514,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         <p className="mb-4 text-xs font-bold text-slate-500">
           {canManage
             ? 'الإدارة تسجل لأي مساح — والمأمورية يعني جهاز من العهدة يشتغل في موقع تاني لفترة معينة (من ← حتى)'
-            : 'سجّل العدة اللي نازل بيها — المأموريات (المواقع التانية) الإدارة بس اللي تطلعها'}
+            : 'سجّل العدة اللي نازل بيها — لو انت مساعد: اختار المساح اللي نازل معاه واختار نفسك مساعد — المأموريات الإدارة بس'}
         </p>
         <form onSubmit={submitCheckout} className="grid gap-3 md:grid-cols-3">
           <label className="text-sm font-black text-slate-700">
             👷 المساح
             <select value={coForm.surveyorId} onChange={e => setCoForm(f => ({ ...f, surveyorId: Number(e.target.value) }))}
-              disabled={!canManage}
-              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500 disabled:bg-slate-100">
-              {canManage && <option value={0}>— اختار المساح —</option>}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
+              <option value={0}>— اختار المساح —</option>
               {employees.filter(e => e.active).map(e => (
                 <option key={e.id} value={e.id}>{e.name}{e.jobTitle ? ` (${e.jobTitle})` : ''}</option>
               ))}
@@ -653,7 +654,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             {(canManage ? qReturn.surveyorId : true) && returnList.length > 0 && (
               <>
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-black text-slate-500">عدته الخارجة — علّم اللي رجع (متعلّمة كلها افتراضيًا):</div>
+                  <div className="text-xs font-black text-slate-500">{canManage ? 'عدته الخارجة — علّم اللي رجع (متعلّمة كلها افتراضيًا):' : 'العدة اللي معاك/مع مساحك — علّم اللي رجع:'}</div>
                   <button type="button" onClick={() => setQReturn(f => ({ ...f, ids: returnList.map(c => c.id) }))} className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">✅ الكل</button>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">

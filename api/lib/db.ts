@@ -201,6 +201,31 @@ function normalizeKind(kind: any): string {
   return kind;
 }
 
+export function mapMachinery(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    kind: r.kind ?? 'لودر',
+    owner: r.owner ?? '',
+    size: r.size ?? '',
+    notes: r.notes ?? null,
+    active: r.active ?? true,
+    createdAt: r.created_at,
+  };
+}
+
+export function mapMachineryHours(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    machineryId: r.machinery_id,
+    date: toDateOnly(r.date),
+    hours: Number(r.hours) || 0,
+    createdBy: r.created_by ?? null,
+    createdAt: r.created_at,
+  };
+}
+
 export function mapEquipment(r: any) {
   if (!r) return null;
   return {

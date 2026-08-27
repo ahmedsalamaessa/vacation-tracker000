@@ -10,6 +10,8 @@ import type {
   Equipment,
   EquipmentCheckout,
   EquipmentMaintenance,
+  Machinery,
+  MachineryHours,
 } from './types';
 import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
@@ -31,6 +33,8 @@ const STORAGE_KEYS = {
   equipmentCheckouts: PREFIX + 'equipment_checkouts',
   directory: PREFIX + 'directory',
   equipmentMaintenance: PREFIX + 'equipment_maintenance',
+  machinery: PREFIX + 'machinery',
+  machineryHours: PREFIX + 'machinery_hours',
 };
 
 function getItem<T>(key: string, defaultValue: T): T {
@@ -80,6 +84,8 @@ export async function refreshFromRemote(): Promise<any> {
     const d = data as any; // (الجديد فقط — القديم سيبانه زي ما هو)
     if (d.equipment) setItem(STORAGE_KEYS.equipment, d.equipment);
     if (d.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, d.equipmentCheckouts);
+    if (d.machinery) setItem(STORAGE_KEYS.machinery, d.machinery);
+    if (d.machineryHours) setItem(STORAGE_KEYS.machineryHours, d.machineryHours);
     if (d.directory) setItem(STORAGE_KEYS.directory, d.directory);
     return data;
   } catch (e) {
@@ -1201,6 +1207,90 @@ export function decideEquipmentReturnRequest(id: number, approve: boolean, condi
     api.decideEquipmentReturn({ id, approve, condition }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote decideEquipmentReturn', e));
   }
   return true;
+}
+
+// ============ 🚜 المعدات الثقيلة — ساعات الشغل ============
+async function syncMachineryFromRemote() {
+  try {
+    const [ms, hs] = await Promise.all([
+      api.getMachinery() as Promise<Machinery[]>,
+      api.getMachineryHours() as Promise<MachineryHours[]>,
+    ]);
+    if (Array.isArray(ms)) setItem(STORAGE_KEYS.machinery, ms);
+    if (Array.isArray(hs)) setItem(STORAGE_KEYS.machineryHours, hs);
+  } catch (e) {
+    console.warn('syncMachineryFromRemote failed', e);
+  }
+}
+
+/** يسحب أحدث المعدات الثقيلة من السيرفر (عند فتح التبويب) */
+export function refreshMachinery(): void {
+  if (remoteAvailable()) syncMachineryFromRemote();
+}
+
+export function getMachinery(): Machinery[] {
+  return getItem<Machinery[]>(STORAGE_KEYS.machinery, []);
+}
+
+export function getMachineryHours(): MachineryHours[] {
+  return getItem<MachineryHours[]>(STORAGE_KEYS.machineryHours, []);
+}
+
+export function addMachinery(rec: Omit<Machinery, 'id' | 'createdAt'>): Machinery {
+  const list = getMachinery();
+  const item: Machinery = { ...rec, id: Math.max(0, ...list.map(m => m.id)) + 1, createdAt: new Date().toISOString() };
+  setItem(STORAGE_KEYS.machinery, [...list, item]);
+  if (remoteAvailable()) {
+    api.addMachinery({ kind: item.kind, owner: item.owner, size: item.size, notes: item.notes })
+      .then(() => syncMachineryFromRemote())
+      .catch(e => console.warn('remote addMachinery', e));
+  }
+  return item;
+}
+
+export function updateMachinery(id: number, updates: Partial<Machinery>): Machinery | null {
+  const list = getMachinery();
+  const i = list.findIndex(m => m.id === id);
+  if (i === -1) return null;
+  list[i] = { ...list[i], ...updates };
+  setItem(STORAGE_KEYS.machinery, list);
+  if (remoteAvailable()) {
+    api.updateMachinery(id, updates)
+      .then(() => syncMachineryFromRemote())
+      .catch(e => console.warn('remote updateMachinery', e));
+  }
+  return list[i];
+}
+
+/** تعطيل معدة (مش حذف — الساعة القديمة بتتحسب) */
+export function deactivateMachinery(id: number): boolean {
+  return updateMachinery(id, { active: false }) !== null;
+}
+
+/** حفظ ساعات يوم كامل: القيمة 0 = مسح السجل */
+export function saveMachineryHours(date: string, entries: { machineryId: number; hours: number }[]): { saved: number } {
+  const all = getMachineryHours();
+  let saved = 0;
+  for (const en of entries) {
+    const i = all.findIndex(h => h.machineryId === en.machineryId && h.date === date);
+    if (en.hours > 0) {
+      if (i === -1) {
+        all.push({ id: Math.max(0, ...all.map(h => h.id)) + 1, machineryId: en.machineryId, date, hours: en.hours, createdBy: null, createdAt: new Date().toISOString() });
+      } else {
+        all[i] = { ...all[i], hours: en.hours };
+      }
+      saved++;
+    } else if (i !== -1) {
+      all.splice(i, 1);
+    }
+  }
+  setItem(STORAGE_KEYS.machineryHours, all);
+  if (remoteAvailable()) {
+    api.saveMachineryHours({ date, entries })
+      .then(() => syncMachineryFromRemote())
+      .catch(e => console.warn('remote saveMachineryHours', e));
+  }
+  return { saved };
 }
 
 // ============ 🔧 سجل صيانة المعدات ============

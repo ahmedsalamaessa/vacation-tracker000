@@ -165,6 +165,25 @@ export const api = {
   async decideEquipmentReturn(payload: { id: number; approve: boolean; condition?: string }) {
     return request('/equipment-checkouts/return-decide', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // 🚜 المعدات الثقيلة
+  async getMachinery() {
+    return request('/machinery');
+  },
+  async addMachinery(payload: any) {
+    return request('/machinery', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async updateMachinery(id: number, payload: any) {
+    return request(`/machinery/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+  async deleteMachinery(id: number) {
+    return request(`/machinery/${id}`, { method: 'DELETE' });
+  },
+  async getMachineryHours() {
+    return request('/machinery-hours');
+  },
+  async saveMachineryHours(payload: { date: string; entries: { machineryId: number; hours: number }[] }) {
+    return request('/machinery-hours/bulk', { method: 'POST', body: JSON.stringify(payload) });
+  },
   // 🔧 سجل الصيانة
   async getEquipmentMaintenance() {
     return request('/equipment-maintenance');

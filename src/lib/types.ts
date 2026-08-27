@@ -217,6 +217,26 @@ export interface Equipment {
   createdAt: string;
 }
 
+// 🚜 المعدات الثقيلة (لودرات/عربيات/حفار) — ساعات الشغل اليومية
+export interface Machinery {
+  id: number;
+  kind: string;
+  owner: string;
+  size: string;
+  notes: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface MachineryHours {
+  id: number;
+  machineryId: number;
+  date: string;
+  hours: number;
+  createdBy: number | null;
+  createdAt: string;
+}
+
 export interface EquipmentCheckout {
   id: number;
   equipmentId: number;

@@ -13,6 +13,8 @@ import {
   mapEquipment,
   mapCheckout,
   mapMaintenance,
+  mapMachinery,
+  mapMachineryHours,
 } from './lib/db';
 import { sha256 } from './lib/crypto';
 
@@ -197,6 +199,28 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_date DATE`;
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_condition TEXT`;
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_notes TEXT`;
+
+  // 🚜 المعدات الثقيلة: ساعات الشغل اليومية
+  await sql`
+    CREATE TABLE IF NOT EXISTS machinery (
+      id SERIAL PRIMARY KEY,
+      kind TEXT,
+      owner TEXT,
+      size TEXT,
+      notes TEXT,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS machinery_hours (
+      id SERIAL PRIMARY KEY,
+      machinery_id INT REFERENCES machinery(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      hours NUMERIC(6,2) DEFAULT 0,
+      created_by INT,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      UNIQUE (machinery_id, date)
+    )`;
   // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
   await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
@@ -288,7 +312,7 @@ export default async function handler(req: Request) {
     if (path === 'bootstrap' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
-      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows, equipmentRows, checkoutRows] =
+      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows, equipmentRows, checkoutRows, machineryRows, machineryHoursRows] =
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
           sql`SELECT * FROM work_locations ORDER BY id`,
@@ -301,6 +325,8 @@ export default async function handler(req: Request) {
           sql`SELECT key, value FROM settings`,
           sql`SELECT * FROM equipment ORDER BY id`,
           sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
+          sql`SELECT * FROM machinery ORDER BY id`,
+          sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`,
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
@@ -344,6 +370,8 @@ export default async function handler(req: Request) {
         notifications: (notifications as any[]).map(mapNotification).filter(Boolean),
         equipment: (equipmentRows as any[]).map(mapEquipment).filter(Boolean),
         equipmentCheckouts: (checkoutRows as any[]).map(mapCheckout).filter(Boolean),
+        machinery: (machineryRows as any[]).map(mapMachinery).filter(Boolean),
+        machineryHours: (machineryHoursRows as any[]).map(mapMachineryHours).filter(Boolean),
         directory,
         settings,
       });
@@ -1049,6 +1077,70 @@ export default async function handler(req: Request) {
       // رفض: العدة تفضل خارجة والطلب يتشال
       await sql`UPDATE equipment_checkouts SET return_req_date = NULL, return_req_condition = NULL, return_req_notes = NULL WHERE id = ${id}`;
       return json({ ok: true, mode: 'rejected' });
+    }
+
+    // ============ 🚜 المعدات الثقيلة ============
+    if (path === 'machinery' && method === 'GET') {
+      const rows = await sql`SELECT * FROM machinery ORDER BY id`;
+      return json((rows as any[]).map(mapMachinery).filter(Boolean));
+    }
+
+    if (path === 'machinery' && method === 'POST') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      const b = await readBody<any>(req);
+      if (!b?.kind || !b?.owner) return json({ error: 'bad_request', message: 'النوع والمالك مطلوبين' }, 400);
+      const rows = await sql`INSERT INTO machinery (kind, owner, size, notes) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}) RETURNING *`;
+      return json(mapMachinery((rows as any[])[0]), 201);
+    }
+
+    if (path.startsWith('machinery/') && method === 'PUT') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      const id = Number(path.split('/')[1]);
+      const b = await readBody<any>(req);
+      const rows = await sql`
+        UPDATE machinery SET
+          kind = COALESCE(${b.kind ?? null}, kind),
+          owner = COALESCE(${b.owner ?? null}, owner),
+          size = COALESCE(${b.size ?? null}, size),
+          notes = COALESCE(${b.notes ?? null}, notes),
+          active = COALESCE(${b.active ?? null}, active)
+        WHERE id = ${id} RETURNING *`;
+      return json(mapMachinery((rows as any[])[0]));
+    }
+
+    if (path.startsWith('machinery/') && method === 'DELETE') {
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      const id = Number(path.split('/')[1]);
+      await sql`UPDATE machinery SET active = false WHERE id = ${id}`;
+      return json({ ok: true });
+    }
+
+    if (path === 'machinery-hours' && method === 'GET') {
+      const rows = await sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`;
+      return json((rows as any[]).map(mapMachineryHours).filter(Boolean));
+    }
+
+    if (path === 'machinery-hours/bulk' && method === 'POST') {
+      // ⏱️ أي موظف يسجل ساعات اليوم
+      const b = await readBody<any>(req);
+      const date = dateOnly(b?.date);
+      if (!date || !Array.isArray(b?.entries)) return json({ error: 'bad_request', message: 'التاريخ والساعات مطلوبين' }, 400);
+      let saved = 0;
+      for (const en of b.entries) {
+        const mid = Number(en?.machineryId);
+        const hours = Number(en?.hours) || 0;
+        if (!mid) continue;
+        if (hours > 0) {
+          await sql`
+            INSERT INTO machinery_hours (machinery_id, date, hours, created_by)
+            VALUES (${mid}, ${date}, ${hours}, ${authUser.id})
+            ON CONFLICT (machinery_id, date) DO UPDATE SET hours = EXCLUDED.hours, created_by = EXCLUDED.created_by`;
+          saved++;
+        } else {
+          await sql`DELETE FROM machinery_hours WHERE machinery_id = ${mid} AND date = ${date}`;
+        }
+      }
+      return json({ ok: true, saved });
     }
 
     // ============ 🔧 سجل صيانة المعدات ============

@@ -261,8 +261,8 @@ export default function App() {
         setRefreshKey(k => k + 1);
       }
     }
-    const first = setTimeout(tick, 3000);
-    const t = setInterval(tick, 2 * 60 * 1000);
+    const first = setTimeout(tick, 60 * 1000);
+    const t = setInterval(tick, 10 * 60 * 1000);
     return () => {
       cancelled = true;
       clearTimeout(first);

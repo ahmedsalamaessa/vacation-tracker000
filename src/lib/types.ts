@@ -223,6 +223,7 @@ export interface Machinery {
   kind: string;
   owner: string;
   size: string;
+  driver: string;
   notes: string | null;
   active: boolean;
   createdAt: string;

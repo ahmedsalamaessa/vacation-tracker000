@@ -1241,7 +1241,7 @@ export function addMachinery(rec: Omit<Machinery, 'id' | 'createdAt'>): Machiner
   const item: Machinery = { ...rec, id: Math.max(0, ...list.map(m => m.id)) + 1, createdAt: new Date().toISOString() };
   setItem(STORAGE_KEYS.machinery, [...list, item]);
   if (remoteAvailable()) {
-    api.addMachinery({ kind: item.kind, owner: item.owner, size: item.size, notes: item.notes })
+    api.addMachinery({ kind: item.kind, owner: item.owner, size: item.size, notes: item.notes, driver: item.driver })
       .then(() => syncMachineryFromRemote())
       .catch(e => console.warn('remote addMachinery', e));
   }

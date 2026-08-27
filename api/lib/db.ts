@@ -208,6 +208,7 @@ export function mapMachinery(r: any) {
     kind: r.kind ?? 'لودر',
     owner: r.owner ?? '',
     size: r.size ?? '',
+    driver: r.driver ?? '',
     notes: r.notes ?? null,
     active: r.active ?? true,
     createdAt: r.created_at,

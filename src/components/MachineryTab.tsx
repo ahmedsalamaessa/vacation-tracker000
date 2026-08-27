@@ -14,17 +14,17 @@ import { downloadCsv } from '../lib/exportCsv';
 const KINDS = ['لودر', 'عربية قلاب', 'حفار', 'أخرى'];
 
 /** المعدات العشرة بتاعتك — من رسالتك — زرار واحد يضيفهم */
-const SEED: { kind: string; owner: string; size: string }[] = [
-  { kind: 'لودر', owner: 'زياد', size: '' },
-  { kind: 'عربية قلاب', owner: 'سلومة', size: '10 متر' },
-  { kind: 'لودر', owner: 'زياد', size: '66' },
-  { kind: 'عربية قلاب', owner: 'حسني', size: '10 متر' },
-  { kind: 'لودر', owner: 'احمد حمدي', size: '100' },
-  { kind: 'لودر', owner: 'عمورة', size: '66' },
-  { kind: 'لودر', owner: 'مساعد', size: '400' },
-  { kind: 'حفار', owner: 'محمود', size: 'كاوتش' },
-  { kind: 'عربية قلاب', owner: 'حسونة', size: '20 متر حمرا' },
-  { kind: 'عربية قلاب', owner: 'قدورة', size: '20 متر' },
+const SEED: { kind: string; owner: string; size: string; driver: string }[] = [
+  { kind: 'لودر', owner: 'زياد', size: '' , driver: '' },
+  { kind: 'عربية قلاب', owner: 'سلومة', size: '10 متر' , driver: '' },
+  { kind: 'لودر', owner: 'زياد', size: '66' , driver: '' },
+  { kind: 'عربية قلاب', owner: 'حسني', size: '10 متر' , driver: '' },
+  { kind: 'لودر', owner: 'احمد حمدي', size: '100' , driver: '' },
+  { kind: 'لودر', owner: 'عمورة', size: '66' , driver: '' },
+  { kind: 'لودر', owner: 'مساعد', size: '400' , driver: '' },
+  { kind: 'حفار', owner: 'محمود', size: 'كاوتش' , driver: '' },
+  { kind: 'عربية قلاب', owner: 'حسونة', size: '20 متر حمرا' , driver: '' },
+  { kind: 'عربية قلاب', owner: 'قدورة', size: '20 متر' , driver: '' },
 ];
 
 function mLabel(m: Machinery): string {
@@ -45,7 +45,7 @@ export default function MachineryTab({ user }: Props) {
   const [month, setMonth] = useState(monthNow);
   const [draft, setDraft] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState('');
-  const [form, setForm] = useState<{ id: number | null; kind: string; owner: string; size: string; notes: string }>({ id: null, kind: 'لودر', owner: '', size: '', notes: '' });
+  const [form, setForm] = useState<{ id: number | null; kind: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', owner: '', size: '', driver: '', notes: '' });
 
   function flash(text: string) {
     setMsg(text);
@@ -106,13 +106,13 @@ export default function MachineryTab({ user }: Props) {
     if (!form.owner.trim()) { flash('⚠️ اكتب اسم المالك (زي: زياد، سلومة)'); return; }
     try {
       if (form.id) {
-        updateMachinery(form.id, { kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), notes: form.notes || null });
+        updateMachinery(form.id, { kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
         flash('✏️ اتعدلت المعدة');
       } else {
-        addMachinery({ kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), notes: form.notes || null, active: true });
+        addMachinery({ kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
         flash('🚜 اتضافت المعدة');
       }
-      setForm({ id: null, kind: 'لودر', owner: '', size: '', notes: '' });
+      setForm({ id: null, kind: 'لودر', owner: '', size: '', driver: '', notes: '' });
       window.setTimeout(() => { load(); }, 600);
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -129,14 +129,14 @@ export default function MachineryTab({ user }: Props) {
   }
 
   function exportDay() {
-    const rows = active.map(m => [mLabel(m), parseFloat(draft[m.id] || '') || 0]);
-    downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'الساعات'], rows);
+    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0]);
+    downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات'], rows);
   }
 
   function exportMonth() {
     const [y, mo] = month.split('-').map(Number);
     const days = new Date(y, mo, 0).getDate();
-    const headers = ['المعدة', ...Array.from({ length: days }, (_, i) => String(i + 1)), 'الإجمالي'];
+    const headers = ['المعدة', 'السواق', ...Array.from({ length: days }, (_, i) => String(i + 1)), 'الإجمالي'];
     const all = getMachineryHours();
     const rows = active.map(m => {
       const mine = all.filter(h => h.machineryId === m.id && h.date.startsWith(month));
@@ -146,9 +146,9 @@ export default function MachineryTab({ user }: Props) {
         return hit ? hit.hours : '';
       });
       const total = mine.reduce((s, h) => s + h.hours, 0);
-      return [mLabel(m), ...perDay, total];
+      return [mLabel(m), m.driver || '', ...perDay, total];
     });
-    const sumRow = ['الإجمالي', ...Array.from({ length: days }, (_, i) => {
+    const sumRow = ['الإجمالي', '', ...Array.from({ length: days }, (_, i) => {
       const d = `${month}-${String(i + 1).padStart(2, '0')}`;
       return all.filter(h => h.date === d).reduce((s, h) => s + h.hours, 0) || '';
     }), all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + h.hours, 0)];
@@ -194,6 +194,7 @@ export default function MachineryTab({ user }: Props) {
                   <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
                     <th className="p-3">المعدة</th>
                     <th className="p-3">النوع</th>
+                    <th className="p-3">🚛 السواق</th>
                     <th className="p-3 w-40">⏱️ الساعات</th>
                     <th className="p-3">ملاحظات</th>
                   </tr>
@@ -203,6 +204,7 @@ export default function MachineryTab({ user }: Props) {
                     <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
                       <td className="p-3 font-black">{mLabel(m)}</td>
                       <td className="p-3 text-slate-500">{m.kind}</td>
+                      <td className="p-3 text-slate-600">{m.driver || '—'}</td>
                       <td className="p-3">
                         <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
                           placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
@@ -215,6 +217,7 @@ export default function MachineryTab({ user }: Props) {
                   <tr className="border-t-2 border-slate-200 font-black text-slate-900">
                     <td className="p-3">الإجمالي</td>
                     <td className="p-3">{active.length} معدة</td>
+                    <td className="p-3"></td>
                     <td className="p-3 text-center">{daySum}</td>
                     <td className="p-3 text-xs text-slate-500">{active.filter(m => parseFloat(draft[m.id] || '') > 0).length} شغالة النهارده</td>
                   </tr>
@@ -254,7 +257,7 @@ export default function MachineryTab({ user }: Props) {
                   const t = totalsFor(m);
                   return (
                     <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3 font-black">{mLabel(m)}</td>
+                      <td className="p-3 font-black">{mLabel(m)}{m.driver ? <span className="block text-[11px] font-bold text-slate-400">🚛 {m.driver}</span> : null}</td>
                       <td className="p-3">{t.day || '—'}</td>
                       <td className="p-3">{t.mon || '—'}</td>
                       <td className="p-3 font-black text-blue-700">{t.total || '—'}</td>
@@ -279,8 +282,8 @@ export default function MachineryTab({ user }: Props) {
       {canManage && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="mb-1 text-xl font-black text-slate-900">⚙️ إدارة المعدات ({machinery.filter(m => m.active).length})</h3>
-          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المالك + المقاس — الاسم بيتكون تلقائي زي: لودر زياد 66</p>
-          <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-5">
+          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المالك + المقاس + السواق — الاسم بيتكون تلقائي زي: لودر زياد 66</p>
+          <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
               النوع
               <select value={form.kind} onChange={e => setForm(f => ({ ...f, kind: e.target.value }))}
@@ -296,6 +299,11 @@ export default function MachineryTab({ user }: Props) {
             <label className="text-sm font-black text-slate-700">
               المقاس/الوصف
               <input value={form.size} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="10 متر، 66، 100..."
+                className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+            </label>
+            <label className="text-sm font-black text-slate-700">
+              🚛 السواق
+              <input value={form.driver} onChange={e => setForm(f => ({ ...f, driver: e.target.value }))} placeholder="اسم السواق (اختياري)"
                 className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
             </label>
             <label className="text-sm font-black text-slate-700">
@@ -316,11 +324,12 @@ export default function MachineryTab({ user }: Props) {
                 <div key={m.id} className={`flex items-center justify-between gap-2 rounded-xl border-2 p-3 ${m.active ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                   <div>
                     <div className="text-sm font-black text-slate-800">{mLabel(m)} {!m.active && <span className="text-[10px] text-slate-400">(متوقفة)</span>}</div>
+                    {(m.driver || m.owner) && <div className="text-[11px] font-bold text-slate-400">👤 مالك: {m.owner}{m.driver ? ` · 🚛 سواق: ${m.driver}` : ''}</div>}
                     {m.notes && <div className="text-[11px] font-bold text-slate-400">{m.notes}</div>}
                   </div>
                   {m.active && (
                     <div className="flex gap-1">
-                      <button type="button" onClick={() => setForm({ id: m.id, kind: m.kind, owner: m.owner, size: m.size, notes: m.notes || '' })}
+                      <button type="button" onClick={() => setForm({ id: m.id, kind: m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">✏️</button>
                       <button type="button" onClick={() => { if (window.confirm(`توقف ${mLabel(m)}؟ الساعات المسجلة هتفضل محسوبة`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت المعدة — ساعاتها القديمة محفوظة'); window.setTimeout(load, 500); } }}
                         className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100">🗑️</button>

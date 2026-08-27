@@ -212,6 +212,8 @@ async function ensureEquipmentTables(sql: any) {
       created_at TIMESTAMPTZ DEFAULT now()
     )`;
   await sql`
+  await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS driver TEXT`;
+  await sql`
     CREATE TABLE IF NOT EXISTS machinery_hours (
       id SERIAL PRIMARY KEY,
       machinery_id INT REFERENCES machinery(id) ON DELETE CASCADE,
@@ -1088,7 +1090,7 @@ export default async function handler(req: Request) {
       if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
       const b = await readBody<any>(req);
       if (!b?.kind || !b?.owner) return json({ error: 'bad_request', message: 'النوع والمالك مطلوبين' }, 400);
-      const rows = await sql`INSERT INTO machinery (kind, owner, size, notes) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}) RETURNING *`;
+      const rows = await sql`INSERT INTO machinery (kind, owner, size, notes, driver) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}, ${b.driver ?? ''}) RETURNING *`;
       return json(mapMachinery((rows as any[])[0]), 201);
     }
 
@@ -1102,6 +1104,7 @@ export default async function handler(req: Request) {
           owner = COALESCE(${b.owner ?? null}, owner),
           size = COALESCE(${b.size ?? null}, size),
           notes = COALESCE(${b.notes ?? null}, notes),
+          driver = COALESCE(${b.driver ?? null}, driver),
           active = COALESCE(${b.active ?? null}, active)
         WHERE id = ${id} RETURNING *`;
       return json(mapMachinery((rows as any[])[0]));

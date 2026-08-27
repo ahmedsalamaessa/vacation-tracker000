@@ -1112,16 +1112,16 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('machinery/') && method === 'DELETE') {
-      // 🗑️ مسح خالص: بيتشال من الشغل الجديد — وساعاته القديمة بتفضل محفوظة
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      // 🗑️ مسح خالص: أدمن بس — بيتشال من الشغل الجديد وساعاته القديمة بتفضل محفوظة
+      if (authUser.role !== 'admin') return forbidden('مسح المعدات من الأدمن بس');
       const id = Number(path.split('/')[1]);
       await sql`UPDATE machinery SET active = false, deleted = true WHERE id = ${id}`;
       return json({ ok: true });
     }
 
     if (path === 'machinery-all' && method === 'DELETE') {
-      // 🧹 تفريغ كامل: كل المعدات وكل الساعات (بداية من الصفر)
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      // 🧹 تفريغ كامل: أدمن بس
+      if (authUser.role !== 'admin') return forbidden('تفريغ المعدات من الأدمن بس');
       await sql`DELETE FROM machinery_hours`;
       await sql`DELETE FROM machinery`;
       return json({ ok: true });

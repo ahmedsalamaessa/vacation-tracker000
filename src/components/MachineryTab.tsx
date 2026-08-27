@@ -63,6 +63,7 @@ interface Props {
 
 export default function MachineryTab({ user }: Props) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
+  const isAdmin = user.role === 'admin';
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
 
@@ -386,7 +387,7 @@ export default function MachineryTab({ user }: Props) {
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
-            {machinery.length > 0 && (
+            {machinery.length > 0 && isAdmin && (
               <button type="button" onClick={() => { if (window.confirm('🧹 هتمسح كل المعدات وكل الساعات المسجلة وتبدأ من الصفر — متأكد؟ (مفيش رجوع)')) { clearAllMachinery(); flash('🧹 اتفضرت كل المعدات — ابدأ من الأول'); window.setTimeout(() => { load(); refreshMachinery(); }, 800); } }}
                 className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black text-white hover:bg-red-700">🧹 تفريغ كل المعدات</button>
             )}
@@ -459,8 +460,10 @@ export default function MachineryTab({ user }: Props) {
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
                       <button type="button" onClick={() => { if (window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت — تقدر ترجعها بالتعديل'); window.setTimeout(load, 500); } }}
                         className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>
-                      <button type="button" onClick={() => { if (window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) { deleteMachineryHard(m.id); flash('🗑️ اتمسحت — شغلها القديم محفوظ'); window.setTimeout(load, 500); } }}
-                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص">🗑️</button>
+                      {isAdmin && (
+                        <button type="button" onClick={() => { if (window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) { deleteMachineryHard(m.id); flash('🗑️ اتمسحت — شغلها القديم محفوظ'); window.setTimeout(load, 500); } }}
+                          className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص (أدمن بس)">🗑️</button>
+                      )}
                     </div>
                   )}
                 </div>

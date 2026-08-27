@@ -570,7 +570,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           </label>
           {canManage && (
           <label className="text-sm font-black text-slate-700 md:col-span-2">
-            📍 وجهة المأمورية (إداري)
+            📍 الوجهة / موقع تاني (إداري)
             <select value={destSite} onChange={e => setDestSite(e.target.value)}
               className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
               <option value="">— من غير مأمورية / الموقع الأساسي —</option>

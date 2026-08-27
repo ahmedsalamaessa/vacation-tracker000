@@ -318,12 +318,12 @@ export default async function handler(req: Request) {
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
           sql`SELECT * FROM work_locations ORDER BY id`,
-          sql`SELECT * FROM attendance ORDER BY date DESC, id DESC`,
+          sql`SELECT * FROM attendance WHERE date >= CURRENT_DATE - INTERVAL '120 days' ORDER BY date DESC, id DESC`,
           sql`SELECT * FROM vacations ORDER BY created_at DESC`,
-          sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`,
+          sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200`,
           sql`SELECT * FROM month_locks ORDER BY year_month DESC`,
-          sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 2000`,
-          sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 500`,
+          sql`SELECT * FROM check_in_attempts ORDER BY created_at DESC LIMIT 400`,
+          sql`SELECT * FROM notifications ORDER BY created_at DESC LIMIT 200`,
           sql`SELECT key, value FROM settings`,
           sql`SELECT * FROM equipment ORDER BY id`,
           sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
@@ -545,7 +545,7 @@ export default async function handler(req: Request) {
     if (path === 'attendance' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
-      const rows = await sql`SELECT * FROM attendance ORDER BY date DESC, id DESC`;
+      const rows = await sql`SELECT * FROM attendance WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`;
       if (user.role === 'admin') return json((rows as any[]).map(mapAttendance).filter(Boolean));
       const userLocs = user.locationIds || [];
       const empIds = await sql`

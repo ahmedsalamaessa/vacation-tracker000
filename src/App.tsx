@@ -254,6 +254,7 @@ export default function App() {
     if (!user) return;
     let cancelled = false;
     async function tick() {
+      if (document.visibilityState === 'hidden') return; // التاب في الخلفية؟ مفيش سحب
       const ok = await refreshFromRemote();
       if (!cancelled && ok) {
         const fresh = refreshCurrentSession();

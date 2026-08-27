@@ -226,6 +226,7 @@ export interface Machinery {
   driver: string;
   notes: string | null;
   active: boolean;
+  deleted?: boolean;
   createdAt: string;
 }
 

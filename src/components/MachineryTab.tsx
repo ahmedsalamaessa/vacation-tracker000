@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Employee, Machinery } from '../lib/types';
 import {
   getMachinery,
@@ -6,6 +6,8 @@ import {
   addMachinery,
   updateMachinery,
   deactivateMachinery,
+  deleteMachineryHard,
+  clearAllMachinery,
   saveMachineryHours,
   refreshMachinery,
 } from '../lib/db';
@@ -13,19 +15,22 @@ import { downloadCsv } from '../lib/exportCsv';
 
 const KINDS = ['لودر', 'عربية قلاب', 'حفار', 'أخرى'];
 
-/** المعدات العشرة بتاعتك — من رسالتك — زرار واحد يضيفهم */
-const SEED: { kind: string; owner: string; size: string; driver: string }[] = [
-  { kind: 'لودر', owner: 'زياد', size: '' , driver: '' },
-  { kind: 'عربية قلاب', owner: 'سلومة', size: '10 متر' , driver: '' },
-  { kind: 'لودر', owner: 'زياد', size: '66' , driver: '' },
-  { kind: 'عربية قلاب', owner: 'حسني', size: '10 متر' , driver: '' },
-  { kind: 'لودر', owner: 'احمد حمدي', size: '100' , driver: '' },
-  { kind: 'لودر', owner: 'عمورة', size: '66' , driver: '' },
-  { kind: 'لودر', owner: 'مساعد', size: '400' , driver: '' },
-  { kind: 'حفار', owner: 'محمود', size: 'كاوتش' , driver: '' },
-  { kind: 'عربية قلاب', owner: 'حسونة', size: '20 متر حمرا' , driver: '' },
-  { kind: 'عربية قلاب', owner: 'قدورة', size: '20 متر' , driver: '' },
-];
+// 📊 التجميع: اللودرات تحت بعض، ثم العربيات، ثم الحفارات — وأي إضافة جديدة تقع في مجموعتها تلقائيًا
+const GROUP_ORDER = ['لودر', 'عربية قلاب', 'حفار', 'أخرى'];
+const GROUP_LABEL: Record<string, string> = {
+  'لودر': '🚜 اللودرات',
+  'عربية قلاب': '🚚 العربيات',
+  'حفار': '⛏️ الحفارات',
+  'أخرى': '🔧 أخرى',
+};
+function groupOf(m: Machinery): string {
+  return GROUP_ORDER.includes(m.kind) ? m.kind : 'أخرى';
+}
+function byGroup(ms: Machinery[]): { label: string; items: Machinery[] }[] {
+  return GROUP_ORDER
+    .map(k => ({ label: GROUP_LABEL[k], items: ms.filter(m => groupOf(m) === k) }))
+    .filter(g => g.items.length > 0);
+}
 
 function mLabel(m: Machinery): string {
   // للإكسل: نوع مقاس مالك
@@ -100,6 +105,8 @@ export default function MachineryTab({ user }: Props) {
   }, [dayDate]);
 
   const active = machinery.filter(m => m.active);
+  // التراكمي: كل غير الممسوح + الممسوح اللي عنده ساعات قديمة (شغله محفوظ)
+  const histList = machinery.filter(m => !m.deleted || getMachineryHours().some(h => h.machineryId === m.id));
   const daySum = active.reduce((s, m) => s + (parseFloat(draft[m.id] || '') || 0), 0);
 
   function saveDay() {
@@ -112,12 +119,6 @@ export default function MachineryTab({ user }: Props) {
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
     }
-  }
-
-  function seedAll() {
-    for (const m of SEED) addMachinery({ ...m, notes: null, active: true });
-    flash('🚜 اتضافت المعدات العشرة — ظبط أي حاجة من ✏️');
-    window.setTimeout(() => { load(); refreshMachinery(); }, 600);
   }
 
   function submitMachinery(e: React.FormEvent) {
@@ -203,13 +204,6 @@ export default function MachineryTab({ user }: Props) {
           </div>
         </div>
 
-        {canManage && active.length === 0 && (
-          <div className="mb-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50 p-4 text-center">
-            <div className="mb-2 text-sm font-black text-blue-800">مفيش معدات مسجلة — تحب تحط العشر بتاعتك بضغطة؟</div>
-            <button type="button" onClick={seedAll} className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white hover:bg-blue-700">🚜 أضف المعدات العشرة (زياد، سلومة، حسني، احمد حمدي، عمورة، مساعد، محمود، حسونة، قدورة)</button>
-          </div>
-        )}
-
         {active.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
@@ -224,15 +218,22 @@ export default function MachineryTab({ user }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {active.map(m => (
-                    <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3"><MName m={m} /></td>
-                      <td className="p-3">
-                        <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
-                          placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
-                      </td>
-                      <td className="p-3 text-xs text-slate-500">{m.notes || ''}</td>
-                    </tr>
+                  {byGroup(active).map(g => (
+                    <React.Fragment key={g.label}>
+                      <tr className="bg-slate-50/80">
+                        <td colSpan={3} className="p-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</td>
+                      </tr>
+                      {g.items.map(m => (
+                        <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
+                          <td className="p-3"><MName m={m} /></td>
+                          <td className="p-3">
+                            <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
+                              placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
+                          </td>
+                          <td className="p-3 text-xs text-slate-500">{m.notes || ''}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </tbody>
                 <tfoot>
@@ -253,7 +254,7 @@ export default function MachineryTab({ user }: Props) {
       </section>
 
       {/* ===== التراكمي ===== */}
-      {active.length > 0 && (
+      {histList.length > 0 && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">📊 التراكمي</h3>
@@ -274,24 +275,31 @@ export default function MachineryTab({ user }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {active.map(m => {
-                  const t = totalsFor(m);
-                  return (
-                    <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                      <td className="p-3"><MName m={m} /></td>
-                      <td className="p-3">{t.day || '—'}</td>
-                      <td className="p-3">{t.mon || '—'}</td>
-                      <td className="p-3 font-black text-blue-700">{t.total || '—'}</td>
+                {byGroup(histList).map(g => (
+                  <React.Fragment key={g.label}>
+                    <tr className="bg-slate-50/80">
+                      <td colSpan={4} className="p-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</td>
                     </tr>
-                  );
-                })}
+                    {g.items.map(m => {
+                      const t = totalsFor(m);
+                      return (
+                        <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
+                          <td className="p-3"><MName m={m} /></td>
+                          <td className="p-3">{t.day || '—'}</td>
+                          <td className="p-3">{t.mon || '—'}</td>
+                          <td className="p-3 font-black text-blue-700">{t.total || '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-200 font-black text-slate-900">
                   <td className="p-3">الإجمالي</td>
-                  <td className="p-3">{active.reduce((s, m) => s + totalsFor(m).day, 0) || '—'}</td>
-                  <td className="p-3">{active.reduce((s, m) => s + totalsFor(m).mon, 0) || '—'}</td>
-                  <td className="p-3">{active.reduce((s, m) => s + totalsFor(m).total, 0) || '—'}</td>
+                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).day, 0) || '—'}</td>
+                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).mon, 0) || '—'}</td>
+                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).total, 0) || '—'}</td>
                 </tr>
               </tfoot>
             </table>
@@ -302,7 +310,13 @@ export default function MachineryTab({ user }: Props) {
       {/* ===== إدارة المعدات ===== */}
       {(
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-1 text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
+            {machinery.length > 0 && (
+              <button type="button" onClick={() => { if (window.confirm('🧹 هتمسح كل المعدات وكل الساعات المسجلة وتبدأ من الصفر — متأكد؟ (مفيش رجوع)')) { clearAllMachinery(); flash('🧹 اتفضرت كل المعدات — ابدأ من الأول'); window.setTimeout(() => { load(); refreshMachinery(); }, 800); } }}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black text-white hover:bg-red-700">🧹 تفريغ كل المعدات</button>
+            )}
+          </div>
           <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد{canManage ? '' : ' — ضيف أي معدة جديدة من هنا'}</p>
           <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
@@ -347,7 +361,7 @@ export default function MachineryTab({ user }: Props) {
             <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">مفيش معدات — ضيف أول معدة من الفورم فوق 👇</div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
-              {machinery.map(m => (
+              {machinery.filter(m => !m.deleted).map(m => (
                 <div key={m.id} className={`flex items-center justify-between gap-2 rounded-xl border-2 p-3 ${m.active ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
                   <div>
                     <div className="text-sm font-black text-slate-800">{mLabel(m)} {!m.active && <span className="text-[10px] text-slate-400">(متوقفة)</span>}</div>
@@ -357,9 +371,11 @@ export default function MachineryTab({ user }: Props) {
                   {m.active && canManage && (
                     <div className="flex gap-1">
                       <button type="button" onClick={() => setForm({ id: m.id, kind: m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
-                        className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">✏️</button>
-                      <button type="button" onClick={() => { if (window.confirm(`توقف ${mLabel(m)}؟ الساعات المسجلة هتفضل محسوبة`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت المعدة — ساعاتها القديمة محفوظة'); window.setTimeout(load, 500); } }}
-                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100">🗑️</button>
+                        className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
+                      <button type="button" onClick={() => { if (window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت — تقدر ترجعها بالتعديل'); window.setTimeout(load, 500); } }}
+                        className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>
+                      <button type="button" onClick={() => { if (window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) { deleteMachineryHard(m.id); flash('🗑️ اتمسحت — شغلها القديم محفوظ'); window.setTimeout(load, 500); } }}
+                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص">🗑️</button>
                     </div>
                   )}
                 </div>

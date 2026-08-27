@@ -212,6 +212,7 @@ async function ensureEquipmentTables(sql: any) {
       created_at TIMESTAMPTZ DEFAULT now()
     )`;
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS driver TEXT`;
+  await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false`;
   await sql`
     CREATE TABLE IF NOT EXISTS machinery_hours (
       id SERIAL PRIMARY KEY,
@@ -1104,15 +1105,25 @@ export default async function handler(req: Request) {
           size = COALESCE(${b.size ?? null}, size),
           notes = COALESCE(${b.notes ?? null}, notes),
           driver = COALESCE(${b.driver ?? null}, driver),
-          active = COALESCE(${b.active ?? null}, active)
+          active = COALESCE(${b.active ?? null}, active),
+          deleted = COALESCE(${b.deleted ?? null}, deleted)
         WHERE id = ${id} RETURNING *`;
       return json(mapMachinery((rows as any[])[0]));
     }
 
     if (path.startsWith('machinery/') && method === 'DELETE') {
+      // 🗑️ مسح خالص: بيتشال من الشغل الجديد — وساعاته القديمة بتفضل محفوظة
       if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
       const id = Number(path.split('/')[1]);
-      await sql`UPDATE machinery SET active = false WHERE id = ${id}`;
+      await sql`UPDATE machinery SET active = false, deleted = true WHERE id = ${id}`;
+      return json({ ok: true });
+    }
+
+    if (path === 'machinery-all' && method === 'DELETE') {
+      // 🧹 تفريغ كامل: كل المعدات وكل الساعات (بداية من الصفر)
+      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      await sql`DELETE FROM machinery_hours`;
+      await sql`DELETE FROM machinery`;
       return json({ ok: true });
     }
 

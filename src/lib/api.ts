@@ -178,6 +178,9 @@ export const api = {
   async deleteMachinery(id: number) {
     return request(`/machinery/${id}`, { method: 'DELETE' });
   },
+  async deleteAllMachinery() {
+    return request('/machinery-all', { method: 'DELETE' });
+  },
   async getMachineryHours() {
     return request('/machinery-hours');
   },

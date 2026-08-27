@@ -1262,9 +1262,23 @@ export function updateMachinery(id: number, updates: Partial<Machinery>): Machin
   return list[i];
 }
 
-/** تعطيل معدة (مش حذف — الساعة القديمة بتتحسب) */
+/** إيقاف معدة مؤقت (تفضل ظاهرة في التراكمي بس مش في ورقة اليوم) */
 export function deactivateMachinery(id: number): boolean {
   return updateMachinery(id, { active: false }) !== null;
+}
+
+/** 🗑️ مسح خالص: بتشال من كل القوائم — بس ساعاتها القديمة بتفضل في السجلات */
+export function deleteMachineryHard(id: number): boolean {
+  return updateMachinery(id, { active: false, deleted: true }) !== null;
+}
+
+/** 🧹 تفريغ كل المعدات وكل الساعات — بداية من الصفر */
+export function clearAllMachinery(): void {
+  setItem(STORAGE_KEYS.machinery, []);
+  setItem(STORAGE_KEYS.machineryHours, []);
+  if (remoteAvailable()) {
+    api.deleteAllMachinery().then(() => syncMachineryFromRemote()).catch(e => console.warn('remote deleteAllMachinery', e));
+  }
 }
 
 /** حفظ ساعات يوم كامل: القيمة 0 = مسح السجل */

@@ -211,6 +211,7 @@ export function mapMachinery(r: any) {
     driver: r.driver ?? '',
     notes: r.notes ?? null,
     active: r.active ?? true,
+    deleted: r.deleted ?? false,
     createdAt: r.created_at,
   };
 }

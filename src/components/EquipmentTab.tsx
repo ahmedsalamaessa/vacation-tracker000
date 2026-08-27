@@ -1141,7 +1141,6 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 </div>
                 <div>👷 المساح: <b className="text-lg">{empName(printGroup[0].surveyorId)}</b></div>
                 <div>🤝 المساعد: <b>{assistantLabel(printGroup[0])}</b></div>
-                <div>📍 الوجهة: <b>{printGroup[0].destination || '—'}</b></div>
                 {printGroup[0].untilDate && <div>📅 الفترة: من <b>{printGroup[0].checkoutDate}</b> حتى <b>{printGroup[0].untilDate}</b></div>}
                 {printGroup[0].returnDate && <div>↩️ تاريخ رجوع العدة: <b>{printGroup[0].returnDate}</b></div>}
                 {printGroup[0].notes && <div>📝 ملاحظات: {printGroup[0].notes}</div>}

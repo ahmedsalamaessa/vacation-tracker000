@@ -560,8 +560,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             </select>
           </label>
           {assistantIsOther && (
-            <input value={assistantOther} onChange={e => setAssistantOther(e.target.value)} placeholder="اسم المساعد (مثال: سيد عبد الرحمن)"
-              className="mt-6 rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+            <>
+              <input value={assistantOther} onChange={e => setAssistantOther(e.target.value)} placeholder="اسم المساعد (مثال: سيد عبد الرحمن)" list="vsys-free-assistants"
+                className="mt-6 rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+              <datalist id="vsys-free-assistants">
+                {[...new Set(checkouts.map(c => (c.assistantName || '').trim()).filter(Boolean))].map(a => <option key={a} value={a} />)}
+              </datalist>
+            </>
           )}
           <label className="text-sm font-black text-slate-700">
             📅 تاريخ النزول
@@ -582,8 +587,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           </label>
           )}
           {canManage && destSite === '__other__' && (
-            <input value={destOther} onChange={e => setDestOther(e.target.value)} placeholder="اسم موقع المأمورية (مثال: مأمورية العاصمة الإدارية)"
-              className="rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+            <>
+              <input value={destOther} onChange={e => setDestOther(e.target.value)} list="vsys-dest-sites" placeholder="اسم موقع المأمورية (مثال: مأمورية العاصمة الإدارية)"
+                className="rounded-xl border-2 border-blue-400 px-4 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+              <datalist id="vsys-dest-sites">
+                {[...new Set(checkouts.map(c => (c.destination || '').trim()).filter(Boolean))].map(d => <option key={d} value={d} />)}
+              </datalist>
+            </>
           )}
           {canManage && destSite !== '' && (
             <label className="text-sm font-black text-slate-700">

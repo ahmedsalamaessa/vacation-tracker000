@@ -293,8 +293,11 @@ export default function MachineryTab({ user }: Props) {
             </label>
             <label className="text-sm font-black text-slate-700">
               المالك
-              <input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="زياد، سلومة..."
+              <input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="زياد، سلومة..." list="vsys-owners"
                 className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+              <datalist id="vsys-owners">
+                {[...new Set(machinery.filter(m => m.owner.trim()).map(m => m.owner.trim()))].map(o => <option key={o} value={o} />)}
+              </datalist>
             </label>
             <label className="text-sm font-black text-slate-700">
               المقاس/الوصف
@@ -303,8 +306,11 @@ export default function MachineryTab({ user }: Props) {
             </label>
             <label className="text-sm font-black text-slate-700">
               🚛 السواق
-              <input value={form.driver} onChange={e => setForm(f => ({ ...f, driver: e.target.value }))} placeholder="اسم السواق (اختياري)"
+              <input value={form.driver} onChange={e => setForm(f => ({ ...f, driver: e.target.value }))} placeholder="اسم السواق (اختياري)" list="vsys-drivers"
                 className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+              <datalist id="vsys-drivers">
+                {[...new Set(machinery.filter(m => m.driver.trim()).map(m => m.driver.trim()))].map(d => <option key={d} value={d} />)}
+              </datalist>
             </label>
             <label className="text-sm font-black text-slate-700">
               ملاحظات

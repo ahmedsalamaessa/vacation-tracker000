@@ -11,6 +11,7 @@ import {
   getEquipmentCheckouts,
 } from './lib/db';
 import { getManagedEmployees } from './lib/permissions';
+import { api } from './lib/api';
 import {
   requestPermission,
   pollManagerAlerts,
@@ -255,6 +256,17 @@ export default function App() {
     let cancelled = false;
     async function tick() {
       if (document.visibilityState === 'hidden') return; // التاب في الخلفية؟ مفيش سحب
+      // 🔋 بوابة النسخة: اسأل بصمة صغيرة — متسحبش الداتا غير لو اتغيرت (أو عدت ساعتين)
+      try {
+        const v = await api.getVersion();
+        const last = localStorage.getItem('vsys_data_ver');
+        const lastForce = Number(localStorage.getItem('vsys_data_ver_t') || 0);
+        if (v && v === last && Date.now() - lastForce < 2 * 60 * 60 * 1000) return;
+        localStorage.setItem('vsys_data_ver_t', String(Date.now()));
+        localStorage.setItem('vsys_data_ver', String(v ?? ''));
+      } catch {
+        // السؤال فشل — كمّل سحب عادي
+      }
       const ok = await refreshFromRemote();
       if (!cancelled && ok) {
         const fresh = refreshCurrentSession();

@@ -311,6 +311,25 @@ export default async function handler(req: Request) {
       });
     }
 
+    if (path === 'version' && method === 'GET') {
+      // 🔋 خفيف جدًا: بصمة تغيّر الداتا — العميل يسألها بدل سحب كل حاجة
+      const r = await sql`
+        SELECT
+          (SELECT count(*) FROM employees)::text || ':' || (SELECT COALESCE(max(id),0) FROM employees)::text || ':' ||
+          (SELECT count(*) FROM attendance)::text || ':' || (SELECT COALESCE(max(id),0) FROM attendance)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM attendance)::text || ':' ||
+          (SELECT count(*) FROM vacations)::text || ':' || (SELECT COALESCE(max(id),0) FROM vacations)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM vacations)::text || ':' ||
+          (SELECT count(*) FROM work_locations)::text || ':' ||
+          (SELECT count(*) FROM equipment)::text || ':' || (SELECT COALESCE(sum(hashtext(status)),0) FROM equipment)::text || ':' ||
+          (SELECT count(*) FROM equipment_checkouts)::text || ':' || (SELECT COALESCE(max(id),0) FROM equipment_checkouts)::text || ':' ||
+          (SELECT count(*) FROM machinery)::text || ':' ||
+          (SELECT count(*) FROM machinery_hours)::text || ':' ||
+          (SELECT count(*) FROM notifications)::text || ':' ||
+          (SELECT count(*) FROM month_locks)::text || ':' ||
+          (SELECT COALESCE(sum(length(value)),0) FROM settings)::text
+        AS v`;
+      return json({ v: String((r[0] as any).v ?? '') });
+    }
+
     if (path === 'bootstrap' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
@@ -328,7 +347,7 @@ export default async function handler(req: Request) {
           sql`SELECT * FROM equipment ORDER BY id`,
           sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
           sql`SELECT * FROM machinery ORDER BY id`,
-          sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`,
+          sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '200 days' ORDER BY date DESC, id DESC`,
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
@@ -1128,7 +1147,7 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery-hours' && method === 'GET') {
-      const rows = await sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`;
+      const rows = await sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '200 days' ORDER BY date DESC, id DESC`;
       return json((rows as any[]).map(mapMachineryHours).filter(Boolean));
     }
 

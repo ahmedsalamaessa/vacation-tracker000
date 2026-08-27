@@ -165,6 +165,15 @@ export const api = {
   async decideEquipmentReturn(payload: { id: number; approve: boolean; condition?: string }) {
     return request('/equipment-checkouts/return-decide', { method: 'POST', body: JSON.stringify(payload) });
   },
+  // 🔋 بصمة نسخة الداتا (خفيفة جدًا)
+  async getVersion(): Promise<string | null> {
+    try {
+      const r = await request<{ v?: string }>('/version');
+      return (r as any)?.v ?? null;
+    } catch {
+      return null;
+    }
+  },
   // 🚜 المعدات الثقيلة
   async getMachinery() {
     return request('/machinery');

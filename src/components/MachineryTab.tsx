@@ -158,7 +158,7 @@ export default function MachineryTab({ user }: Props) {
     const days = new Date(y, mo, 0).getDate();
     const headers = ['المعدة', 'السواق', ...Array.from({ length: days }, (_, i) => String(i + 1)), 'الإجمالي'];
     const all = getMachineryHours();
-    const rows = active.map(m => {
+    const rows = histList.map(m => {
       const mine = all.filter(h => h.machineryId === m.id && h.date.startsWith(month));
       const perDay = Array.from({ length: days }, (_, i) => {
         const d = `${month}-${String(i + 1).padStart(2, '0')}`;

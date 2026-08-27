@@ -701,7 +701,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           )}
         </div>
 
-        {canManage && (
+        {(
           <form onSubmit={submitDevice} className="mb-5 grid gap-3 md:grid-cols-5">
             <select value={eqForm.kind} onChange={e => setEqForm(f => ({ ...f, kind: e.target.value as EquipmentKind }))}
               className="rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">

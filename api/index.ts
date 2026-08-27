@@ -933,8 +933,7 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment' && method === 'POST') {
-      // 🛡️ إدارة المعدات = صلاحية تعديل الحضور (أدمن/مدير)
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      // ✅ تسجيل جهاز جديد: متاح لأي موظف — المساح يسجل عدته بنفسه (التعديل والحذف إدارة بس)
       const b = await readBody<any>(req);
       if (!b?.name || !b?.serialNumber) return json({ error: 'bad_request', message: 'الاسم والسيريال نمبر مطلوبين' }, 400);
       const dupe = await sql`SELECT id FROM equipment WHERE serial_number = ${String(b.serialNumber).trim()}`;

@@ -14,13 +14,14 @@ import {
 } from '../lib/db';
 import { downloadCsv } from '../lib/exportCsv';
 
-const KINDS = ['لودر', 'عربية قلاب', 'حفار', 'أخرى'];
+const KINDS = ['لودر', 'عربية قلاب', 'عربية مية', 'حفار', 'أخرى'];
 
 // 📊 التجميع: اللودرات تحت بعض، ثم العربيات، ثم الحفارات — وأي إضافة جديدة تقع في مجموعتها تلقائيًا
-const GROUP_ORDER = ['لودر', 'عربية قلاب', 'حفار', 'أخرى'];
+const GROUP_ORDER = ['لودر', 'عربية قلاب', 'عربية مية', 'حفار', 'أخرى'];
 const GROUP_LABEL: Record<string, string> = {
   'لودر': '🚜 اللودرات',
   'عربية قلاب': '🚚 العربيات',
+  'عربية مية': '🚰 عربيات المية',
   'حفار': '⛏️ الحفارات',
   'أخرى': '🔧 أخرى',
 };
@@ -70,7 +71,7 @@ export default function MachineryTab({ user }: Props) {
   const [month, setMonth] = useState(monthNow);
   const [draft, setDraft] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState('');
-  const [form, setForm] = useState<{ id: number | null; kind: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', owner: '', size: '', driver: '', notes: '' });
+  const [form, setForm] = useState<{ id: number | null; kind: string; custom: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
   const [deptName, setDeptName] = useState('قسم المساحة');
   const [printOwner, setPrintOwner] = useState<string | null>(null);
 
@@ -128,15 +129,17 @@ export default function MachineryTab({ user }: Props) {
   function submitMachinery(e: React.FormEvent) {
     e.preventDefault();
     if (!form.owner.trim()) { flash('⚠️ اكتب اسم المالك (زي: زياد، سلومة)'); return; }
+    if (form.kind === 'أخرى' && !form.custom.trim()) { flash('⚠️ اكتب اسم المعدة (مثال: عربية مية، جرار)'); return; }
+    const kind = form.kind === 'أخرى' ? form.custom.trim() : form.kind;
     try {
       if (form.id) {
-        updateMachinery(form.id, { kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
+        updateMachinery(form.id, { kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
         flash('✏️ اتعدلت المعدة');
       } else {
-        addMachinery({ kind: form.kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
+        addMachinery({ kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
         flash('🚜 اتضافت المعدة');
       }
-      setForm({ id: null, kind: 'لودر', owner: '', size: '', driver: '', notes: '' });
+      setForm({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
       window.setTimeout(() => { load(); }, 600);
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -397,6 +400,17 @@ export default function MachineryTab({ user }: Props) {
                 {KINDS.map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </label>
+            {form.kind === 'أخرى' && (
+              <label className="text-sm font-black text-slate-700">
+                ✍️ اسم المعدة
+                <input value={form.custom} onChange={e => setForm(f => ({ ...f, custom: e.target.value }))} placeholder="عربية مية، جرار، كارنية..."
+                  list="vsys-custom-kinds"
+                  className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
+                <datalist id="vsys-custom-kinds">
+                  {[...new Set(machinery.map(m => m.kind.trim()).filter(k => k && !KINDS.includes(k)))].map(k => <option key={k} value={k} />)}
+                </datalist>
+              </label>
+            )}
             <label className="text-sm font-black text-slate-700">
               المالك
               <input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="زياد، سلومة..." list="vsys-owners"
@@ -441,7 +455,7 @@ export default function MachineryTab({ user }: Props) {
                   </div>
                   {m.active && canManage && (
                     <div className="flex gap-1">
-                      <button type="button" onClick={() => setForm({ id: m.id, kind: m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
+                      <button type="button" onClick={() => setForm({ id: m.id, kind: KINDS.includes(m.kind) ? m.kind : 'أخرى', custom: KINDS.includes(m.kind) ? '' : m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
                       <button type="button" onClick={() => { if (window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت — تقدر ترجعها بالتعديل'); window.setTimeout(load, 500); } }}
                         className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>

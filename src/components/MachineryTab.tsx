@@ -10,6 +10,7 @@ import {
   clearAllMachinery,
   saveMachineryHours,
   refreshMachinery,
+  getSettings,
 } from '../lib/db';
 import { downloadCsv } from '../lib/exportCsv';
 
@@ -70,6 +71,8 @@ export default function MachineryTab({ user }: Props) {
   const [draft, setDraft] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState<{ id: number | null; kind: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', owner: '', size: '', driver: '', notes: '' });
+  const [deptName, setDeptName] = useState('قسم المساحة');
+  const [printOwner, setPrintOwner] = useState<string | null>(null);
 
   function flash(text: string) {
     setMsg(text);
@@ -78,6 +81,7 @@ export default function MachineryTab({ user }: Props) {
 
   function load() {
     setMachinery(getMachinery());
+    setDeptName(getSettings().department_name || 'قسم المساحة');
   }
 
   /** الساعات المحفوظة لليوم المختار */
@@ -146,6 +150,26 @@ export default function MachineryTab({ user }: Props) {
     const mon = all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + h.hours, 0);
     const total = all.reduce((s, h) => s + h.hours, 0);
     return { day, mon, total };
+  }
+
+  /** أيام الشغل في الشهر للمعدة */
+  function workDays(m: Machinery): number {
+    return getMachineryHours().filter(h => h.machineryId === m.id && h.date.startsWith(month) && h.hours > 0).length;
+  }
+
+  /** 👤 كشف الملاك: كل مالك ومعداته وإجمالي شهره */
+  const ownersList = [...new Set(histList.map(m => m.owner.trim()).filter(Boolean))]
+    .map(owner => {
+      const machines = histList.filter(m => m.owner.trim() === owner);
+      const mon = machines.reduce((s2, m) => s2 + totalsFor(m).mon, 0);
+      const total = machines.reduce((s2, m) => s2 + totalsFor(m).total, 0);
+      return { owner, machines, mon, total };
+    })
+    .sort((a, b) => b.mon - a.mon || a.owner.localeCompare(b.owner, 'ar'));
+
+  function exportOwners() {
+    const rows = ownersList.map(o => [o.owner, o.machines.length, o.mon, o.total]);
+    downloadCsv(`كشف_الملاك_${month}.csv`, ['المالك', 'عدد المعدات', `ساعات ${month}`, 'الإجمالي الكلي'], [...rows, ['الإجمالي', '', ownersList.reduce((s2, o) => s2 + o.mon, 0), ownersList.reduce((s2, o) => s2 + o.total, 0)]]);
   }
 
   function exportDay() {
@@ -307,6 +331,53 @@ export default function MachineryTab({ user }: Props) {
         </section>
       )}
 
+      {/* ===== 👤 كشف الملاك ===== */}
+      {histList.length > 0 && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xl font-black text-slate-900">👤 كشف الملاك — شهر {month}</h3>
+            <div className="flex gap-2">
+              <button type="button" onClick={exportOwners} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-sm">
+              <thead>
+                <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
+                  <th className="p-3">المالك</th>
+                  <th className="p-3">معداته</th>
+                  <th className="p-3">ساعات الشهر</th>
+                  <th className="p-3">الإجمالي الكلي</th>
+                  <th className="p-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ownersList.map(o => (
+                  <tr key={o.owner} className="border-b border-slate-100 font-bold text-slate-800">
+                    <td className="p-3 font-black">👤 {o.owner}</td>
+                    <td className="p-3 text-xs text-slate-500">{o.machines.length} معدة — {o.machines.map(mLabel).join('، ')}</td>
+                    <td className="p-3 font-black text-blue-700">{o.mon || '—'}</td>
+                    <td className="p-3">{o.total || '—'}</td>
+                    <td className="p-3">
+                      <button type="button" onClick={() => setPrintOwner(o.owner)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">🖨️ كشف للتوقيع</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-black text-slate-900">
+                  <td className="p-3">الإجمالي</td>
+                  <td className="p-3"></td>
+                  <td className="p-3">{ownersList.reduce((s2, o) => s2 + o.mon, 0) || '—'}</td>
+                  <td className="p-3">{ownersList.reduce((s2, o) => s2 + o.total, 0) || '—'}</td>
+                  <td className="p-3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* ===== إدارة المعدات ===== */}
       {(
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -383,6 +454,69 @@ export default function MachineryTab({ user }: Props) {
             </div>
           )}
         </section>
+      )}
+
+      {/* ===== 🖨️ كشف مالك للتوقيع ===== */}
+      {printOwner && (
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintOwner(null)}>
+          <div className="mx-auto max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex gap-2 print:hidden">
+              <button type="button" onClick={() => window.print()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة / حفظ PDF</button>
+              <button type="button" onClick={() => setPrintOwner(null)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100">إغلاق</button>
+            </div>
+            {(() => {
+              const o = ownersList.find(x => x.owner === printOwner);
+              if (!o) return null;
+              return (
+                <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl" dir="rtl">
+                  <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
+                    <div className="text-lg font-black">{deptName}</div>
+                    <div className="mt-1 text-2xl font-black">كشف ساعات معدات — شهر {month}</div>
+                  </div>
+                  <div className="mt-4 space-y-2 text-base font-bold">
+                    <div>👤 المالك: <b className="text-lg">{o.owner}</b></div>
+                    <div>🚜 عدد المعدات: <b>{o.machines.length}</b></div>
+                    <div className="flex justify-between border-b border-dashed border-slate-300 pb-1">
+                      <span>إجمالي ساعات الشهر: <b>{o.mon}</b></span>
+                      <span>الإجمالي الكلي: <b>{o.total}</b></span>
+                    </div>
+                  </div>
+                  <table className="mt-4 w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-400 p-2">م</th>
+                        <th className="border border-slate-400 p-2">المعدة</th>
+                        <th className="border border-slate-400 p-2">السواق</th>
+                        <th className="border border-slate-400 p-2">أيام الشغل</th>
+                        <th className="border border-slate-400 p-2">ساعات الشهر</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {o.machines.map((m, i) => (
+                        <tr key={m.id}>
+                          <td className="border border-slate-400 p-2 text-center">{i + 1}</td>
+                          <td className="border border-slate-400 p-2 font-black">{m.kind}{m.size ? ` ${m.size}` : ''}</td>
+                          <td className="border border-slate-400 p-2">{m.driver || '—'}</td>
+                          <td className="border border-slate-400 p-2 text-center">{workDays(m)}</td>
+                          <td className="border border-slate-400 p-2 text-center font-black">{totalsFor(m).mon}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-slate-50">
+                        <td className="border border-slate-400 p-2 text-center font-black" colSpan={4}>الإجمالي</td>
+                        <td className="border border-slate-400 p-2 text-center font-black">{o.mon}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div className="mt-10 grid grid-cols-3 gap-4 text-center text-sm font-black">
+                    <div className="border-t border-slate-800 pt-2">مدير المعدات</div>
+                    <div className="border-t border-slate-800 pt-2">السواق</div>
+                    <div className="border-t border-slate-800 pt-2">المالك</div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
       )}
     </div>
   );

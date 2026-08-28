@@ -24,8 +24,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       } else {
         setError('بيانات الدخول غير صحيحة');
       }
-    } catch {
-      setError('حدث خطأ أثناء تسجيل الدخول');
+    } catch (err: any) {
+      const m = String(err?.message || '');
+      if (m === 'SERVICE_DOWN') setError('⛔ خدمة قاعدة البيانات متوقفة مؤقتًا (حصة النقل) — بترجع تلقائيًا أول الشهر');
+      else if (m === 'too_many_attempts' || m.includes('محاولات كتيرة')) setError('⏳ محاولات دخول كتيرة — استنى دقيقة وحاول تاني');
+      else setError('حدث خطأ أثناء تسجيل الدخول — تأكد من الإنترنت وحاول تاني');
     }
     setBusy(false);
   }

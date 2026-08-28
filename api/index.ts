@@ -22,8 +22,8 @@ export const config = { runtime: 'edge' };
 
 // 🆕 Rate Limiting بسيط ضد brute force على /login
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 60_000;
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 120_000;
 
 function checkRateLimit(ip: string): { allowed: boolean; wait?: number } {
   const now = Date.now();
@@ -213,6 +213,15 @@ async function ensureEquipmentTables(sql: any) {
     )`;
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS driver TEXT`;
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false`;
+
+  // 🛡️ نسخ احتياطية يومية أوتوماتيك (snapshot كامل داخل القاعدة)
+  await sql`
+    CREATE TABLE IF NOT EXISTS backups (
+      id SERIAL PRIMARY KEY,
+      day DATE NOT NULL UNIQUE,
+      payload TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`;
   await sql`
     CREATE TABLE IF NOT EXISTS machinery_hours (
       id SERIAL PRIMARY KEY,
@@ -295,6 +304,7 @@ export default async function handler(req: Request) {
         return json({ error: 'invalid_credentials' }, 401);
       }
       loginAttempts.delete(ip);
+      try { await sql`DELETE FROM sessions WHERE expires_at < NOW()`; } catch {}
 
       const { password, ...safe } = emp as any;
 
@@ -309,6 +319,52 @@ export default async function handler(req: Request) {
         user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' },
         sessionId
       });
+    }
+
+    if (path === 'backup' && method === 'POST') {
+      // 🛡️ إنشاء نسخة احتياطية كاملة (أدمن) — واحدة في اليوم تلقائيًا
+      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      const today = new Date().toISOString().slice(0, 10);
+      const dup = await sql`SELECT id FROM backups WHERE day = ${today}::date LIMIT 1`;
+      if ((dup as any[]).length > 0) return json({ ok: true, skipped: true });
+      const [emps, locs, att, vacs, locks, eqs, cos, maint, mach, mhours, sets] = await Promise.all([
+        sql`SELECT * FROM employees ORDER BY id`,
+        sql`SELECT * FROM work_locations ORDER BY id`,
+        sql`SELECT * FROM attendance ORDER BY id`,
+        sql`SELECT * FROM vacations ORDER BY id`,
+        sql`SELECT * FROM month_locks ORDER BY id`,
+        sql`SELECT * FROM equipment ORDER BY id`,
+        sql`SELECT * FROM equipment_checkouts ORDER BY id`,
+        sql`SELECT * FROM equipment_maintenance ORDER BY id`,
+        sql`SELECT * FROM machinery ORDER BY id`,
+        sql`SELECT * FROM machinery_hours ORDER BY id`,
+        sql`SELECT key, value FROM settings`,
+      ]);
+      const payload = JSON.stringify({
+        at: new Date().toISOString(),
+        employees: emps, work_locations: locs, attendance: att, vacations: vacs,
+        month_locks: locks, equipment: eqs, equipment_checkouts: cos,
+        equipment_maintenance: maint, machinery: mach, machinery_hours: mhours, settings: sets,
+      });
+      await sql`INSERT INTO backups (day, payload) VALUES (${today}::date, ${payload}) ON CONFLICT (day) DO NOTHING`;
+      // نحتفظ بآخر 14 نسخة
+      await sql`DELETE FROM backups WHERE id NOT IN (SELECT id FROM backups ORDER BY id DESC LIMIT 14)`;
+      return json({ ok: true, bytes: payload.length });
+    }
+
+    if (path === 'backup' && method === 'GET') {
+      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      const rows = await sql`SELECT id, day, length(payload) AS bytes, created_at FROM backups ORDER BY id DESC`;
+      return json(rows);
+    }
+
+    if (path.startsWith('backup/') && method === 'GET') {
+      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      const id = Number(path.split('/')[1]);
+      const rows = await sql`SELECT payload FROM backups WHERE id = ${id} LIMIT 1`;
+      const r0 = (rows as any[])[0];
+      if (!r0) return json({ error: 'not_found' }, 404);
+      return new Response(r0.payload, { headers: { 'content-type': 'application/json; charset=utf-8' } });
     }
 
     if (path === 'version' && method === 'GET') {

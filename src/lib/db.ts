@@ -824,7 +824,9 @@ export async function login(username: string, password: string): Promise<Employe
         } catch {}
         return user;
       }
-    } catch (e) {
+    } catch (e: any) {
+      // ⚠️ الخدمة متوقفة أو محاولات كتيرة — قول الحقيقة ولا تقول "بيانات غير صحيحة"
+      if (e?.message === 'SERVICE_DOWN' || e?.message === 'too_many_attempts' || String(e?.message || '').includes('محاولات كتيرة')) throw e;
       console.warn('remote login failed, trying local', e);
     }
   }

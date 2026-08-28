@@ -12,6 +12,7 @@ import {
 } from './lib/db';
 import { getManagedEmployees } from './lib/permissions';
 import { api } from './lib/api';
+const backupDone = { v: false };
 import {
   requestPermission,
   pollManagerAlerts,
@@ -244,6 +245,14 @@ export default function App() {
     }
     boot();
   }, []);
+
+  // 🛡️ نسخة احتياطية تلقائية: أول ما الأدمن يفتح النظام في اليوم (السيرفر بيرفض لو اليوم اتاخد)
+  useEffect(() => {
+    if (user?.role === 'admin' && !backupDone.v) {
+      backupDone.v = true;
+      api.createBackup().catch(() => {});
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     updatePendingCount();

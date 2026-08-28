@@ -25,6 +25,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    const msg = String(err.message || '');
+    if (err.error === 'server_error' || res.status === 402 || res.status >= 500 || msg.includes('quota')) {
+      throw new Error('SERVICE_DOWN');
+    }
     throw new Error(err.error || 'API request failed');
   }
   return res.json();
@@ -164,6 +168,13 @@ export const api = {
   },
   async decideEquipmentReturn(payload: { id: number; approve: boolean; condition?: string }) {
     return request('/equipment-checkouts/return-decide', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // 🛡️ النسخ الاحتياطية
+  async createBackup(): Promise<{ ok: boolean; skipped?: boolean; bytes?: number }> {
+    return request('/backup', { method: 'POST' });
+  },
+  async listBackups() {
+    return request<{ id: number; day: string; bytes: number; created_at: string }[]>('/backup');
   },
   // 🔋 بصمة نسخة الداتا (خفيفة جدًا)
   async getVersion(): Promise<string | null> {

@@ -312,7 +312,11 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'version' && method === 'GET') {
-      // 🔋 خفيف جدًا: بصمة تغيّر الداتا — العميل يسألها بدل سحب كل حاجة
+      // 🔋 خفيف جدًا: بصمة تغيّر الداتا — لكل مستخدم حسب دوره
+      // (الموظف: بياناته هو بس + الجداول المشتركة → بصمة غيره ما بتزعجوش)
+      const vu = await getSessionUser(sql, req);
+      if (!vu) return json({ error: 'unauthorized' }, 401);
+      const isMgr = vu.role === 'admin' || vu.role === 'manager';
       const r = await sql`
         SELECT
           (SELECT count(*) FROM employees)::text || ':' || (SELECT COALESCE(max(id),0) FROM employees)::text || ':' ||
@@ -329,7 +333,25 @@ export default async function handler(req: Request) {
           (SELECT count(*) FROM machinery_hours)::text || ':' || (SELECT COALESCE(sum(hashtext(concat_ws('|', machinery_id, date::text, hours::text))),0) FROM machinery_hours)::text || ':' ||
           (SELECT count(*) FROM notifications)::text || ':' ||
           (SELECT count(*) FROM month_locks)::text || ':' ||
-          (SELECT COALESCE(sum(length(value)),0) FROM settings)::text
+          (SELECT COALESCE(sum(length(value)),0) FROM settings)::text || ':' ||
+          CASE WHEN ${isMgr} THEN
+            (SELECT count(*) FROM attendance)::text || ':' || (SELECT COALESCE(max(id),0) FROM attendance)::text
+          ELSE
+            (SELECT count(*) FROM attendance WHERE employee_id = ${vu.id})::text || ':' ||
+            (SELECT COALESCE(max(id),0) FROM attendance WHERE employee_id = ${vu.id})::text
+          END || ':' ||
+          CASE WHEN ${isMgr} THEN
+            (SELECT count(*) FROM vacations)::text || ':' || (SELECT COALESCE(max(id),0) FROM vacations)::text
+          ELSE
+            (SELECT count(*) FROM vacations WHERE employee_id = ${vu.id})::text || ':' ||
+            (SELECT COALESCE(max(id),0) FROM vacations WHERE employee_id = ${vu.id})::text
+          END || ':' ||
+          CASE WHEN ${isMgr} THEN
+            (SELECT count(*) FROM equipment_checkouts)::text || ':' || (SELECT COALESCE(max(id),0) FROM equipment_checkouts)::text
+          ELSE
+            (SELECT count(*) FROM equipment_checkouts WHERE surveyor_id = ${vu.id} OR assistant_id = ${vu.id})::text || ':' ||
+            (SELECT COALESCE(max(id),0) FROM equipment_checkouts WHERE surveyor_id = ${vu.id} OR assistant_id = ${vu.id})::text
+          END
         AS v`;
       return json({ v: String((r[0] as any).v ?? '') });
     }
@@ -391,12 +413,22 @@ export default async function handler(req: Request) {
           lockedAt: r.locked_at,
           notes: r.notes,
         })),
-        checkInAttempts: (attempts as any[]).map(mapAttempt).filter(Boolean),
+        checkInAttempts: (user.role === 'admin' || user.role === 'manager')
+          ? (attempts as any[]).map(mapAttempt).filter(Boolean)
+          : [],
         notifications: (notifications as any[]).map(mapNotification).filter(Boolean),
         equipment: (equipmentRows as any[]).map(mapEquipment).filter(Boolean),
-        equipmentCheckouts: (checkoutRows as any[]).map(mapCheckout).filter(Boolean),
+        equipmentCheckouts: (user.role === 'admin' || user.role === 'manager')
+          ? (checkoutRows as any[]).map(mapCheckout).filter(Boolean)
+          : (checkoutRows as any[]).map(mapCheckout).filter(Boolean)
+              .filter((c: any) => !c.returnDate || c.surveyorId === user.id || c.assistantId === user.id),
         machinery: (machineryRows as any[]).map(mapMachinery).filter(Boolean),
-        machineryHours: (machineryHoursRows as any[]).map(mapMachineryHours).filter(Boolean),
+        machineryHours: (user.role === 'admin' || user.role === 'manager')
+          ? (machineryHoursRows as any[]).map(mapMachineryHours).filter(Boolean)
+          : (() => {
+              const cut = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+              return (machineryHoursRows as any[]).map(mapMachineryHours).filter(Boolean).filter((h: any) => String(h.date) >= cut);
+            })(),
         directory,
         settings,
       });
@@ -1003,8 +1035,13 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment-checkouts' && method === 'GET') {
-      const rows = await sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`;
-      return json((rows as any[]).map(mapCheckout).filter(Boolean));
+      const u2 = await getSessionUser(sql, req);
+      if (!u2) return json({ error: 'unauthorized' }, 401);
+      let rows: any[] = (await sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`) as any[];
+      if (u2.role !== 'admin' && u2.role !== 'manager') {
+        rows = rows.filter((c: any) => !c.return_date || c.surveyor_id === u2.id || c.assistant_id === u2.id);
+      }
+      return json(rows.map(mapCheckout).filter(Boolean));
     }
 
     if (path === 'equipment-checkouts' && method === 'POST') {
@@ -1151,7 +1188,12 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery-hours' && method === 'GET') {
-      const rows = await sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '200 days' ORDER BY date DESC, id DESC`;
+      const u3 = await getSessionUser(sql, req);
+      if (!u3) return json({ error: 'unauthorized' }, 401);
+      const days = (u3.role === 'admin' || u3.role === 'manager') ? '200 days' : '120 days';
+      const rows = await sql.query(
+        `SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '${days}' ORDER BY date DESC, id DESC`, [],
+      );
       return json((rows as any[]).map(mapMachineryHours).filter(Boolean));
     }
 

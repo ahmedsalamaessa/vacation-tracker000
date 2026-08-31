@@ -102,9 +102,9 @@ function isAdmin(user: any): boolean {
   return user?.role === 'admin';
 }
 
-/** 👑 المالك الخفي */
+/** 👑 المالك الخفي (يقرأ الصفة من الصيغتين — الخام والمحوّلة) */
 function isOwner(user: any): boolean {
-  return Boolean(user?.is_owner);
+  return Boolean(user?.isOwner ?? user?.is_owner);
 }
 
 function hasPerm(user: any, perm: string): boolean {

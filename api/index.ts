@@ -213,6 +213,7 @@ async function ensureEquipmentTables(sql: any) {
     )`;
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS driver TEXT`;
   await sql`ALTER TABLE machinery ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes TEXT`;
 
   // 🛡️ نسخ احتياطية يومية أوتوماتيك (snapshot كامل داخل القاعدة)
   await sql`
@@ -1265,9 +1266,9 @@ export default async function handler(req: Request) {
         if (!mid) continue;
         if (hours > 0) {
           await sql`
-            INSERT INTO machinery_hours (machinery_id, date, hours, created_by)
-            VALUES (${mid}, ${date}, ${hours}, ${authUser.id})
-            ON CONFLICT (machinery_id, date) DO UPDATE SET hours = EXCLUDED.hours, created_by = EXCLUDED.created_by`;
+            INSERT INTO machinery_hours (machinery_id, date, hours, notes, created_by)
+            VALUES (${mid}, ${date}, ${hours}, ${en.notes ?? null}, ${authUser.id})
+            ON CONFLICT (machinery_id, date) DO UPDATE SET hours = EXCLUDED.hours, notes = EXCLUDED.notes, created_by = EXCLUDED.created_by`;
           saved++;
         } else {
           await sql`DELETE FROM machinery_hours WHERE machinery_id = ${mid} AND date = ${date}`;

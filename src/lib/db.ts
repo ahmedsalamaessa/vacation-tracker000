@@ -1284,16 +1284,16 @@ export function clearAllMachinery(): void {
 }
 
 /** حفظ ساعات يوم كامل: القيمة 0 = مسح السجل */
-export function saveMachineryHours(date: string, entries: { machineryId: number; hours: number }[]): { saved: number } {
+export function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; notes?: string }[]): { saved: number } {
   const all = getMachineryHours();
   let saved = 0;
   for (const en of entries) {
     const i = all.findIndex(h => h.machineryId === en.machineryId && h.date === date);
     if (en.hours > 0) {
       if (i === -1) {
-        all.push({ id: Math.max(0, ...all.map(h => h.id)) + 1, machineryId: en.machineryId, date, hours: en.hours, createdBy: null, createdAt: new Date().toISOString() });
+        all.push({ id: Math.max(0, ...all.map(h => h.id)) + 1, machineryId: en.machineryId, date, hours: en.hours, notes: en.notes ?? null, createdBy: null, createdAt: new Date().toISOString() });
       } else {
-        all[i] = { ...all[i], hours: en.hours };
+        all[i] = { ...all[i], hours: en.hours, notes: en.notes ?? null };
       }
       saved++;
     } else if (i !== -1) {

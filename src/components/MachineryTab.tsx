@@ -71,6 +71,7 @@ export default function MachineryTab({ user }: Props) {
   const [dayDate, setDayDate] = useState(today);
   const [month, setMonth] = useState(monthNow);
   const [draft, setDraft] = useState<Record<number, string>>({});
+  const [draftNotes, setDraftNotes] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState<{ id: number | null; kind: string; custom: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
   const [deptName, setDeptName] = useState('قسم المساحة');
@@ -95,18 +96,27 @@ export default function MachineryTab({ user }: Props) {
     return d;
   }
 
+  /** تقارير الشغل المحفوظة لليوم المختار */
+  function notesFor(date: string): Record<number, string> {
+    const d: Record<number, string> = {};
+    for (const h of getMachineryHours()) {
+      if (h.date === date && h.notes) d[h.machineryId] = h.notes || '';
+    }
+    return d;
+  }
+
   useEffect(() => {
     load();
-    setDraft(draftFor(dayDate));
+    setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
     refreshMachinery();
-    const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); }, 1500);
-    const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); }, 4000);
+    const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
+    const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    setDraft(draftFor(dayDate));
+    setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayDate]);
 
@@ -117,11 +127,11 @@ export default function MachineryTab({ user }: Props) {
 
   function saveDay() {
     try {
-      const entries = active.map(m => ({ machineryId: m.id, hours: parseFloat(draft[m.id] || '') || 0 }));
+      const entries = active.map(m => ({ machineryId: m.id, hours: parseFloat(draft[m.id] || '') || 0, notes: (draftNotes[m.id] || '').trim() }));
       const filled = entries.filter(e => e.hours > 0).length;
       const r = saveMachineryHours(dayDate, entries);
       flash(`💾 اتحفظت ساعات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
-      window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); }, 800);
+      window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 800);
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
     }
@@ -177,8 +187,8 @@ export default function MachineryTab({ user }: Props) {
   }
 
   function exportDay() {
-    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0]);
-    downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات'], rows);
+    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0, (draftNotes[m.id] || '').trim()]);
+    downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'تقرير الشغل'], rows);
   }
 
   function exportMonth() {
@@ -242,7 +252,7 @@ export default function MachineryTab({ user }: Props) {
                   <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
                     <th className="p-3">المعدة</th>
                     <th className="p-3 w-40">⏱️ الساعات</th>
-                    <th className="p-3">ملاحظات</th>
+                    <th className="p-3">📝 تقرير الشغل</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,7 +268,10 @@ export default function MachineryTab({ user }: Props) {
                             <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
                               placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
                           </td>
-                          <td className="p-3 text-xs text-slate-500">{m.notes || ''}</td>
+                          <td className="p-3">
+                            <input type="text" value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
+                              placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)" className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none focus:border-slate-900" />
+                          </td>
                         </tr>
                       ))}
                     </React.Fragment>

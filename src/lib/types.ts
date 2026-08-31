@@ -235,6 +235,7 @@ export interface MachineryHours {
   machineryId: number;
   date: string;
   hours: number;
+  notes?: string | null;
   createdBy: number | null;
   createdAt: string;
 }

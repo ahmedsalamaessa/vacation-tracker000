@@ -223,6 +223,7 @@ export function mapMachineryHours(r: any) {
     machineryId: r.machinery_id,
     date: toDateOnly(r.date),
     hours: Number(r.hours) || 0,
+    notes: r.notes ?? null,
     createdBy: r.created_by ?? null,
     createdAt: r.created_at,
   };

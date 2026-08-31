@@ -46,6 +46,7 @@ export function mapEmployee(r: any) {
   if (!r) return null;
   return {
     id: r.id,
+    isOwner: Boolean(r.is_owner),
     name: r.name,
     username: r.username,
     jobTitle: r.job_title,

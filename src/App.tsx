@@ -520,7 +520,7 @@ export default function App() {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <p className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
-                {user.name}
+                {(user as any).isOwner ? '👑 ' : ''}{user.name}
                 <span className="mx-1">•</span>
                 {roleLabel(user.role)}
               </p>

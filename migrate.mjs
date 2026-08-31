@@ -61,7 +61,7 @@ async function main() {
   for (const e of oldEmps) {
     const target = empMap.get(e.id);
     const exists = byUsername.has(e.username);
-    const c = await cols(oldSql, 'employees');
+    const c = (await cols(oldSql, 'employees')).filter(k => k !== 'is_owner'); // 👑 صفة المالك محلية — مش بتتنقل
     const row = {}; for (const k of c) row[k] = e[k];
     row.id = target;
     if (exists) {

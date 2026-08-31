@@ -20,6 +20,7 @@ export interface Permissions {
 
 export interface Employee extends Permissions {
   id: number;
+  isOwner?: boolean;
   name: string;
   username: string;
   jobTitle: string | null;

@@ -102,6 +102,11 @@ function isAdmin(user: any): boolean {
   return user?.role === 'admin';
 }
 
+/** 👑 المالك الخفي */
+function isOwner(user: any): boolean {
+  return Boolean(user?.is_owner);
+}
+
 function hasPerm(user: any, perm: string): boolean {
   if (isAdmin(user)) return true;
   return Boolean(user?.[perm]);
@@ -201,6 +206,9 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_notes TEXT`;
   // 🏢 موقع العدة: كل موقع يشوف عدته بس
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS site_id INT`;
+  // 👑 المالك الخفي: أعلى من الأدمن — مخفي عن الجميع
+  await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_owner BOOLEAN DEFAULT false`;
+  await sql`UPDATE employees SET is_owner = true WHERE username = 'admin' AND is_owner = false`
 
   // 🚜 المعدات الثقيلة: ساعات الشغل اليومية
   await sql`
@@ -326,7 +334,7 @@ export default async function handler(req: Request) {
 
     if (path === 'backup' && method === 'POST') {
       // 🛡️ إنشاء نسخة احتياطية كاملة (أدمن) — واحدة في اليوم تلقائيًا
-      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      if (!isOwner(authUser)) return forbidden('النسخ الاحتياطي من المالك بس');
       const today = new Date().toISOString().slice(0, 10);
       const dup = await sql`SELECT id FROM backups WHERE day = ${today}::date LIMIT 1`;
       if ((dup as any[]).length > 0) return json({ ok: true, skipped: true });
@@ -356,13 +364,13 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'backup' && method === 'GET') {
-      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      if (!isOwner(authUser)) return forbidden('النسخ الاحتياطي من المالك بس');
       const rows = await sql`SELECT id, day, length(payload) AS bytes, created_at FROM backups ORDER BY id DESC`;
       return json(rows);
     }
 
     if (path.startsWith('backup/') && method === 'GET') {
-      if (authUser.role !== 'admin') return forbidden('النسخ الاحتياطي من الأدمن بس');
+      if (!isOwner(authUser)) return forbidden('النسخ الاحتياطي من المالك بس');
       const id = Number(path.split('/')[1]);
       const rows = await sql`SELECT payload FROM backups WHERE id = ${id} LIMIT 1`;
       const r0 = (rows as any[])[0];
@@ -436,6 +444,8 @@ export default async function handler(req: Request) {
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
+      // 👑 المالك مش بيظهر لأي حد غير نفسه
+      if (!isOwner(user)) filteredEmployees = filteredEmployees.filter((e: any) => !e?.isOwner);
       if (user.role === 'employee') {
         filteredEmployees = filteredEmployees.filter((e: any) => e && e.id === user.id);
       } else if (user.role === 'manager') {
@@ -452,7 +462,9 @@ export default async function handler(req: Request) {
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
 
       // 📇 دليل الأسماء للكل (اسم ولقب بس) — عشان قوائم المساحين والمساعدين تظهر عند كل الموظفين
-      const directory = (employees as any[]).map(mapEmployee).filter(Boolean)
+      let directorySrc: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
+      if (!isOwner(user)) directorySrc = directorySrc.filter((e: any) => !e?.isOwner);
+      const directory = directorySrc
         .map((e: any) => ({ id: e.id, name: e.name, jobTitle: e.jobTitle, role: e.role, active: e.active !== false }));
 
       return json({
@@ -498,6 +510,7 @@ export default async function handler(req: Request) {
       if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM employees ORDER BY id`;
       let filteredRows = (rows as any[]);
+      if (!isOwner(user)) filteredRows = filteredRows.filter((r: any) => !r.is_owner);
       if (user.role === 'employee') {
         filteredRows = filteredRows.filter((r: any) => r.id === user.id);
       } else if (user.role === 'manager') {
@@ -553,6 +566,11 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('employees/') && method === 'PUT') {
+      {
+        const tid = Number(path.split('/')[1]);
+        const tRow = await sql`SELECT is_owner FROM employees WHERE id = ${tid} LIMIT 1`;
+        if ((tRow as any[])[0]?.is_owner && !isOwner(authUser)) return forbidden('الحساب ده محمي — مينفعش يتعديل');
+      }
       // 🛡️ إدارة الموظفين
       if (!hasPerm(authUser, 'canManageEmployees')) return forbidden('صلاحية إدارة الموظفين مطلوبة');
       const id = Number(path.split('/')[1]);
@@ -606,6 +624,10 @@ export default async function handler(req: Request) {
       // 🛡️ إدارة الموظفين
       if (!hasPerm(authUser, 'canManageEmployees')) return forbidden('صلاحية إدارة الموظفين مطلوبة');
       const id = Number(path.split('/')[1]);
+      {
+        const tRow = await sql`SELECT is_owner FROM employees WHERE id = ${id} LIMIT 1`;
+        if ((tRow as any[])[0]?.is_owner && !isOwner(authUser)) return forbidden('الحساب ده محمي — مينفعش يتوقف');
+      }
       await sql`UPDATE employees SET active = false, updated_at = NOW() WHERE id = ${id}`;
       return json({ ok: true });
     }
@@ -895,8 +917,14 @@ export default async function handler(req: Request) {
     if (path === 'audit-logs' && method === 'GET') {
       // 🛡️ سجل التدقيق
       if (!hasPerm(authUser, 'canViewAuditLog')) return forbidden('صلاحية سجل التدقيق مطلوبة');
-      const rows = await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`;
-      return json((rows as any[]).map(mapAudit).filter(Boolean));
+      let aRows: any[] = (await sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500`) as any[];
+      // 👑 أفعال المالك مش بتظهر لغير المالك
+      if (!isOwner(authUser)) {
+        const owners = await sql`SELECT id FROM employees WHERE is_owner = true`;
+        const ownerIds = new Set((owners as any[]).map((r: any) => r.id));
+        aRows = aRows.filter((r: any) => !ownerIds.has(r.actor_id));
+      }
+      return json(aRows.map(mapAudit).filter(Boolean));
     }
 
     if (path === 'audit-logs' && method === 'POST') {
@@ -1085,7 +1113,7 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('equipment/') && method === 'DELETE') {
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      if (!isOwner(authUser)) return forbidden('الحذف النهائي للعدة من المالك بس');
       const id = Number(path.split('/')[1]);
       const cur = await sql`SELECT status FROM equipment WHERE id = ${id}`;
       if ((cur as any[]).length === 0) return json({ error: 'not_found' }, 404);
@@ -1232,16 +1260,16 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('machinery/') && method === 'DELETE') {
-      // 🗑️ مسح خالص: أدمن بس — بيتشال من الشغل الجديد وساعاته القديمة بتفضل محفوظة
-      if (authUser.role !== 'admin') return forbidden('مسح المعدات من الأدمن بس');
+      // 🗑️ مسح خالص: المالك بس — بيتشال من الشغل الجديد وساعاته القديمة بتفضل محفوظة
+      if (!isOwner(authUser)) return forbidden('مسح المعدات من المالك بس');
       const id = Number(path.split('/')[1]);
       await sql`UPDATE machinery SET active = false, deleted = true WHERE id = ${id}`;
       return json({ ok: true });
     }
 
     if (path === 'machinery-all' && method === 'DELETE') {
-      // 🧹 تفريغ كامل: أدمن بس
-      if (authUser.role !== 'admin') return forbidden('تفريغ المعدات من الأدمن بس');
+      // 🧹 تفريغ كامل: المالك بس
+      if (!isOwner(authUser)) return forbidden('تفريغ المعدات من المالك بس');
       await sql`DELETE FROM machinery_hours`;
       await sql`DELETE FROM machinery`;
       return json({ ok: true });

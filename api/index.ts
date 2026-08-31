@@ -199,6 +199,8 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_date DATE`;
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_condition TEXT`;
   await sql`ALTER TABLE equipment_checkouts ADD COLUMN IF NOT EXISTS return_req_notes TEXT`;
+  // 🏢 موقع العدة: كل موقع يشوف عدته بس
+  await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS site_id INT`;
 
   // 🚜 المعدات الثقيلة: ساعات الشغل اليومية
   await sql`
@@ -1053,8 +1055,8 @@ export default async function handler(req: Request) {
       const dupe = await sql`SELECT id FROM equipment WHERE serial_number = ${String(b.serialNumber).trim()}`;
       if ((dupe as any[]).length > 0) return json({ error: 'duplicate', message: 'السيريال نمبر ده مسجل قبل كده' }, 409);
       const rows = await sql`
-        INSERT INTO equipment (name, kind, serial_number, status, notes, active)
-        VALUES (${b.name}, ${b.kind || 'أخرى'}, ${String(b.serialNumber).trim()}, 'متاحة', ${b.notes ?? null}, ${b.active !== false})
+        INSERT INTO equipment (name, kind, serial_number, status, notes, active, site_id)
+        VALUES (${b.name}, ${b.kind || 'أخرى'}, ${String(b.serialNumber).trim()}, 'متاحة', ${b.notes ?? null}, ${b.active !== false}, ${b.siteId ?? null})
         RETURNING *`;
       return json(mapEquipment((rows as any[])[0]), 201);
     }
@@ -1074,6 +1076,7 @@ export default async function handler(req: Request) {
           status = ${b.status ?? c.status},
           notes = ${b.notes !== undefined ? b.notes : c.notes},
           active = ${b.active !== undefined ? b.active : c.active},
+          site_id = ${b.siteId !== undefined ? (b.siteId ?? null) : c.site_id},
           custody_employee_id = ${b.custodyEmployeeId !== undefined ? (b.custodyEmployeeId ?? null) : c.custody_employee_id},
           custody_since = ${b.custodySince !== undefined ? (b.custodySince ?? null) : c.custody_since},
           custody_notes = ${b.custodyNotes !== undefined ? (b.custodyNotes ?? null) : c.custody_notes}

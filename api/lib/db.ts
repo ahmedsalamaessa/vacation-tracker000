@@ -239,6 +239,7 @@ export function mapEquipment(r: any) {
     status: r.status,
     notes: r.notes,
     active: r.active,
+    siteId: r.site_id ?? null,
     custodyEmployeeId: r.custody_employee_id ?? null,
     custodySince: r.custody_since ? toDateOnly(r.custody_since) : null,
     custodyNotes: r.custody_notes ?? null,

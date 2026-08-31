@@ -211,6 +211,7 @@ export interface Equipment {
   status: EquipmentStatus;
   notes?: string | null;
   active: boolean;
+  siteId?: number | null;
   custodyEmployeeId?: number | null;
   custodySince?: string | null;
   custodyNotes?: string | null;

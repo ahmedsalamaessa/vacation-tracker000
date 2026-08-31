@@ -32,7 +32,10 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [msg, setMsg] = useState('');
 
   // فورم إضافة/تعديل جهاز
-  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '' });
+  const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '', siteId: 0 });
+  // 🏢 المواقع: كل موقع يشوف عدته بس (0 = الكل للإدارة)
+  const [siteSel, setSiteSel] = useState(0);
+  const [moveSite, setMoveSite] = useState(0);
   // 🔧 الصيانة
   const [maintenance, setMaintenanceState] = useState<EquipmentMaintenance[]>([]);
   const [maintForm, setMaintForm] = useState({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
@@ -105,18 +108,29 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   }
 
   // ============ المعدات ============
+  /** 📦 نقل كل المعروضين للموقع المختار (توزيع العدة على المواقع في ضغطتين) */
+  function moveVisibleToSite() {
+    if (!moveSite) { flash('⚠️ اختار الموقع اللي هتنقلهم له'); return; }
+    let n = 0;
+    for (const eq of visibleEquipment) {
+      try { updateEquipment(eq.id, { siteId: moveSite }); n++; } catch { /* عدّي */ }
+    }
+    flash(`📦 اتنقلت ${n} جهاز للموقع: ${siteName(moveSite)}`);
+    window.setTimeout(reload, 700);
+  }
+
   function submitDevice(e: React.FormEvent) {
     e.preventDefault();
     try {
       if (!eqForm.name.trim() || !eqForm.serialNumber.trim()) { flash('⚠️ الاسم والسيريال نمبر مطلوبين'); return; }
       if (eqForm.id) {
-        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes });
+        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, siteId: eqForm.siteId || null });
         flash('✅ تم تعديل الجهاز');
       } else {
-        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true });
+        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, siteId: eqForm.siteId || null });
         flash('✅ تم تسجيل الجهاز');
       }
-      setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '' });
+      setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '', siteId: siteSel > 0 ? siteSel : 0 });
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
@@ -246,7 +260,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   function exportDevices() {
     downloadCsv(`سجل_المعدات_${today}.csv`,
       ['النوع', 'الجهاز', 'السيريال', 'الحالة', 'العهدة عند', 'خارجة مع', 'ملاحظات'],
-      equipment.map(eq => {
+      visibleEquipment.map(eq => {
         const openCo = openCheckouts.find(c => c.equipmentId === eq.id);
         return [
           eq.kind, eq.name, eq.serialNumber,
@@ -315,8 +329,17 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     }
   }
 
-  const available = equipment.filter(e => e.active && e.status === 'متاحة');
-  const openCheckouts = checkouts.filter(c => !c.returnDate);
+  // 🏢 العدة الظاهرة حسب الموقع
+  const mySiteIds = user.locationIds || [];
+  const visibleEquipment = canManage
+    ? (siteSel === 0 ? equipment : siteSel === -1 ? equipment.filter(e => !e.siteId) : equipment.filter(e => e.siteId === siteSel))
+    : (mySiteIds.length === 0 ? equipment : equipment.filter(e => !e.siteId || mySiteIds.includes(e.siteId as number)));
+  const visEqIds = new Set(visibleEquipment.map(e => e.id));
+  const visCheckouts = checkouts.filter(c => visEqIds.has(c.equipmentId));
+  const siteName = (id: number | null | undefined) => (id ? (locations.find(l => l.id === id)?.name || '') : '');
+
+  const available = visibleEquipment.filter(e => e.active && e.status === 'متاحة');
+  const openCheckouts = visCheckouts.filter(c => !c.returnDate);
   const myOpenList = canManage ? openCheckouts : openCheckouts.filter(c => c.surveyorId === user.id || c.assistantId === user.id);
   const surveyorsWithOpen = canManage
     ? employees.filter(emp => openCheckouts.some(c => c.surveyorId === emp.id))
@@ -336,13 +359,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       setAutoFilled(true);
     }
   }, [openCheckouts, autoFilled, canManage]);
-  const history = checkouts.filter(c => c.returnDate).slice(0, 40);
+  const history = visCheckouts.filter(c => c.returnDate).slice(0, 40);
   // 📥 طلبات الرجوع المعلقة (إدارة)
-  const pendingReqs = canManage ? checkouts.filter(c => !c.returnDate && c.returnReqDate) : [];
+  const pendingReqs = canManage ? visCheckouts.filter(c => !c.returnDate && c.returnReqDate) : [];
   // 🔎 نتائج البحث: كل الحركة (فتوح + مرجع) — الأحدث الأول
   const coQuery = coSearch.trim().toLowerCase();
   const searchedCheckouts = coQuery
-    ? checkouts.filter(co => {
+    ? visCheckouts.filter(co => {
         const eq = eqOf(co.equipmentId);
         return [eq?.name, eq?.serialNumber, empName(co.surveyorId), assistantLabel(co), co.destination, co.notes, co.conditionReturn, co.checkoutDate, co.untilDate, co.returnDate, co.returnReqNotes, co.returnReqCondition]
           .some(v => v && String(v).toLowerCase().includes(coQuery));
@@ -376,6 +399,31 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         );
       })()}
 
+      {/* ===== 🏢 شريط المواقع ===== */}
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-black text-slate-700">🏢 الموقع:</span>
+          {canManage ? (
+            <>
+              <select value={siteSel} onChange={e => setSiteSel(Number(e.target.value))}
+                className="rounded-xl border-2 border-slate-300 px-4 py-2 text-sm font-black outline-none focus:border-slate-900">
+                <option value={0}>كل المواقع</option>
+                <option value={-1}>بدون موقع</option>
+                {locations.filter(l => l.active).map(l => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
+              </select>
+              {locations.filter(l => l.active).length === 0 && (
+                <span className="text-xs font-bold text-amber-600">مفيش مواقع مسجلة — ضيفها من تبويب 📍 المواقع عشان تنظم العدة عليها</span>
+              )}
+              <span className="text-xs font-bold text-slate-500">بتشوف دلوقتي {visibleEquipment.length} جهاز</span>
+            </>
+          ) : (
+            <span className="text-xs font-bold text-slate-500">
+              {mySiteIds.length === 0 ? 'بتشوف كل العدة' : `عدة مواقعك بس (${visibleEquipment.length} جهاز)`}
+            </span>
+          )}
+        </div>
+      </section>
+
       {/* ===== العدد ===== */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
@@ -387,14 +435,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           <div className="text-xs font-bold text-red-600">خارجة 🔴</div>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
-          <div className="text-2xl font-black text-amber-700">{equipment.filter(e => e.status === 'صيانة').length}</div>
+          <div className="text-2xl font-black text-amber-700">{visibleEquipment.filter(e => e.status === 'صيانة').length}</div>
           <div className="text-xs font-bold text-amber-600">صيانة 🔧</div>
         </div>
       </div>
 
       {/* ===== 📅 نزول عدة النهارده ===== */}
       {(() => {
-        const todayList = checkouts.filter(c => c.checkoutDate === today);
+        const todayList = visCheckouts.filter(c => c.checkoutDate === today);
         return (
           <section className="rounded-[2rem] border-2 border-blue-200 bg-blue-50/60 p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-2">
@@ -705,9 +753,20 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       {/* ===== سجل المعدات ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-2">
-          <h3 className="text-xl font-black text-slate-900">🧰 سجل المعدات ({equipment.length})</h3>
-          {canManage && equipment.length > 0 && (
-            <button type="button" onClick={exportDevices} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+          <h3 className="text-xl font-black text-slate-900">🧰 سجل المعدات ({visibleEquipment.length})</h3>
+          {canManage && visibleEquipment.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={moveSite} onChange={e => setMoveSite(Number(e.target.value))}
+                className="rounded-xl border-2 border-slate-300 px-3 py-1.5 text-xs font-black outline-none focus:border-slate-900">
+                <option value={0}>📦 نقل المعروضين لموقع...</option>
+                <option value={-1}>بدون موقع (للكل)</option>
+                {locations.filter(l => l.active).map(l => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
+              </select>
+              {moveSite !== 0 && (
+                <button type="button" onClick={moveVisibleToSite} className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-black text-white hover:bg-blue-700">تنفيذ النقل</button>
+              )}
+              <button type="button" onClick={exportDevices} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+            </div>
           )}
         </div>
 
@@ -719,12 +778,19 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             </select>
             <input value={eqForm.name} onChange={e => setEqForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الجهاز (مثال: توتال نيكون)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.serialNumber} onChange={e => setEqForm(f => ({ ...f, serialNumber: e.target.value }))} placeholder="السيريال نمبر" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
+            {canManage && (
+              <select value={eqForm.siteId} onChange={e => setEqForm(f => ({ ...f, siteId: Number(e.target.value) }))}
+                className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                <option value={0}>🏢 بدون موقع (لكل المواقع)</option>
+                {locations.filter(l => l.active).map(l => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
+              </select>
+            )}
             <input value={eqForm.notes} onChange={e => setEqForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
             <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">{eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>
           </form>
         )}
 
-        {equipment.length === 0 ? (
+        {visibleEquipment.length === 0 ? (
           <div className="rounded-2xl bg-amber-50 p-6 text-center font-bold text-amber-700">
             مفيش معدات مسجلة. {canManage ? 'ابدأ بتسجيل التووتال والميزان بالسيريال نمبر من الفورم فوق.' : 'المدير لسه مسجلش المعدات.'}
           </div>
@@ -736,6 +802,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <th className="p-3">الجهاز</th>
                   <th className="p-3">النوع</th>
                   <th className="p-3">السيريال نمبر</th>
+                  <th className="p-3">الموقع</th>
                   <th className="p-3">الحالة</th>
                   <th className="p-3">مع مين</th>
                   <th className="p-3">ملاحظات</th>
@@ -744,13 +811,14 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                 </tr>
               </thead>
               <tbody>
-                {equipment.map(eq => {
+                {visibleEquipment.map(eq => {
                   const openCo = openCheckouts.find(c => c.equipmentId === eq.id);
                   return (
                     <tr key={eq.id} className="border-b border-slate-100 font-bold text-slate-800">
                       <td className="p-3 font-black">{kindEmoji(eq.kind)} {eq.name}</td>
                       <td className="p-3">{eq.kind}</td>
                       <td className="p-3 font-mono">{eq.serialNumber}</td>
+                      <td className="p-3 text-xs font-bold text-slate-500">{siteName(eq.siteId) || '— عام —'}</td>
                       <td className="p-3">
                         <span className={`rounded-full px-3 py-1 text-[10px] font-black ${STATUS_STYLE[eq.status] || 'bg-slate-100 text-slate-600'}`}>{eq.status}{!eq.active ? ' · موقوف' : ''}</span>
                       </td>
@@ -765,7 +833,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                             {eq.status === 'صيانة' && (
                               <button type="button" onClick={() => fixFromMaintenance(eq)} className="rounded-lg bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-200">✅ خلصت</button>
                             )}
-                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '' })}
+                            <button type="button" onClick={() => setEqForm({ id: eq.id, name: eq.name, kind: eq.kind, serialNumber: eq.serialNumber, notes: eq.notes || '', siteId: eq.siteId || 0 })}
                               className="rounded-lg bg-blue-100 px-3 py-1 text-xs font-black text-blue-700 hover:bg-blue-200">تعديل</button>
                             <button type="button" onClick={() => removeDevice(eq)} disabled={eq.status === 'خارجة'}
                               className="rounded-lg bg-red-100 px-3 py-1 text-xs font-black text-red-700 hover:bg-red-200 disabled:opacity-40">حذف</button>
@@ -849,7 +917,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
               <select value={maintForm.equipmentId} onChange={e => setMaintForm(f => ({ ...f, equipmentId: Number(e.target.value) }))}
                 className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
                 <option value={0}>— اختار الجهاز —</option>
-                {equipment.map(eq => (
+                {visibleEquipment.map(eq => (
                   <option key={eq.id} value={eq.id}>{kindEmoji(eq.kind)} {eq.name} · {eq.serialNumber}{eq.status === 'صيانة' ? ' (في الصيانة)' : ''}</option>
                 ))}
               </select>
@@ -903,7 +971,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">📊 إحصائيات العدة</h3>
             {canManage && (() => {
-              const stats = equipment.map(eq => ({ eq, count: checkouts.filter(c => c.equipmentId === eq.id).length })).filter(st => st.count > 0);
+              const stats = visibleEquipment.map(eq => ({ eq, count: checkouts.filter(c => c.equipmentId === eq.id).length })).filter(st => st.count > 0);
               if (stats.length === 0) return null;
               return (
                 <button type="button" onClick={() => downloadCsv(`إحصائيات_العدة_${today}.csv`,
@@ -919,7 +987,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             })()}
           </div>
           {(() => {
-            const stats = equipment.map(eq => {
+            const stats = visibleEquipment.map(eq => {
               const cos = checkouts.filter(c => c.equipmentId === eq.id);
               const done = cos.filter(c => c.returnDate);
               const totalDays = done.reduce((sum, c) => sum + Math.max(1, Math.round((new Date(c.returnDate!).getTime() - new Date(c.checkoutDate).getTime()) / 86400000)), 0);
@@ -983,11 +1051,11 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           {invMode && (
             <div>
               <div className="mb-3 rounded-xl bg-blue-50 border border-blue-200 px-4 py-2 text-sm font-black text-blue-700">
-                اتأكد على {Object.keys(invMarks).length} من {equipment.filter(e => e.active).length} قطعة
+                اتأكد على {Object.keys(invMarks).length} من {visibleEquipment.filter(e => e.active).length} قطعة
                 {Object.values(invMarks).filter(v => v === 'missing').length > 0 && ` — ⚠️ ناقص: ${Object.values(invMarks).filter(v => v === 'missing').length}`}
               </div>
               <div className="space-y-2">
-                {equipment.filter(e => e.active).map(eq => (
+                {visibleEquipment.filter(e => e.active).map(eq => (
                   <div key={eq.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 p-3 ${invMarks[eq.id] === 'missing' ? 'border-red-300 bg-red-50' : invMarks[eq.id] === 'ok' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
                     <div className="text-sm font-black text-slate-800">
                       {kindEmoji(eq.kind)} {eq.name} <span className="font-mono text-xs text-slate-400">{eq.serialNumber}</span>
@@ -1017,7 +1085,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {equipment.filter(e => e.active).map((eq, i) => (
+                    {visibleEquipment.filter(e => e.active).map((eq, i) => (
                       <tr key={eq.id}>
                         <td className="border border-slate-400 p-1 text-center">{i + 1}</td>
                         <td className="border border-slate-400 p-1 font-bold">{eq.name}</td>

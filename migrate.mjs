@@ -17,7 +17,7 @@ async function cols(sql, table) {
 }
 
 async function count(sql, table) {
-  try { const r = await sql`SELECT count(*)::int AS n FROM ${sql.table(table)}`; return r[0].n; } catch { return -1; }
+  try { const r = await sql.query('SELECT count(*)::int AS n FROM ' + table, []); return r[0].n; } catch { return -1; }
 }
 
 /** ينفذ insert بصفوف كتير مع أسماء الأعمدة */
@@ -41,9 +41,28 @@ async function insertRows(sql, table, columns, rows, conflict) {
   return done;
 }
 
+/** يضيف أي عمود موجود في القديم وناقص في الجديد (عشان ولا معلومة تضيع) */
+async function syncColumns(table) {
+  const oc = await cols(oldSql, table);
+  let nc = [];
+  try { nc = await cols(newSql, table); } catch { return; }
+  for (const c of oc) {
+    if (!nc.includes(c)) {
+      await newSql.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS "${c}" TEXT`, []);
+      log(`  ➕ عمود مضاف في ${table}: ${c}`);
+    }
+  }
+}
+
 async function main() {
   log('=== قراءة القاعدة القديمة ===');
-  const oldEmps = await oldSql`SELECT * FROM employees ORDER BY id`;
+  for (const t of ['employees', 'work_locations', 'attendance', 'vacations', 'audit_logs', 'check_in_attempts', 'month_locks', 'notifications', 'equipment', 'equipment_checkouts', 'equipment_maintenance', 'machinery', 'machinery_hours']) {
+    await syncColumns(t);
+  }
+  const oldEmpsAll = await oldSql`SELECT * FROM employees ORDER BY id`;
+  // 👑 أدمن القديمة اتبدلت بحساب المالك الجديد — مش هنكررها
+  const oldEmps = oldEmpsAll.filter(e => e.username !== 'admin');
+  log('تم تخطي أدمن القديمة (حسابك الجديد بداله) — الباقي: ' + oldEmps.length);
   log('موظفين قديمين: ' + oldEmps.length);
 
   // ===== 1) الموظفين: دمج بالاسم المستخدم =====
@@ -72,24 +91,25 @@ async function main() {
     }
   }
   log('✅ الموظفين اتركّبوا (خريطة الـ ids جاهزة)');
+  await newSql.query(`SELECT setval(pg_get_serial_sequence('employees','id'), GREATEST((SELECT COALESCE(MAX(id),1) FROM employees), 1))`, []);
 
   const mapVal = v => (v == null ? v : (empMap.get(v) ?? v));
   const mapArr = arr => Array.isArray(arr) ? arr.map(mapVal) : arr;
 
   // ===== 2) العدة والمعدات: خرايط بالمفتاح الطبيعي =====
   async function copyWithMap(table, naturalCols, outMap) {
-    const src = await oldSql`SELECT * FROM ${oldSql.table(table)}`;
+    const src = await oldSql.query('SELECT * FROM ' + table, []);
     if (src.length === 0) { log(`${table}: فاضي`); return; }
     const c = await cols(oldSql, table);
     // نتأكد إن الجدول موجود في الجديد
     const destCols = await cols(newSql, table);
     if (destCols.length === 0) { log(`⚠️ ${table} مش موجود في الجديد — اتخطى`); return; }
-    const dest = await newSql`SELECT * FROM ${newSql.table(table)}`;
+    const dest = await newSql.query('SELECT * FROM ' + table, []);
     const keyOf = row => naturalCols.map(k => String(row[k] ?? '')).join('|');
     const destKeys = new Map(dest.map(d => [keyOf(d), d.id]));
     let nextId = Math.max(0, ...dest.map(d => d.id));
     for (const row0 of src) {
-      const row = {}; for (const k of c) row[k] = row0[k];
+      const row = {}; for (const k of destCols) row[k] = (c.includes(k) ? row0[k] : null);
       const k = keyOf(row);
       if (destKeys.has(k)) { outMap.set(row.id, destKeys.get(k)); continue; }
       nextId++; destKeys.set(k, nextId); outMap.set(row.id, nextId);
@@ -108,7 +128,7 @@ async function main() {
 
   // ===== 3) باقي الجداول: صفوف جديدة بترجمة الـ FK =====
   async function copyTable(table, fkCols) {
-    const src = await oldSql`SELECT * FROM ${oldSql.table(table)}`;
+    const src = await oldSql.query('SELECT * FROM ' + table, []);
     if (src.length === 0) { log(`${table}: فاضي`); return; }
     const c = await cols(oldSql, table);
     const destCols = await cols(newSql, table);

@@ -2,12 +2,22 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   getEmployees,
   getLocations,
+  getAttendance,
+  getSettings,
   addEmployeeAsync,
   updateEmployee,
   deleteEmployee,
 } from '../lib/db';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
+import { getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import type { Employee, WorkLocation } from '../lib/types';
+
+/** ⚡ رصيد العارضة الفاضل لموظف (من 6 أيام/سنة) */
+function casualLeftFor(empId: number): number {
+  const att = getAttendance().filter(a => a.employeeId === empId);
+  const quota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;
+  return getCasualBalance(att, quota).remaining;
+}
 
 interface FormState {
   name: string;
@@ -928,6 +938,23 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     <span className={`${cycle.cls} text-white px-2 py-0.5 rounded-full`}>
                       {cycle.label}
                     </span>
+                    {/* ⚡ رصيد العارضة الفاضل */}
+                    {(() => {
+                      const left = casualLeftFor(emp.id);
+                      const spent = (Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA) - left;
+                      return (
+                        <span
+                          title={`رصيد العارضة: فاضل ${left} — مستهلك ${spent} من 6 أيام`}
+                          className={`px-2 py-0.5 rounded-full font-black ${
+                            left === 0 ? 'bg-red-100 text-red-700' :
+                            left <= 2 ? 'bg-amber-100 text-amber-700' :
+                            'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          ⚡ عارضة: فاضل {left}/6
+                        </span>
+                      );
+                    })()}
                     {(emp as any).hasPassword || (emp.password && emp.password !== '') ? (
                       <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
                         🔑 مفعّل

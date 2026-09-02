@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ATTENDANCE_STATUSES } from '../lib/constants';
-import { getAttendance, upsertAttendance, getLocations, addCheckInAttempt, addSystemNotification, getEmployees } from '../lib/db';
+import { getAttendance, upsertAttendance, getLocations, addCheckInAttempt, addSystemNotification, getEmployees, getOvertimeRequests, refreshOvertimeRequests, submitOvertimeRequest } from '../lib/db';
 import { getDistanceInMeters } from '../lib/location';
-import type { Employee, WorkLocation } from '../lib/types';
+import type { Employee, OvertimeRequest, WorkLocation } from '../lib/types';
 
+// 🌙 "سهر" مش متاح ذاتيًا — بطلب وبعدين موافقة الأدمن (قسم طلب السهر تحت)
 const SELF_STATUSES = ATTENDANCE_STATUSES.filter((s) =>
-  ['حاضر', 'سهر', 'عارضة حضور', 'عارضة إجازة', 'إجازة اعتيادية', 'إجازة مرضية'].includes(s.value)
+  ['حاضر', 'عارضة حضور', 'عارضة إجازة', 'إجازة اعتيادية', 'إجازة مرضية'].includes(s.value)
 );
 
 function todayIso() {
@@ -28,10 +29,17 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
   const [todayLocation, setTodayLocation] = useState<string | null>(null);
   const [todayTime, setTodayTime] = useState<string | null>(null);
+  const [myOvertime, setMyOvertime] = useState<OvertimeRequest | null>(null);
+  const [otNotes, setOtNotes] = useState('');
+  const [otBusy, setOtBusy] = useState(false);
+  const [otMsg, setOtMsg] = useState('');
   const date = todayIso();
 
   useEffect(() => {
     loadData();
+    refreshOvertimeRequests();
+    const t = setTimeout(loadData, 1500);
+    return () => clearTimeout(t);
   }, []);
 
   function loadData() {
@@ -50,6 +58,27 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
     
     if (employeeLocations.length > 0 && !selectedLocationId) {
       setSelectedLocationId(String(employeeLocations[0].id));
+    }
+    // 🌙 طلب السهر بتاعي النهارده (لو موجود)
+    const mineOt = getOvertimeRequests().find(o => o.employeeId === user.id && o.date === date);
+    setMyOvertime(mineOt || null);
+  }
+
+  /** 🌙 تنزيل السهرة — بتفضل معلقة لحد ما الأدمن يوافق */
+  async function sendOvertime() {
+    if (otBusy || myOvertime?.status === 'pending' || myOvertime?.status === 'approved') return;
+    setOtBusy(true);
+    setOtMsg('');
+    try {
+      const remote = await submitOvertimeRequest(todayIso(), otNotes.trim() || null);
+      setMyOvertime(remote);
+      setOtNotes('');
+      setOtMsg('✅ اتبعت طلب السهر — مستني موافقة الأدمن');
+    } catch (e: any) {
+      const m = String(e?.serverMessage || e?.message || '');
+      setOtMsg(m === 'unauthorized' ? 'انتهت الجلسة — سجل دخولك تاني' : m === 'SERVICE_DOWN' ? 'السيرفر مش متاح دلوقتي' : '⚠️ ' + (m || 'تعذر إرسال الطلب'));
+    } finally {
+      setOtBusy(false);
     }
   }
 
@@ -509,6 +538,60 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* 🌙 طلب السهر — بينزل هنا والأدمن يوافق عليه فيظهر في البصمة */}
+      <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-lg">🌙</div>
+          <div>
+            <div className="font-black text-slate-800 text-sm">طلب سهر</div>
+            <div className="text-[11px] text-slate-400 font-bold">بيتبعت للأدمن — أول ما يوافق بيتسجل "سهر" في بصمتك</div>
+          </div>
+        </div>
+
+        {myOvertime?.status === 'pending' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+            <div className="text-2xl mb-1">⏳</div>
+            <div className="text-sm font-black text-amber-700">طلبك مستني موافقة الأدمن</div>
+          </div>
+        )}
+        {myOvertime?.status === 'approved' && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+            <div className="text-2xl mb-1">✅</div>
+            <div className="text-sm font-black text-green-700">الأدمن وافق على سهرتك — اتسجلت في البصمة</div>
+          </div>
+        )}
+        {myOvertime?.status === 'rejected' && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center mb-3">
+            <div className="text-2xl mb-1">❌</div>
+            <div className="text-sm font-black text-red-700">الطلب اترفض — تقدر تعيد المحاولة</div>
+          </div>
+        )}
+
+        {(!myOvertime || myOvertime.status === 'rejected') && (
+          <>
+            <input
+              value={otNotes}
+              onChange={e => setOtNotes(e.target.value)}
+              placeholder="سبب السهر (اختياري) — مثال: سهرة رفع عند كوبري..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 mb-3"
+            />
+            <button
+              onClick={sendOvertime}
+              disabled={otBusy}
+              className="w-full bg-gradient-to-br from-indigo-600 to-purple-700 text-white rounded-xl py-3 text-sm font-black shadow-lg shadow-indigo-200 hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-60"
+            >
+              {otBusy ? '⏳ بيبعت...' : '🌙 نزّل السهرة — اطلب موافقة الأدمن'}
+            </button>
+          </>
+        )}
+
+        {otMsg && (
+          <div className={`mt-3 text-[12px] font-black p-3 rounded-xl text-right ${otMsg.startsWith('✅') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {otMsg}
+          </div>
+        )}
       </div>
 
       <div className="bg-white/50 backdrop-blur-sm border border-slate-200/50 rounded-[2rem] p-6 text-[11px] text-slate-500 font-medium leading-relaxed shadow-sm">

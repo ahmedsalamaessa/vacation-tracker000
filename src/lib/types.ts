@@ -242,6 +242,17 @@ export interface MachineryHours {
   createdAt: string;
 }
 
+export interface OvertimeRequest {
+  id: number;
+  employeeId: number;
+  date: string;
+  notes?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  decidedBy?: number | null;
+  decidedAt?: string | null;
+  createdAt: string;
+}
+
 export interface EquipmentCheckout {
   id: number;
   equipmentId: number;

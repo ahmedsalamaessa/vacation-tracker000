@@ -29,7 +29,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (err.error === 'server_error' || res.status === 402 || res.status >= 500 || msg.includes('quota')) {
       throw new Error('SERVICE_DOWN');
     }
-    throw new Error(err.error || 'API request failed');
+    const e: any = new Error(err.error || 'API request failed');
+    e.serverMessage = err.message || null;
+    throw e;
   }
   return res.json();
 }
@@ -206,6 +208,16 @@ export const api = {
   },
   async saveMachineryHours(payload: { date: string; entries: { machineryId: number; hours: number }[] }) {
     return request('/machinery-hours/bulk', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  // 🌙 طلبات السهر
+  async getOvertimeRequests() {
+    return request('/overtime-requests');
+  },
+  async submitOvertimeRequest(payload: { employeeId?: number; date: string; notes?: string | null }) {
+    return request('/overtime-requests', { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async decideOvertimeRequest(id: number, approve: boolean) {
+    return request(`/overtime-requests/${id}/decide`, { method: 'POST', body: JSON.stringify({ approve }) });
   },
   // 🔧 سجل الصيانة
   async getEquipmentMaintenance() {

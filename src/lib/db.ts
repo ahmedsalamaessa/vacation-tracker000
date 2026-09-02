@@ -12,6 +12,7 @@ import type {
   EquipmentMaintenance,
   Machinery,
   MachineryHours,
+  OvertimeRequest,
 } from './types';
 import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
@@ -35,6 +36,7 @@ const STORAGE_KEYS = {
   equipmentMaintenance: PREFIX + 'equipment_maintenance',
   machinery: PREFIX + 'machinery',
   machineryHours: PREFIX + 'machinery_hours',
+  overtimeRequests: PREFIX + 'overtime_requests',
 };
 
 function getItem<T>(key: string, defaultValue: T): T {
@@ -1298,4 +1300,39 @@ export function refreshMaintenance(): void {
   api.getEquipmentMaintenance().then((remote: any) => {
     if (Array.isArray(remote)) setItem(STORAGE_KEYS.equipmentMaintenance, remote);
   }).catch(e => console.warn('remote getMaintenance', e));
+}
+
+// ============ 🌙 طلبات السهر ============
+export function getOvertimeRequests(): OvertimeRequest[] {
+  return getItem<OvertimeRequest[]>(STORAGE_KEYS.overtimeRequests, []);
+}
+
+async function syncOvertimeFromRemote() {
+  try {
+    const ots = await api.getOvertimeRequests() as OvertimeRequest[];
+    if (Array.isArray(ots)) setItem(STORAGE_KEYS.overtimeRequests, ots);
+  } catch (e) {
+    console.warn('syncOvertimeFromRemote failed', e);
+  }
+}
+
+/** يسحب أحدث طلبات السهر من السيرفر */
+export function refreshOvertimeRequests(): void {
+  if (remoteAvailable()) syncOvertimeFromRemote();
+}
+
+/** ✅ سيرفر-أولانى: الطلب مبيتسجلش إلا بعد تأكيد السيرفر */
+export async function submitOvertimeRequest(date: string, notes?: string | null, employeeId?: number): Promise<OvertimeRequest> {
+  const remote = await api.submitOvertimeRequest({ date, notes, employeeId }) as OvertimeRequest;
+  const list = getOvertimeRequests().filter(o => o.id !== remote.id);
+  setItem(STORAGE_KEYS.overtimeRequests, [remote, ...list]);
+  return remote;
+}
+
+/** ✅ قرار الموافقة/الرفض من الإدارة — سيرفر-أولانى */
+export async function decideOvertimeRequest(id: number, approve: boolean): Promise<OvertimeRequest | null> {
+  const remote = await api.decideOvertimeRequest(id, approve) as OvertimeRequest;
+  const list = getOvertimeRequests().map(o => (o.id === id ? remote : o));
+  setItem(STORAGE_KEYS.overtimeRequests, list);
+  return remote;
 }

@@ -11,9 +11,12 @@ import {
   clearVacationFromAttendanceAsync,
   addSystemNotification,
   refreshFromRemote,
+  getOvertimeRequests,
+  refreshOvertimeRequests,
+  decideOvertimeRequest,
 } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
-import type { Employee, Vacation, EquipmentCheckout } from '../lib/types';
+import type { Employee, Vacation, EquipmentCheckout, OvertimeRequest } from '../lib/types';
 import { kindEmoji } from './equipmentKinds';
 
 function formatDateTime(value: string | null | undefined) {
@@ -43,6 +46,9 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
   const [syncingAll, setSyncingAll] = useState(false);
   // 📥 طلبات رجوع العدة المعلقة
   const [eqPending, setEqPending] = useState<(EquipmentCheckout & { eqName: string; eqSerial: string; eqKind: string })[]>([]);
+  // 🌙 طلبات السهر المعلقة
+  const [otPending, setOtPending] = useState<(OvertimeRequest & { employeeName: string })[]>([]);
+  const [otBusy, setOtBusy] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -79,11 +85,52 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     } else {
       setEqPending([]);
     }
+    // 🌙 طلبات السهر المعلقة
+    setOtPending(
+      getOvertimeRequests()
+        .filter(o => o.status === 'pending' && (user.role === 'admin' || user.role === 'manager' || managedIds.has(o.employeeId)))
+        .map(o => ({ ...o, employeeName: emps.find(e => e.id === o.employeeId)?.name || `#${o.employeeId}` })),
+    );
     setLoading(false);
   }, [user.id]);
 
+  /** 🌙 قرار السهر: الموافقة بتسجل "سهر" في البصمة تلقائي */
+  async function decideOt(ot: OvertimeRequest & { employeeName: string }, approve: boolean) {
+    if (otBusy) return;
+    setOtBusy(ot.id);
+    setMsg('');
+    try {
+      await decideOvertimeRequest(ot.id, approve);
+      if (approve) {
+        addSystemNotification({
+          employeeId: ot.employeeId,
+          title: '✅ تمت الموافقة على السهرة',
+          body: `سهرة ${ot.date} معتمدة — اتسجلت "سهر" في البصمة`,
+        });
+      } else {
+        addSystemNotification({
+          employeeId: ot.employeeId,
+          title: '❌ تم رفض طلب السهر',
+          body: `طلب سهر يوم ${ot.date} اترفض`,
+        });
+      }
+      await refreshFromRemote();
+      load();
+      setMsg(approve ? `✅ اتاعتم السهر بتاع ${ot.employeeName} — نزل في البصمة` : `❌ اترفض طلب السهر بتاع ${ot.employeeName}`);
+      onChanged?.();
+    } catch (e: any) {
+      const m = String(e?.serverMessage || e?.message || 'تعذر تنفيذ القرار');
+      setMsg('⚠️ ' + m);
+    } finally {
+      setOtBusy(null);
+    }
+  }
+
   useEffect(() => {
     load();
+    refreshOvertimeRequests();
+    const t = setTimeout(load, 1500);
+    return () => clearTimeout(t);
   }, [load]);
 
   const pending = useMemo(
@@ -418,6 +465,44 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                 </div>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      {/* ===== 🌙 طلبات السهر ===== */}
+      <section className="rounded-[2rem] border-2 border-indigo-300 bg-indigo-50 p-6 shadow-sm">
+        <h3 className="mb-1 text-lg font-black text-indigo-800">🌙 طلبات السهر {otPending.length > 0 ? `(${otPending.length})` : ''}</h3>
+        <p className="mb-4 text-xs font-bold text-indigo-600">المساحين نزّلوا سهراتهم — لما توافق بيتسجل "سهر" في صفحة البصمة تلقائي</p>
+        {otPending.length === 0 ? (
+          <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-emerald-700">مفيش طلبات سهر معلقة ✅</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {otPending.map(ot => (
+              <div key={ot.id} className="rounded-2xl border-2 border-indigo-200 bg-white p-4">
+                <div className="text-lg font-black text-slate-900">👷 {ot.employeeName}</div>
+                <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
+                  <div>📅 يوم: {ot.date}</div>
+                  <div className="text-xs text-slate-500">🕒 قدّم الطلب: {ot.createdAt ? new Date(ot.createdAt).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
+                  {ot.notes && <div className="text-xs text-slate-500">📝 {ot.notes}</div>}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => decideOt(ot, true)}
+                    disabled={otBusy === ot.id}
+                    className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {otBusy === ot.id ? '⏳...' : '✅ موافقة — ينزل في البصمة'}
+                  </button>
+                  <button
+                    onClick={() => { if (confirm(`رفض طلب السهر بتاع ${ot.employeeName}؟`)) decideOt(ot, false); }}
+                    disabled={otBusy === ot.id}
+                    className="rounded-xl bg-red-100 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-200 disabled:opacity-60"
+                  >
+                    ❌ رفض
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>

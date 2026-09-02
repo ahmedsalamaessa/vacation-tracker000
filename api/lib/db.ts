@@ -230,6 +230,20 @@ export function mapMachineryHours(r: any) {
   };
 }
 
+export function mapOvertimeRequest(r: any) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    employeeId: r.employee_id,
+    date: toDateOnly(r.date),
+    notes: r.notes ?? null,
+    status: r.status || 'pending',
+    decidedBy: r.decided_by ?? null,
+    decidedAt: r.decided_at ?? null,
+    createdAt: r.created_at,
+  };
+}
+
 export function mapEquipment(r: any) {
   if (!r) return null;
   return {

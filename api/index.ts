@@ -15,6 +15,7 @@ import {
   mapMaintenance,
   mapMachinery,
   mapMachineryHours,
+  mapOvertimeRequest,
 } from './lib/db';
 import { sha256 } from './lib/crypto';
 
@@ -242,6 +243,20 @@ async function ensureEquipmentTables(sql: any) {
       created_by INT,
       created_at TIMESTAMPTZ DEFAULT now(),
       UNIQUE (machinery_id, date)
+    )`;
+
+  // 🌙 طلبات السهر: المساح يطلبها → الأدمن يوافق → بتظهر في البصمة كحالة "سهر"
+  await sql`
+    CREATE TABLE IF NOT EXISTS overtime_requests (
+      id SERIAL PRIMARY KEY,
+      employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      decided_by INT,
+      decided_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT now(),
+      UNIQUE (employee_id, date)
     )`;
   // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
@@ -736,6 +751,69 @@ export default async function handler(req: Request) {
       const date = u.searchParams.get('date') || '';
       await sql`DELETE FROM attendance WHERE employee_id = ${employeeId} AND date = ${date}`;
       return json({ ok: true });
+    }
+
+    // ============ 🌙 طلبات السهر ============
+
+    if (path === 'overtime-requests' && method === 'GET') {
+      await ensureEquipmentTables(sql);
+      const isAdminUser = authUser.role === 'admin' || isOwner(authUser);
+      const rows = isAdminUser
+        ? await sql`SELECT * FROM overtime_requests ORDER BY created_at DESC LIMIT 500`
+        : await sql`SELECT * FROM overtime_requests WHERE employee_id = ${authUser.id} ORDER BY created_at DESC LIMIT 200`;
+      return json((rows as any[]).map(mapOvertimeRequest).filter(Boolean));
+    }
+
+    if (path === 'overtime-requests' && method === 'POST') {
+      await ensureEquipmentTables(sql);
+      const b = await readBody<any>(req);
+      // المساح بينزل سهرته لنفسه بس — الأدمن ممكن يضيف لحد تاني
+      const targetId = Number(b?.employeeId) || authUser.id;
+      if (targetId !== authUser.id && !hasPerm(authUser, 'canApproveVacations')) {
+        return forbidden('تقدر تطلب سهر لنفسك بس');
+      }
+      const date = String(b?.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ error: 'bad_request', message: 'التاريخ مش صحيح' }, 400);
+      if (date > new Date().toISOString().slice(0, 10)) return json({ error: 'bad_request', message: 'مينفعش تطلب سهر ليوم جاي' }, 400);
+      const existing = await sql`SELECT id, status FROM overtime_requests WHERE employee_id = ${targetId} AND date = ${date}::date LIMIT 1`;
+      const ex = (existing as any[])[0];
+      if (ex && ex.status === 'pending') return json({ error: 'bad_request', message: 'عندك طلب سهر لنفس اليوم مستني الموافقة' }, 400);
+      if (ex && ex.status === 'approved') return json({ error: 'bad_request', message: 'السهر ده معتمد ومتسجل خلاص' }, 400);
+      if (ex) {
+        // إعادة طلب بعد رفض سابق
+        const rows = await sql`UPDATE overtime_requests SET status='pending', notes=${b?.notes ?? null}, decided_by=NULL, decided_at=NULL, created_at=now() WHERE id=${ex.id} RETURNING *`;
+        return json(mapOvertimeRequest((rows as any[])[0]));
+      }
+      const rows = await sql`INSERT INTO overtime_requests (employee_id, date, notes) VALUES (${targetId}, ${date}::date, ${b?.notes ?? null}) RETURNING *`;
+      return json(mapOvertimeRequest((rows as any[])[0]));
+    }
+
+    const otMatch = path.match(/^overtime-requests\/(\d+)\/decide$/);
+    if (otMatch && method === 'POST') {
+      await ensureEquipmentTables(sql);
+      // 🛡️ الموافقة/الرفض: إدارة بس
+      if (!hasPerm(authUser, 'canApproveVacations')) return forbidden('الموافقة على السهر من الإدارة بس');
+      const id = Number(otMatch[1]);
+      const b = await readBody<any>(req);
+      const approve = b?.approve === true;
+      const found = await sql`SELECT * FROM overtime_requests WHERE id = ${id} LIMIT 1`;
+      const reqRow = (found as any[])[0];
+      if (!reqRow) return json({ error: 'not_found', message: 'الطلب مش موجود' }, 404);
+      if (reqRow.status !== 'pending') return json({ error: 'bad_request', message: 'الطلب ده متقفل خلاص' }, 400);
+      const newStatus = approve ? 'approved' : 'rejected';
+      const rows = await sql`UPDATE overtime_requests SET status=${newStatus}, decided_by=${authUser.id}, decided_at=now() WHERE id=${id} RETURNING *`;
+      // ✅ الموافقة = تسجيل حضور بحالة "سهر" في صفحة البصمة
+      if (approve) {
+        const marker = `OVERTIME_REQ:${id}`;
+        await sql`
+          INSERT INTO attendance (employee_id, date, status, notes)
+          VALUES (${reqRow.employee_id}, ${reqRow.date}, 'سهر', ${marker})
+          ON CONFLICT (employee_id, date) DO UPDATE SET
+            status = 'سهر',
+            notes = CASE WHEN attendance.notes IS NULL OR attendance.notes = '' THEN ${marker} ELSE attendance.notes END
+        `;
+      }
+      return json(mapOvertimeRequest((rows as any[])[0]));
     }
 
     if (path === 'vacations' && method === 'GET') {

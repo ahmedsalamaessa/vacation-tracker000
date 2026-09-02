@@ -1231,75 +1231,48 @@ export function getMachineryHours(): MachineryHours[] {
   return getItem<MachineryHours[]>(STORAGE_KEYS.machineryHours, []);
 }
 
-export function addMachinery(rec: Omit<Machinery, 'id' | 'createdAt'>): Machinery {
-  const list = getMachinery();
-  const item: Machinery = { ...rec, id: Math.max(0, ...list.map(m => m.id)) + 1, createdAt: new Date().toISOString() };
-  setItem(STORAGE_KEYS.machinery, [...list, item]);
-  if (remoteAvailable()) {
-    api.addMachinery({ kind: item.kind, owner: item.owner, size: item.size, notes: item.notes, driver: item.driver })
-      .then(() => syncMachineryFromRemote())
-      .catch(e => console.warn('remote addMachinery', e));
-  }
-  return item;
+/** ✅ سيرفر-أولانى: المعدة مبتتضافش إلا بعد تأكيد السيرفر */
+export async function addMachinery(rec: Omit<Machinery, 'id' | 'createdAt'>): Promise<Machinery> {
+  const remote = await api.addMachinery({ kind: rec.kind, owner: rec.owner, size: rec.size, notes: rec.notes, driver: rec.driver }) as Machinery;
+  const list = getMachinery().filter(m => m.id !== remote.id);
+  setItem(STORAGE_KEYS.machinery, [...list, remote]);
+  return remote;
 }
 
-export function updateMachinery(id: number, updates: Partial<Machinery>): Machinery | null {
+/** ✅ سيرفر-أولانى: التعديل مبيتحسبش إلا لو السيرفر رد بنجاح */
+export async function updateMachinery(id: number, updates: Partial<Machinery>): Promise<Machinery | null> {
   const list = getMachinery();
   const i = list.findIndex(m => m.id === id);
   if (i === -1) return null;
-  list[i] = { ...list[i], ...updates };
-  setItem(STORAGE_KEYS.machinery, list);
-  if (remoteAvailable()) {
-    api.updateMachinery(id, updates)
-      .then(() => syncMachineryFromRemote())
-      .catch(e => console.warn('remote updateMachinery', e));
-  }
-  return list[i];
+  const remote = await api.updateMachinery(id, updates) as Machinery;
+  const list2 = getMachinery();
+  const j = list2.findIndex(m => m.id === id);
+  if (j !== -1) { list2[j] = remote; setItem(STORAGE_KEYS.machinery, list2); }
+  return remote;
 }
 
 /** إيقاف معدة مؤقت (تفضل ظاهرة في التراكمي بس مش في ورقة اليوم) */
-export function deactivateMachinery(id: number): boolean {
-  return updateMachinery(id, { active: false }) !== null;
+export async function deactivateMachinery(id: number): Promise<boolean> {
+  return (await updateMachinery(id, { active: false })) !== null;
 }
 
 /** 🗑️ مسح خالص: بتشال من كل القوائم — بس ساعاتها القديمة بتفضل في السجلات */
-export function deleteMachineryHard(id: number): boolean {
-  return updateMachinery(id, { active: false, deleted: true }) !== null;
+export async function deleteMachineryHard(id: number): Promise<boolean> {
+  return (await updateMachinery(id, { active: false, deleted: true })) !== null;
 }
 
-/** 🧹 تفريغ كل المعدات وكل الساعات — بداية من الصفر */
-export function clearAllMachinery(): void {
+/** 🧹 تفريغ كل المعدات وكل الساعات — بداية من الصفر (سيرفر-أولانى) */
+export async function clearAllMachinery(): Promise<void> {
+  await api.deleteAllMachinery();
   setItem(STORAGE_KEYS.machinery, []);
   setItem(STORAGE_KEYS.machineryHours, []);
-  if (remoteAvailable()) {
-    api.deleteAllMachinery().then(() => syncMachineryFromRemote()).catch(e => console.warn('remote deleteAllMachinery', e));
-  }
 }
 
-/** حفظ ساعات يوم كامل: القيمة 0 = مسح السجل */
-export function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; notes?: string }[]): { saved: number } {
-  const all = getMachineryHours();
-  let saved = 0;
-  for (const en of entries) {
-    const i = all.findIndex(h => h.machineryId === en.machineryId && h.date === date);
-    if (en.hours > 0) {
-      if (i === -1) {
-        all.push({ id: Math.max(0, ...all.map(h => h.id)) + 1, machineryId: en.machineryId, date, hours: en.hours, notes: en.notes ?? null, createdBy: null, createdAt: new Date().toISOString() });
-      } else {
-        all[i] = { ...all[i], hours: en.hours, notes: en.notes ?? null };
-      }
-      saved++;
-    } else if (i !== -1) {
-      all.splice(i, 1);
-    }
-  }
-  setItem(STORAGE_KEYS.machineryHours, all);
-  if (remoteAvailable()) {
-    api.saveMachineryHours({ date, entries })
-      .then(() => syncMachineryFromRemote())
-      .catch(e => console.warn('remote saveMachineryHours', e));
-  }
-  return { saved };
+/** ✅ حفظ ساعات يوم كامل — سيرفر-أولانى: لو السيرفر رفض، مفيش حاجة بتتحسب */
+export async function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; notes?: string }[]): Promise<{ saved: number }> {
+  const r = await api.saveMachineryHours({ date, entries }) as { saved?: number };
+  await syncMachineryFromRemote();
+  return { saved: typeof r?.saved === 'number' ? r.saved : entries.filter(e => e.hours > 0).length };
 }
 
 // ============ 🔧 سجل صيانة المعدات ============

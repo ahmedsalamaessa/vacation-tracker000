@@ -68,6 +68,7 @@ export default function MachineryTab({ user }: Props) {
   const monthNow = today.slice(0, 7);
 
   const [machinery, setMachinery] = useState<Machinery[]>([]);
+  const [busy, setBusy] = useState(false);
   const [dayDate, setDayDate] = useState(today);
   const [month, setMonth] = useState(monthNow);
   const [draft, setDraft] = useState<Record<number, string>>({});
@@ -111,7 +112,13 @@ export default function MachineryTab({ user }: Props) {
     refreshMachinery();
     const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
     const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
-    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+    // 🔄 مزامنة حية كل 20 ثانية: أي معدة أو ساعات يضيفها أي حد تظهر عند الكل تلقائيًا
+    // (بتحدث القوائم بس — متلمسش خانات الساعات اللي بتكتبها دلوقتي)
+    const live = window.setInterval(() => {
+      refreshMachinery();
+      window.setTimeout(() => { load(); }, 900);
+    }, 20000);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearInterval(live); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,35 +132,38 @@ export default function MachineryTab({ user }: Props) {
   const histList = machinery.filter(m => !m.deleted || getMachineryHours().some(h => h.machineryId === m.id));
   const daySum = active.reduce((s, m) => s + (parseFloat(draft[m.id] || '') || 0), 0);
 
-  function saveDay() {
+  async function saveDay() {
     try {
       const entries = active.map(m => ({ machineryId: m.id, hours: parseFloat(draft[m.id] || '') || 0, notes: (draftNotes[m.id] || '').trim() }));
       const filled = entries.filter(e => e.hours > 0).length;
-      const r = saveMachineryHours(dayDate, entries);
-      flash(`💾 اتحفظت ساعات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
-      window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 800);
+      const r = await saveMachineryHours(dayDate, entries);
+      flash(`💾 اتحفظت على السيرفر ساعات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
+      load();
     } catch (err: any) {
-      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ماتحفظتش على السيرفر: ' + (err?.message || 'حصل خطأ'));
     }
   }
 
-  function submitMachinery(e: React.FormEvent) {
+  async function submitMachinery(e: React.FormEvent) {
     e.preventDefault();
     if (!form.owner.trim()) { flash('⚠️ اكتب اسم المالك (زي: زياد، سلومة)'); return; }
     if (form.kind === 'أخرى' && !form.custom.trim()) { flash('⚠️ اكتب اسم المعدة (مثال: عربية مية، جرار)'); return; }
     const kind = form.kind === 'أخرى' ? form.custom.trim() : form.kind;
     try {
+      setBusy(true);
       if (form.id) {
-        updateMachinery(form.id, { kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
-        flash('✏️ اتعدلت المعدة');
+        await updateMachinery(form.id, { kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
+        flash('✏️ اتعدلت المعدة واتحفظت على السيرفر');
       } else {
-        addMachinery({ kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
-        flash('🚜 اتضافت المعدة');
+        await addMachinery({ kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
+        flash('🚜 اتضافت المعدة على السيرفر — هيظهر للكل');
       }
       setForm({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
-      window.setTimeout(() => { load(); }, 600);
+      load();
     } catch (err: any) {
-      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ماتحفظتش على السيرفر: ' + (err?.message || 'حصل خطأ'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -401,7 +411,7 @@ export default function MachineryTab({ user }: Props) {
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
             {machinery.length > 0 && isAdmin && (
-              <button type="button" onClick={() => { if (window.confirm('🧹 هتمسح كل المعدات وكل الساعات المسجلة وتبدأ من الصفر — متأكد؟ (مفيش رجوع)')) { clearAllMachinery(); flash('🧹 اتفضرت كل المعدات — ابدأ من الأول'); window.setTimeout(() => { load(); refreshMachinery(); }, 800); } }}
+              <button type="button" onClick={async () => { if (!window.confirm('🧹 هتمسح كل المعدات وكل الساعات المسجلة وتبدأ من الصفر — متأكد؟ (مفيش رجوع)')) return; try { await clearAllMachinery(); flash('🧹 اتفضرت كل المعدات من السيرفر — ابدأ من الأول'); load(); setDraft({}); setDraftNotes({}); } catch (err: any) { flash('⛔ ماتفضرتش: ' + (err?.message || 'حصل خطأ')); } }}
                 className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black text-white hover:bg-red-700">🧹 تفريغ كل المعدات</button>
             )}
           </div>
@@ -451,8 +461,8 @@ export default function MachineryTab({ user }: Props) {
               <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="اختياري"
                 className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
             </label>
-            <button type="submit" className="mt-6 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700">
-              {form.id ? '✏️ حفظ التعديل' : '➕ إضافة معدة'}
+            <button type="submit" disabled={busy} className="mt-6 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+              {busy ? '⏳ جاري الحفظ على السيرفر...' : form.id ? '✏️ حفظ التعديل' : '➕ إضافة معدة'}
             </button>
           </form>
 
@@ -471,10 +481,10 @@ export default function MachineryTab({ user }: Props) {
                     <div className="flex gap-1">
                       <button type="button" onClick={() => setForm({ id: m.id, kind: KINDS.includes(m.kind) ? m.kind : 'أخرى', custom: KINDS.includes(m.kind) ? '' : m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
-                      <button type="button" onClick={() => { if (window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) { deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت — تقدر ترجعها بالتعديل'); window.setTimeout(load, 500); } }}
+                      <button type="button" onClick={async () => { if (!window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) return; try { await deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت على السيرفر — تقدر ترجعها بالتعديل'); load(); } catch (err: any) { flash('⛔ ماتحفظش: ' + (err?.message || 'حصل خطأ')); } }}
                         className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>
                       {isAdmin && (
-                        <button type="button" onClick={() => { if (window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) { deleteMachineryHard(m.id); flash('🗑️ اتمسحت — شغلها القديم محفوظ'); window.setTimeout(load, 500); } }}
+                        <button type="button" onClick={async () => { if (!window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) return; try { await deleteMachineryHard(m.id); flash('🗑️ اتمسحت من السيرفر — شغلها القديم محفوظ'); load(); } catch (err: any) { flash('⛔ ماتمسحتش: ' + (err?.message || 'حصل خطأ')); } }}
                           className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص (أدمن بس)">🗑️</button>
                       )}
                     </div>

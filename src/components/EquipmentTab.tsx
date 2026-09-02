@@ -30,6 +30,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   const [locations, setLocationsState] = useState<WorkLocation[]>([]);
   const [deptName, setDeptName] = useState('');
   const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // فورم إضافة/تعديل جهاز
   const [eqForm, setEqForm] = useState({ id: 0, name: '', kind: 'توتال استيشن' as EquipmentKind, serialNumber: '', notes: '', siteId: 0 });
@@ -83,7 +84,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     refreshMaintenance();
     const t1 = setTimeout(reload, 1200);
     const t2 = setTimeout(reload, 3500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // 🔄 مزامنة حية كل 20 ثانية: أي جهاز يضيفه أي مساح يظهر عند الكل تلقائيًا
+    const live = setInterval(() => {
+      refreshEquipment();
+      refreshMaintenance();
+      setTimeout(reload, 900);
+    }, 20000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(live); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,43 +115,50 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   }
 
   // ============ المعدات ============
-  /** 📦 نقل كل المعروضين للموقع المختار (توزيع العدة على المواقع في ضغطتين) */
-  function moveVisibleToSite() {
+  /** 📦 نقل كل المعروضين للموقع المختار (توزيع العدة على المواقع في ضغطتين) — سيرفر-أولانى مع عداد النجاح والفشل */
+  async function moveVisibleToSite() {
     if (!moveSite) { flash('⚠️ اختار الموقع اللي هتنقلهم له'); return; }
-    let n = 0;
+    let n = 0, failed = 0;
+    setSaving(true);
     for (const eq of visibleEquipment) {
-      try { updateEquipment(eq.id, { siteId: moveSite }); n++; } catch { /* عدّي */ }
+      try { await updateEquipment(eq.id, { siteId: moveSite }); n++; } catch { failed++; }
     }
-    flash(`📦 اتنقلت ${n} جهاز للموقع: ${siteName(moveSite)}`);
-    window.setTimeout(reload, 700);
+    setSaving(false);
+    flash(failed === 0
+      ? `📦 اتنقلت ${n} جهاز للموقع: ${siteName(moveSite)} — واتحفظوا على السيرفر`
+      : `⚠️ اتنقل ${n} جهاز وفيه ${failed} ماتحفظوش — جرب تاني`);
+    reload();
   }
 
-  function submitDevice(e: React.FormEvent) {
+  async function submitDevice(e: React.FormEvent) {
     e.preventDefault();
     try {
       if (!eqForm.name.trim() || !eqForm.serialNumber.trim()) { flash('⚠️ الاسم والسيريال نمبر مطلوبين'); return; }
+      setSaving(true);
       if (eqForm.id) {
-        updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, siteId: eqForm.siteId || null });
-        flash('✅ تم تعديل الجهاز');
+        await updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, siteId: eqForm.siteId || null });
+        flash('✅ اتعدّل الجهاز واتحفظ على السيرفر');
       } else {
-        addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, siteId: eqForm.siteId || null });
-        flash('✅ تم تسجيل الجهاز');
+        await addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, siteId: eqForm.siteId || null });
+        flash('✅ اتسجّل الجهاز على السيرفر — هيظهر للكل');
       }
       setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '', siteId: siteSel > 0 ? siteSel : 0 });
       reload();
     } catch (err: any) {
-      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ماتحفظش على السيرفر: ' + (err?.message || 'حصل خطأ'));
+    } finally {
+      setSaving(false);
     }
   }
 
-  function removeDevice(eq: Equipment) {
+  async function removeDevice(eq: Equipment) {
     if (!window.confirm(`حذف ${eq.name} (${eq.serialNumber}) نهائيًا؟`)) return;
     try {
-      deleteEquipment(eq.id);
-      flash('🗑️ تم حذف الجهاز');
+      await deleteEquipment(eq.id);
+      flash('🗑️ اتحذف الجهاز من السيرفر');
       reload();
     } catch (err: any) {
-      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ماتحذفش: ' + (err?.message || 'حصل خطأ'));
     }
   }
 
@@ -222,12 +236,12 @@ export default function EquipmentTab({ user }: { user: Employee }) {
   }
 
   // 🔧 الصيانة
-  function submitMaintenance(e: React.FormEvent) {
+  async function submitMaintenance(e: React.FormEvent) {
     e.preventDefault();
     try {
       if (!maintForm.equipmentId) { flash('⚠️ اختار الجهاز'); return; }
       if (!maintForm.issue.trim()) { flash('⚠️ اكتب وصف العطل'); return; }
-      addEquipmentMaintenance({
+      await addEquipmentMaintenance({
         equipmentId: maintForm.equipmentId,
         issue: maintForm.issue.trim(),
         cost: Number(maintForm.cost) || 0,
@@ -235,25 +249,33 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         resolution: maintForm.resolution || null,
         createdBy: user.id,
       });
-      updateEquipment(maintForm.equipmentId, { status: 'صيانة' });
+      await updateEquipment(maintForm.equipmentId, { status: 'صيانة' });
       flash('🔧 اتسجل عطل جديد والجهاز اتحول للصيانة');
       setMaintForm({ equipmentId: 0, issue: '', cost: '', maintDate: today, resolution: '' });
+      reload();
+    } catch (err: any) {
+      flash('⛔ ماتسجلش على السيرفر: ' + (err?.message || 'حصل خطأ'));
+    }
+  }
+
+  async function fixFromMaintenance(eq: Equipment) {
+    try {
+      await updateEquipment(eq.id, { status: 'متاحة' });
+      flash('✅ الجهاز رجع متاح من الصيانة');
       reload();
     } catch (err: any) {
       flash('⛔ ' + (err?.message || 'حصل خطأ'));
     }
   }
 
-  function fixFromMaintenance(eq: Equipment) {
-    updateEquipment(eq.id, { status: 'متاحة' });
-    flash('✅ الجهاز رجع متاح من الصيانة');
-    reload();
-  }
-
-  function removeMaintenance(m: EquipmentMaintenance) {
+  async function removeMaintenance(m: EquipmentMaintenance) {
     if (!window.confirm('حذف سجل الصيانة ده؟')) return;
-    deleteEquipmentMaintenance(m.id);
-    reload();
+    try {
+      await deleteEquipmentMaintenance(m.id);
+      reload();
+    } catch (err: any) {
+      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
   }
 
   // 📤 تصدير Excel
@@ -786,7 +808,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
               </select>
             )}
             <input value={eqForm.notes} onChange={e => setEqForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
-            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">{eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>
+            <button disabled={saving} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50">{saving ? '⏳ جاري الحفظ على السيرفر...' : eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>
           </form>
         )}
 

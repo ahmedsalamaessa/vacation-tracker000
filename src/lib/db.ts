@@ -1063,45 +1063,38 @@ export function refreshEquipment(): void {
   if (remoteAvailable()) syncEquipmentFromRemote();
 }
 
-export function addEquipment(eq: Omit<Equipment, 'id' | 'createdAt'>): Equipment {
-  const list = getEquipment();
-  if (list.some(e => e.serialNumber.trim() === eq.serialNumber.trim())) {
-    throw new Error('السيريال نمبر ده مسجل قبل كده لجهاز تاني');
-  }
-  const item: Equipment = {
-    ...eq,
-    serialNumber: eq.serialNumber.trim(),
-    id: Math.max(0, ...list.map(e => e.id)) + 1,
-    createdAt: new Date().toISOString(),
-  };
-  setEquipmentList([...list, item]);
-  if (remoteAvailable()) {
-    api.addEquipment({ ...item, id: undefined }).then(() => syncEquipmentFromRemote()).catch(e => console.warn('remote addEquipment', e));
-  }
-  return item;
+/** ✅ سيرفر-أولانى: الإضافة مبتتحسبش إلا لما السيرفر يأكد — الفشل بيبان برسالته الحقيقية */
+export async function addEquipment(eq: Omit<Equipment, 'id' | 'createdAt'>): Promise<Equipment> {
+  const payload = { ...eq, serialNumber: eq.serialNumber.trim() };
+  const remote = await api.addEquipment(payload) as Equipment;
+  const list = getEquipment().filter(e => e.id !== remote.id && e.serialNumber.trim() !== remote.serialNumber);
+  setEquipmentList([...list, remote]);
+  return remote;
 }
 
-export function updateEquipment(id: number, updates: Partial<Equipment>): Equipment | null {
+/** ✅ سيرفر-أولانى: التعديل مبيتحسبش إلا لو السيرفر رد بنجاح */
+export async function updateEquipment(id: number, updates: Partial<Equipment>): Promise<Equipment | null> {
   const list = getEquipment();
   const i = list.findIndex(e => e.id === id);
   if (i === -1) return null;
-  list[i] = { ...list[i], ...updates };
-  setEquipmentList(list);
-  if (remoteAvailable()) {
-    api.updateEquipment(id, updates).catch(e => console.warn('remote updateEquipment', e));
+  const remote = await api.updateEquipment(id, updates) as Equipment;
+  const j = getEquipment().findIndex(e => e.id === id);
+  if (j !== -1) {
+    const list2 = getEquipment();
+    list2[j] = remote;
+    setEquipmentList(list2);
   }
-  return list[i];
+  return remote;
 }
 
-export function deleteEquipment(id: number): boolean {
+/** ✅ سيرفر-أولانى: الحذف مبيتحسبش إلا بعد تأكيد السيرفر */
+export async function deleteEquipment(id: number): Promise<boolean> {
   const list = getEquipment();
   const eq = list.find(e => e.id === id);
   if (!eq) return false;
   if (eq.status !== 'متاحة') throw new Error('مينفعش حذف جهاز خارج أو في صيانة — رجّعه الأول');
-  setEquipmentList(list.filter(e => e.id !== id));
-  if (remoteAvailable()) {
-    api.deleteEquipment(id).catch(e => console.warn('remote deleteEquipment', e));
-  }
+  await api.deleteEquipment(id);
+  setEquipmentList(getEquipment().filter(e => e.id !== id));
   return true;
 }
 
@@ -1314,27 +1307,17 @@ export function getEquipmentMaintenance(): EquipmentMaintenance[] {
   return getItem<EquipmentMaintenance[]>(STORAGE_KEYS.equipmentMaintenance, []);
 }
 
-export function addEquipmentMaintenance(rec: Omit<EquipmentMaintenance, 'id' | 'createdAt'>): EquipmentMaintenance {
-  const list = getEquipmentMaintenance();
-  const item: EquipmentMaintenance = {
-    ...rec,
-    id: Math.max(0, ...list.map(m => m.id)) + 1,
-    createdAt: new Date().toISOString(),
-  };
-  setItem(STORAGE_KEYS.equipmentMaintenance, [item, ...list]);
-  if (remoteAvailable()) {
-    api.addEquipmentMaintenance(rec).then(() => {
-      api.getEquipmentMaintenance().then((remote: any) => {
-        if (Array.isArray(remote)) setItem(STORAGE_KEYS.equipmentMaintenance, remote);
-      }).catch(() => {});
-    }).catch(e => console.warn('remote addMaintenance', e));
-  }
-  return item;
+/** ✅ سيرفر-أولانى: تسجيل الصيانة بعد تأكيد السيرفر */
+export async function addEquipmentMaintenance(rec: Omit<EquipmentMaintenance, 'id' | 'createdAt'>): Promise<EquipmentMaintenance> {
+  const remote = await api.addEquipmentMaintenance(rec) as EquipmentMaintenance;
+  const list = getEquipmentMaintenance().filter(m => m.id !== remote.id);
+  setItem(STORAGE_KEYS.equipmentMaintenance, [remote, ...list]);
+  return remote;
 }
 
-export function deleteEquipmentMaintenance(id: number): void {
+export async function deleteEquipmentMaintenance(id: number): Promise<void> {
+  await api.deleteEquipmentMaintenance(id);
   setItem(STORAGE_KEYS.equipmentMaintenance, getEquipmentMaintenance().filter(m => m.id !== id));
-  if (remoteAvailable()) api.deleteEquipmentMaintenance(id).catch(e => console.warn('remote delMaintenance', e));
 }
 
 export function refreshMaintenance(): void {

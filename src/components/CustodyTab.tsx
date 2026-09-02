@@ -52,12 +52,12 @@ export default function CustodyTab({ user }: { user: Employee }) {
   }
 
   // ============ تسليم / فك عهدة ============
-  function submitCustody(e: React.FormEvent) {
+  async function submitCustody(e: React.FormEvent) {
     e.preventDefault();
     try {
       if (!form.equipmentId) { flash('⚠️ اختار الجهاز'); return; }
       if (!form.employeeId) { flash('⚠️ اختار المساح'); return; }
-      updateEquipment(form.equipmentId, {
+      await updateEquipment(form.equipmentId, {
         custodyEmployeeId: form.employeeId,
         custodySince: form.since,
         custodyNotes: form.notes || null,
@@ -66,15 +66,19 @@ export default function CustodyTab({ user }: { user: Employee }) {
       setForm({ equipmentId: 0, employeeId: 0, since: today, notes: '' });
       reload();
     } catch (err: any) {
-      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ماتحفظش على السيرفر: ' + (err?.message || 'حصل خطأ'));
     }
   }
 
-  function releaseCustody(eq: Equipment) {
+  async function releaseCustody(eq: Equipment) {
     if (!window.confirm(`فك عهدة ${eq.name} (${eq.serialNumber}) من ${empName(eq.custodyEmployeeId)}؟`)) return;
-    updateEquipment(eq.id, { custodyEmployeeId: null, custodySince: null, custodyNotes: null });
-    flash('🔓 اتفكت العهدة — الجهاز رجع للمخزن');
-    reload();
+    try {
+      await updateEquipment(eq.id, { custodyEmployeeId: null, custodySince: null, custodyNotes: null });
+      flash('🔓 اتفكت العهدة — الجهاز رجع للمخزن');
+      reload();
+    } catch (err: any) {
+      flash('⛔ ' + (err?.message || 'حصل خطأ'));
+    }
   }
 
   // 📤 تصدير كشف العهدة كله

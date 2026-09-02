@@ -1077,7 +1077,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment' && method === 'POST') {
-      // ✅ تسجيل جهاز جديد: متاح لأي موظف — المساح يسجل عدته بنفسه (التعديل والحذف إدارة بس)
+      // 👑 إضافة جهاز جديد: المالك بس — المساحين بيسجلوا خروج/رجوع بس
+      if (!isOwner(authUser)) return forbidden('إضافة العدة من المالك بس');
       const b = await readBody<any>(req);
       if (!b?.name || !b?.serialNumber) return json({ error: 'bad_request', message: 'الاسم والسيريال نمبر مطلوبين' }, 400);
       const dupe = await sql`SELECT id FROM equipment WHERE serial_number = ${String(b.serialNumber).trim()}`;
@@ -1090,7 +1091,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('equipment/') && method === 'PUT') {
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      // 👑 تعديل العدة (اسم/نوع/سيريال/موقع/حالة/عهدة): المالك بس
+      if (!isOwner(authUser)) return forbidden('تعديل العدة من المالك بس');
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
       const cur = await sql`SELECT * FROM equipment WHERE id = ${id}`;
@@ -1235,7 +1237,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery' && method === 'POST') {
-      // ✅ أي موظف يضيف معدة (المساح يسجل معدته بنفسه) — التعديل والإيقاف إدارة بس
+      // 👑 إضافة معدة ثقيلة: المالك بس — المساحين بيسجلوا ساعات بس
+      if (!isOwner(authUser)) return forbidden('إضافة المعدات من المالك بس');
       const b = await readBody<any>(req);
       if (!b?.kind || !b?.owner) return json({ error: 'bad_request', message: 'النوع والمالك مطلوبين' }, 400);
       const rows = await sql`INSERT INTO machinery (kind, owner, size, notes, driver) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}, ${b.driver ?? ''}) RETURNING *`;
@@ -1243,7 +1246,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('machinery/') && method === 'PUT') {
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('إدارة المعدات الثقيلة من إدارة النظام بس');
+      // 👑 تعديل/إيقاف/مسح المعدة الثقيلة: المالك بس
+      if (!isOwner(authUser)) return forbidden('تعديل المعدات الثقيلة من المالك بس');
       const id = Number(path.split('/')[1]);
       const b = await readBody<any>(req);
       const rows = await sql`
@@ -1315,8 +1319,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment-maintenance' && method === 'POST') {
-      // 🛡️ الصيانة = إدارة
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      // 👑 الصيانة = المالك بس
+      if (!isOwner(authUser)) return forbidden('سجل صيانة العدة من المالك بس');
       const b = await readBody<any>(req);
       const eqId = Number(b?.equipmentId);
       if (!eqId || !b?.issue || !b?.maintDate) return json({ error: 'bad_request', message: 'الجهاز والعطل والتاريخ مطلوبين' }, 400);
@@ -1328,7 +1332,8 @@ export default async function handler(req: Request) {
     }
 
     if (path.startsWith('equipment-maintenance/') && method === 'DELETE') {
-      if (!hasPerm(authUser, 'canEditAttendance')) return forbidden('صلاحية إدارة العدة مطلوبة');
+      // 👑 حذف سجل صيانة: المالك بس
+      if (!isOwner(authUser)) return forbidden('حذف سجل الصيانة من المالك بس');
       const id = Number(path.split('/')[1]);
       await sql`DELETE FROM equipment_maintenance WHERE id = ${id}`;
       return json({ ok: true });

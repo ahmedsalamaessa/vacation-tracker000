@@ -63,7 +63,8 @@ interface Props {
 
 export default function MachineryTab({ user }: Props) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
-  const isAdmin = user.role === 'admin';
+  // 👑 إدارة المعدات الثقيلة نفسها (إضافة/تعديل/إيقاف/مسح/تفريغ): المالك بس — المساح يسجل الساعات بس
+  const isOwnerUser = Boolean((user as any).isOwner);
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
 
@@ -411,12 +412,13 @@ export default function MachineryTab({ user }: Props) {
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
-            {machinery.length > 0 && isAdmin && (
+            {machinery.length > 0 && isOwnerUser && (
               <button type="button" onClick={async () => { if (!window.confirm('🧹 هتمسح كل المعدات وكل الساعات المسجلة وتبدأ من الصفر — متأكد؟ (مفيش رجوع)')) return; try { await clearAllMachinery(); flash('🧹 اتفضرت كل المعدات من السيرفر — ابدأ من الأول'); load(); setDraft({}); setDraftNotes({}); } catch (err: any) { flash('⛔ ماتفضرتش: ' + (err?.message || 'حصل خطأ')); } }}
                 className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black text-white hover:bg-red-700">🧹 تفريغ كل المعدات</button>
             )}
           </div>
-          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد{canManage ? '' : ' — ضيف أي معدة جديدة من هنا'}</p>
+          <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد</p>
+          {isOwnerUser && (
           <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
               النوع
@@ -466,6 +468,7 @@ export default function MachineryTab({ user }: Props) {
               {busy ? '⏳ جاري الحفظ على السيرفر...' : form.id ? '✏️ حفظ التعديل' : '➕ إضافة معدة'}
             </button>
           </form>
+          )}
 
           {machinery.length === 0 ? (
             <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">مفيش معدات — ضيف أول معدة من الفورم فوق 👇</div>
@@ -478,13 +481,13 @@ export default function MachineryTab({ user }: Props) {
                     {(m.driver || m.owner) && <div className="text-[11px] font-bold text-slate-400">👤 مالك: {m.owner}{m.driver ? ` · 🚛 سواق: ${m.driver}` : ''}</div>}
                     {m.notes && <div className="text-[11px] font-bold text-slate-400">{m.notes}</div>}
                   </div>
-                  {m.active && canManage && (
+                  {m.active && isOwnerUser && (
                     <div className="flex gap-1">
                       <button type="button" onClick={() => setForm({ id: m.id, kind: KINDS.includes(m.kind) ? m.kind : 'أخرى', custom: KINDS.includes(m.kind) ? '' : m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
                         className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
                       <button type="button" onClick={async () => { if (!window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) return; try { await deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت على السيرفر — تقدر ترجعها بالتعديل'); load(); } catch (err: any) { flash('⛔ ماتحفظش: ' + (err?.message || 'حصل خطأ')); } }}
                         className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>
-                      {isAdmin && (
+                      {isOwnerUser && (
                         <button type="button" onClick={async () => { if (!window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) return; try { await deleteMachineryHard(m.id); flash('🗑️ اتمسحت من السيرفر — شغلها القديم محفوظ'); load(); } catch (err: any) { flash('⛔ ماتمسحتش: ' + (err?.message || 'حصل خطأ')); } }}
                           className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص (أدمن بس)">🗑️</button>
                       )}

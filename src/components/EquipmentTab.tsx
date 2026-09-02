@@ -22,6 +22,8 @@ function daysSince(dateStr: string): number {
 
 export default function EquipmentTab({ user }: { user: Employee }) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
+  // 👑 إدارة العدة نفسها (إضافة/تعديل/حذف/صيانة/نقل مواقع): المالك بس
+  const isOwnerUser = Boolean((user as any).isOwner);
   const today = new Date().toISOString().slice(0, 10);
 
   const [equipment, setEquipmentState] = useState<Equipment[]>([]);
@@ -776,7 +778,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h3 className="text-xl font-black text-slate-900">🧰 سجل المعدات ({visibleEquipment.length})</h3>
-          {canManage && visibleEquipment.length > 0 && (
+          {isOwnerUser && visibleEquipment.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <select value={moveSite} onChange={e => setMoveSite(Number(e.target.value))}
                 className="rounded-xl border-2 border-slate-300 px-3 py-1.5 text-xs font-black outline-none focus:border-slate-900">
@@ -792,7 +794,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           )}
         </div>
 
-        {(
+        {isOwnerUser && (
           <form onSubmit={submitDevice} className="mb-5 grid gap-3 md:grid-cols-5">
             <select value={eqForm.kind} onChange={e => setEqForm(f => ({ ...f, kind: e.target.value as EquipmentKind }))}
               className="rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
@@ -829,7 +831,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                   <th className="p-3">مع مين</th>
                   <th className="p-3">ملاحظات</th>
                   <th className="p-3">السجل</th>
-                  {canManage && <th className="p-3">إجراءات</th>}
+                  {isOwnerUser && <th className="p-3">إجراءات</th>}
                 </tr>
               </thead>
               <tbody>
@@ -849,7 +851,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
                       <td className="p-3">
                         <button type="button" onClick={() => setViewEq(eq)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-200" title="سجل الجهاز كامل">📜</button>
                       </td>
-                      {canManage && (
+                      {isOwnerUser && (
                         <td className="p-3">
                           <div className="flex gap-1">
                             {eq.status === 'صيانة' && (
@@ -929,7 +931,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
         )}
       </section>
       {/* ===== 🔧 سجل الصيانة ===== */}
-      {canManage && (
+      {isOwnerUser && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="mb-1 text-xl font-black text-slate-900">🔧 الصيانة والأعطال</h3>
           <p className="mb-4 text-xs font-bold text-slate-500">سجّل العطل وتكلفته — الجهاز يتحول تلقائي لصيانة، ولما يخلص دوس "✅ خلصت" في جدول المعدات</p>

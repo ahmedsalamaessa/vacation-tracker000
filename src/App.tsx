@@ -67,6 +67,7 @@ interface TabDef {
   key: TabKey;
   emoji: string;
   adminOnly?: boolean;
+  ownerOnly?: boolean;
   permission?: keyof Pick<
     Employee,
     | 'canViewDashboard'
@@ -102,7 +103,7 @@ const TABS: TabDef[] = [
   { key: 'locations', emoji: '📍', permission: 'canManageLocations' },
   { key: 'equipment', emoji: '🧰' },
   { key: 'machinery', emoji: '🚜' },
-  { key: 'custody', emoji: '👥', adminOnly: true },
+  { key: 'custody', emoji: '👥', ownerOnly: true },
   { key: 'attempts', emoji: '📡', permission: 'canViewAuditLog' },
   { key: 'reports', emoji: '📁', permission: 'canViewReports' },
   { key: 'settings', emoji: '⚙️', permission: 'canManageSettings' },
@@ -413,6 +414,7 @@ export default function App() {
   const visibleTabs = TABS.filter(t => {
     if (t.key === 'dashboard')
       return user.role !== 'employee' && hasPermission(t.permission as keyof Employee);
+    if (t.ownerOnly) return Boolean((user as any).isOwner);
     if (t.permission) return hasPermission(t.permission as keyof Employee);
     if (t.adminOnly) return user.role === 'admin';
     return true;

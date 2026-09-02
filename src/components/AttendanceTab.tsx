@@ -4,7 +4,9 @@ import {
   getEmployees,
   getAttendance,
   upsertAttendance,
+  upsertAttendanceSync,
   deleteAttendance,
+  deleteAttendanceSync,
   isMonthLocked,
   lockMonth,
   unlockMonth,
@@ -149,7 +151,7 @@ export default function AttendanceTab({
     }
   }
 
-  function save() {
+  async function save() {
     const entries = Object.entries(dirtyValues);
     if (entries.length === 0) {
       setMsg('لا توجد تغييرات للحفظ');
@@ -178,6 +180,7 @@ export default function AttendanceTab({
 
     let savedCount = 0;
     let deletedCount = 0;
+    const pending: Promise<any>[] = [];
 
     for (const [key, status] of entries) {
       const [employeeId, date] = key.split('_');
@@ -186,17 +189,19 @@ export default function AttendanceTab({
       );
 
       if (status) {
-        upsertAttendance({
-          employeeId: Number(employeeId),
-          date,
-          status,
-          notes: null,
-          checkInLat: null,
-          checkInLng: null,
-          workLocationId: null,
-          workLocationName: null,
-          distanceMeters: null,
-        });
+        pending.push(
+          upsertAttendanceSync({
+            employeeId: Number(employeeId),
+            date,
+            status,
+            notes: null,
+            checkInLat: null,
+            checkInLng: null,
+            workLocationId: null,
+            workLocationName: null,
+            distanceMeters: null,
+          }),
+        );
         addAuditLog({
           actorId: user?.id || null,
           actorName: user?.name || 'غير معروف',
@@ -213,7 +218,7 @@ export default function AttendanceTab({
         } as any);
         savedCount++;
       } else {
-        deleteAttendance(Number(employeeId), date);
+        pending.push(deleteAttendanceSync(Number(employeeId), date));
         addAuditLog({
           actorId: user?.id || null,
           actorName: user?.name || 'غير معروف',
@@ -232,11 +237,19 @@ export default function AttendanceTab({
       }
     }
 
-    setMsg(`✅ تم حفظ ${savedCount} وتفريغ ${deletedCount} — تم تحديث رصيد الإجازات`);
-    setDirtyValues({});
-    onSaved?.();
-    load();
-    setSaving(false);
+    // 🛡️ استنى السيرفر يأكد الكل قبل ما نعلن النجاح — ولو حاجة فشلت بيّنها
+    try {
+      await Promise.all(pending);
+      setMsg(`✅ تم حفظ ${savedCount} وتفريغ ${deletedCount} — اتحفظوا على السيرفر واتحدث رصيد العارضة/الإجازات`);
+      setDirtyValues({});
+      onSaved?.();
+      await load();
+    } catch (err: any) {
+      const m = String(err?.serverMessage || err?.message || '');
+      setMsg(`⛔ بعض الخلايا ماتحفظتش على السيرفر: ${m || 'حصل خطأ'} — راجع الشاشة وحاول تاني`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const years = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];

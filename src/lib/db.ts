@@ -448,7 +448,8 @@ export function getAttendanceByDateRange(startDate: string, endDate: string): At
   return getAttendance().filter(a => a.date >= startDate && a.date <= endDate);
 }
 
-export function upsertAttendance(record: any): AttendanceRecord {
+/** 🧠 تحديث محلي للحضور (بدون نت) — يرجع السجل بعد التحديث */
+function upsertAttendanceLocal(record: any): AttendanceRecord {
   if (record.date) record.date = String(record.date).slice(0, 10);
   const attendance = getAttendance();
   const existingIndex = attendance.findIndex(
@@ -478,6 +479,11 @@ export function upsertAttendance(record: any): AttendanceRecord {
     setAttendance([...attendance, newRecord]);
     result = newRecord;
   }
+  return result;
+}
+
+export function upsertAttendance(record: any): AttendanceRecord {
+  const result = upsertAttendanceLocal(record);
   if (remoteAvailable()) {
     api
       .upsertAttendance(record)
@@ -494,6 +500,41 @@ export function upsertAttendance(record: any): AttendanceRecord {
       .catch(e => console.warn('remote upsertAttendance', e));
   }
   return result;
+}
+
+/**
+ * 🛡️ حفظ متتابع: يحدث المحلي فورًا ويستنى تأكيد السيرفر — بيقضي على سباق "تزامن قبل ما يتحفظ"
+ * اللي كان بيرجّع الخلية فاضية بعد الحفظ من شاشة تتبع الحضور
+ */
+export async function upsertAttendanceSync(record: any): Promise<AttendanceRecord> {
+  const local = upsertAttendanceLocal(record); // ✅ محلي بس — البوست للسيرفر مرة واحدة تحت
+  if (!remoteAvailable()) return local;
+  try {
+    const saved = await api.upsertAttendance(record) as AttendanceRecord;
+    const att = getAttendance();
+    const idx = att.findIndex(
+      a => a.employeeId === saved.employeeId && String(saved.date).slice(0, 10) === String(a.date).slice(0, 10),
+    );
+    if (idx !== -1) {
+      att[idx] = { ...att[idx], ...saved, date: String(saved.date).slice(0, 10) };
+      setAttendance(att);
+    }
+    return att[idx] || local;
+  } catch (e) {
+    throw e; // الواجهة هتعرض الخطأ بدل ما تدّعي الحفظ
+  }
+}
+
+/** حذف متتابع — يستنى السيرفر */
+export async function deleteAttendanceSync(employeeId: number, date: string): Promise<boolean> {
+  // ✅ محلي بس — الـ delete للسيرفر مرة واحدة تحت
+  const attendance = getAttendance();
+  const filtered = attendance.filter(a => !(a.employeeId === employeeId && a.date === date));
+  const existed = filtered.length !== attendance.length;
+  if (existed) setAttendance(filtered);
+  if (!remoteAvailable()) return existed;
+  await api.deleteAttendance(employeeId, date);
+  return existed;
 }
 
 export function deleteAttendance(employeeId: number, date: string): boolean {

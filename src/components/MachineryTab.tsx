@@ -82,6 +82,7 @@ export default function MachineryTab({ user }: Props) {
   const [form, setForm] = useState<{ id: number | null; kind: string; custom: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
   const [deptName, setDeptName] = useState('قسم المساحة');
   const [printOwner, setPrintOwner] = useState<string | null>(null);
+  const [printGrid, setPrintGrid] = useState(false);
 
   function flash(text: string) {
     setMsg(text);
@@ -356,6 +357,7 @@ export default function MachineryTab({ user }: Props) {
               <input type="month" value={month} onChange={e => setMonth(e.target.value)}
                 className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
               <button type="button" onClick={exportMonth} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 كشف الشهر Excel</button>
+              <button type="button" onClick={() => setPrintGrid(true)} className="rounded-xl border-2 border-blue-500 bg-white px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-50">🖨️ طباعة الشيت (رأسي)</button>
             </div>
           </div>
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -565,6 +567,68 @@ export default function MachineryTab({ user }: Props) {
             </div>
           )}
         </section>
+      )}
+
+      {/* ===== 🖨️ طباعة الشيت التراكمي — رأسي: الأيام تحت بعضها والمعدات أعمدة ويجمع رأسي ===== */}
+      {printGrid && (
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGrid(false)}>
+          <div className="mx-auto max-w-4xl" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex gap-2 print:hidden">
+              <button type="button" onClick={() => window.print()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة / حفظ PDF</button>
+              <button type="button" onClick={() => setPrintGrid(false)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100">إغلاق</button>
+            </div>
+            <div className="print-sheet rounded-2xl bg-white p-6 text-slate-900 shadow-2xl" dir="rtl">
+              <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
+                <div className="text-lg font-black">{deptName}</div>
+                <div className="mt-1 text-2xl font-black">📊 شيت ساعات المعدات — شهر {month}</div>
+              </div>
+              <table className="mt-4 w-full border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border border-slate-400 p-1.5 w-24">📅 اليوم</th>
+                    {histList.map(m => (
+                      <th key={m.id} className="border border-slate-400 p-1.5">
+                        <div>{[m.kind, m.size].filter(Boolean).join(' ')}</div>
+                        <div className="text-[9px] font-normal text-slate-500">{m.owner}{m.driver ? ` — ${m.driver}` : ''}</div>
+                      </th>
+                    ))}
+                    <th className="border border-slate-400 bg-slate-800 p-1.5 text-white w-14">اليومي</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthDays.map((d, i) => {
+                    const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'][new Date(d + 'T00:00:00').getDay()];
+                    const dayT = dayGridTotal(d);
+                    return (
+                      <tr key={d} className={i % 2 ? 'bg-slate-50' : ''}>
+                        <td className="border border-slate-300 p-1.5 font-black whitespace-nowrap">{d.slice(8)} — {wd}</td>
+                        {histList.map(m => {
+                          const v = hoursOf(m.id, d);
+                          return <td key={m.id} className={`border border-slate-300 p-1.5 text-center font-black ${v ? 'text-slate-900' : 'text-slate-300'}`}>{v || '—'}</td>;
+                        })}
+                        <td className={`border border-slate-300 p-1.5 text-center font-black ${dayT ? 'bg-blue-50 text-blue-800' : 'text-slate-300'}`}>{dayT || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-900 text-white">
+                    <td className="border border-slate-400 p-2 font-black">إجمالي الشهر</td>
+                    {histList.map(m => {
+                      const t = monthGridTotal(m.id);
+                      return <td key={m.id} className={`border border-slate-400 p-2 text-center font-black ${t ? 'text-emerald-300' : 'opacity-40'}`}>{t || '—'}</td>;
+                    })}
+                    <td className="border border-slate-400 bg-blue-700 p-2 text-center font-black">{monthGridGrand || '—'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <div className="mt-4 flex justify-between text-[11px] font-bold text-slate-500">
+                <span>إجمالي الشهر الكلي: <b className="text-slate-900">{monthGridGrand}</b> ساعة</span>
+                <span>تاريخ الطباعة: {today}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ===== 🖨️ كشف مالك للتوقيع ===== */}

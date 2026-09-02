@@ -1246,8 +1246,8 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery' && method === 'POST') {
-      // 👑 إضافة معدة ثقيلة: المالك بس — المساحين بيسجلوا ساعات بس
-      if (!isOwner(authUser)) return forbidden('إضافة المعدات من المالك بس');
+      // ➕ إضافة معدة ثقيلة: المالك + الأدمن/المدير (المعدات الثقيلة مش مربوطة بموقع) — التعديل/الإيقاف/المسح مالك بس
+      if (!isOwner(authUser) && authUser.role !== 'admin' && authUser.role !== 'manager') return forbidden('إضافة المعدات من المالك أو الإدارة بس');
       const b = await readBody<any>(req);
       if (!b?.kind || !b?.owner) return json({ error: 'bad_request', message: 'النوع والمالك مطلوبين' }, 400);
       const rows = await sql`INSERT INTO machinery (kind, owner, size, notes, driver) VALUES (${b.kind}, ${b.owner}, ${b.size ?? ''}, ${b.notes ?? null}, ${b.driver ?? ''}) RETURNING *`;

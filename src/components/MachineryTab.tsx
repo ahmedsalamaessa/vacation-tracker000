@@ -63,8 +63,10 @@ interface Props {
 
 export default function MachineryTab({ user }: Props) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
-  // 👑 إدارة المعدات الثقيلة نفسها (إضافة/تعديل/إيقاف/مسح/تفريغ): المالك بس — المساح يسجل الساعات بس
+  // 👑 إدارة المعدات الثقيلة (تعديل/إيقاف/مسح/تفريغ): المالك بس — المساح يسجل الساعات بس
   const isOwnerUser = Boolean((user as any).isOwner);
+  // ➕ إضافة معدة جديدة: المالك + الأدمن/المدير
+  const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
 
@@ -418,7 +420,7 @@ export default function MachineryTab({ user }: Props) {
             )}
           </div>
           <p className="mb-4 text-xs font-bold text-slate-500">النوع + المقاس + المالك + السواق — الاسم بيتكون تلقائي زي: لودر 66 زياد</p>
-          {isOwnerUser && (
+          {canAddMach && (
           <form onSubmit={submitMachinery} className="mb-4 grid gap-3 md:grid-cols-6">
             <label className="text-sm font-black text-slate-700">
               النوع

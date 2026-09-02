@@ -22,8 +22,11 @@ function daysSince(dateStr: string): number {
 
 export default function EquipmentTab({ user }: { user: Employee }) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
-  // 👑 إدارة العدة نفسها (إضافة/تعديل/حذف/صيانة/نقل مواقع): المالك بس
+  // 👑 إدارة العدة نفسها (تعديل/حذف/صيانة/نقل مواقع): المالك بس
   const isOwnerUser = Boolean((user as any).isOwner);
+  // ➕ الإضافة: المالك لأي موقع + الأدمن/المدير لموقعه بس
+  const myLocIds: number[] = (user.locationIds || []) as number[];
+  const canAddEquip = isOwnerUser || user.role === 'admin' || user.role === 'manager';
   const today = new Date().toISOString().slice(0, 10);
 
   const [equipment, setEquipmentState] = useState<Equipment[]>([]);
@@ -136,12 +139,15 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     e.preventDefault();
     try {
       if (!eqForm.name.trim() || !eqForm.serialNumber.trim()) { flash('⚠️ الاسم والسيريال نمبر مطلوبين'); return; }
+      // 📍 غير المالك بيضيف لموقعه بس — لو موقع واحد بينتسب تلقائي
+      let sid: number | null = eqForm.siteId || null;
+      if (!isOwnerUser && sid === null && myLocs.length >= 1) sid = myLocs[0].id;
       setSaving(true);
       if (eqForm.id) {
-        await updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, siteId: eqForm.siteId || null });
+        await updateEquipment(eqForm.id, { name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), notes: eqForm.notes, siteId: sid });
         flash('✅ اتعدّل الجهاز واتحفظ على السيرفر');
       } else {
-        await addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, siteId: eqForm.siteId || null });
+        await addEquipment({ name: eqForm.name.trim(), kind: eqForm.kind, serialNumber: eqForm.serialNumber.trim(), status: 'متاحة', notes: eqForm.notes, active: true, siteId: sid });
         flash('✅ اتسجّل الجهاز على السيرفر — هيظهر للكل');
       }
       setEqForm({ id: 0, name: '', kind: 'توتال استيشن', serialNumber: '', notes: '', siteId: siteSel > 0 ? siteSel : 0 });
@@ -355,6 +361,8 @@ export default function EquipmentTab({ user }: { user: Employee }) {
 
   // 🏢 العدة الظاهرة حسب الموقع
   const mySiteIds = user.locationIds || [];
+  // 📍 مواقع المستخدم الحالي (لقايمة الإضافة المقيدة)
+  const myLocs = locations.filter(l => l.active && myLocIds.includes(l.id));
   const visibleEquipment = canManage
     ? (siteSel === 0 ? equipment : siteSel === -1 ? equipment.filter(e => !e.siteId) : equipment.filter(e => e.siteId === siteSel))
     : (mySiteIds.length === 0 ? equipment : equipment.filter(e => !e.siteId || mySiteIds.includes(e.siteId as number)));
@@ -794,7 +802,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
           )}
         </div>
 
-        {isOwnerUser && (
+        {canAddEquip && (
           <form onSubmit={submitDevice} className="mb-5 grid gap-3 md:grid-cols-5">
             <select value={eqForm.kind} onChange={e => setEqForm(f => ({ ...f, kind: e.target.value as EquipmentKind }))}
               className="rounded-xl border border-slate-300 px-3 py-3 text-sm font-bold outline-none focus:border-blue-500">
@@ -802,12 +810,21 @@ export default function EquipmentTab({ user }: { user: Employee }) {
             </select>
             <input value={eqForm.name} onChange={e => setEqForm(f => ({ ...f, name: e.target.value }))} placeholder="اسم الجهاز (مثال: توتال نيكون)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
             <input value={eqForm.serialNumber} onChange={e => setEqForm(f => ({ ...f, serialNumber: e.target.value }))} placeholder="السيريال نمبر" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" required />
-            {canManage && (
+            {isOwnerUser && (
               <select value={eqForm.siteId} onChange={e => setEqForm(f => ({ ...f, siteId: Number(e.target.value) }))}
                 className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
                 <option value={0}>🏢 بدون موقع (لكل المواقع)</option>
                 {locations.filter(l => l.active).map(l => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
               </select>
+            )}
+            {!isOwnerUser && canAddEquip && myLocs.length > 1 && (
+              <select value={eqForm.siteId} onChange={e => setEqForm(f => ({ ...f, siteId: Number(e.target.value) }))}
+                className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500">
+                {myLocs.map(l => <option key={l.id} value={l.id}>📍 {l.name} (موقعك)</option>)}
+              </select>
+            )}
+            {!isOwnerUser && canAddEquip && myLocs.length === 1 && (
+              <div className="flex items-center rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">📍 {myLocs[0].name} (موقعك)</div>
             )}
             <input value={eqForm.notes} onChange={e => setEqForm(f => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات (اختياري)" className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold outline-none focus:border-blue-500" />
             <button disabled={saving} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50">{saving ? '⏳ جاري الحفظ على السيرفر...' : eqForm.id ? '💾 حفظ التعديل' : '➕ إضافة جهاز'}</button>

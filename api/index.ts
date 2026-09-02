@@ -1077,15 +1077,24 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'equipment' && method === 'POST') {
-      // 👑 إضافة جهاز جديد: المالك بس — المساحين بيسجلوا خروج/رجوع بس
-      if (!isOwner(authUser)) return forbidden('إضافة العدة من المالك بس');
+      // 👑 إضافة جهاز: المالك لأي موقع — والأدمن/المدير لموقعه هو بس — المساحين مرفوضين
       const b = await readBody<any>(req);
       if (!b?.name || !b?.serialNumber) return json({ error: 'bad_request', message: 'الاسم والسيريال نمبر مطلوبين' }, 400);
+      let siteId: number | null = b.siteId != null && b.siteId !== '' ? Number(b.siteId) : null;
+      if (!isOwner(authUser)) {
+        const isMgr = authUser.role === 'admin' || authUser.role === 'manager';
+        if (!isMgr) return forbidden('إضافة العدة من المالك أو إدارة الموقع بس');
+        const mySites: number[] = (authUser.locationIds || authUser.location_ids || []).map((x: any) => Number(x)).filter(Boolean);
+        if (mySites.length === 0) return forbidden('حسابك مش مربوط بموقع — متحتّش تضيف عدة لحد ما المالك يربطك بموقع');
+        if (siteId === null) siteId = mySites.length === 1 ? mySites[0] : null;
+        if (siteId === null) return json({ error: 'bad_request', message: 'اختار موقعك من القايمة — الإضافة لموقعك بس' }, 400);
+        if (!mySites.includes(siteId)) return forbidden('إضافة العدة لموقعك بتاعك بس — مش لأي موقع تاني');
+      }
       const dupe = await sql`SELECT id FROM equipment WHERE serial_number = ${String(b.serialNumber).trim()}`;
       if ((dupe as any[]).length > 0) return json({ error: 'duplicate', message: 'السيريال نمبر ده مسجل قبل كده' }, 409);
       const rows = await sql`
         INSERT INTO equipment (name, kind, serial_number, status, notes, active, site_id)
-        VALUES (${b.name}, ${b.kind || 'أخرى'}, ${String(b.serialNumber).trim()}, 'متاحة', ${b.notes ?? null}, ${b.active !== false}, ${b.siteId ?? null})
+        VALUES (${b.name}, ${b.kind || 'أخرى'}, ${String(b.serialNumber).trim()}, 'متاحة', ${b.notes ?? null}, ${b.active !== false}, ${siteId})
         RETURNING *`;
       return json(mapEquipment((rows as any[])[0]), 201);
     }

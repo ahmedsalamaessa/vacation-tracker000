@@ -445,7 +445,7 @@ export default async function handler(req: Request) {
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
           sql`SELECT * FROM work_locations ORDER BY id`,
-          sql`SELECT * FROM attendance WHERE date >= CURRENT_DATE - INTERVAL '120 days' ORDER BY date DESC, id DESC`,
+          sql`SELECT * FROM attendance WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`,
           sql`SELECT * FROM vacations ORDER BY created_at DESC`,
           sql`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200`,
           sql`SELECT * FROM month_locks ORDER BY year_month DESC`,
@@ -455,7 +455,7 @@ export default async function handler(req: Request) {
           sql`SELECT * FROM equipment ORDER BY id`,
           sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
           sql`SELECT * FROM machinery ORDER BY id`,
-          sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '200 days' ORDER BY date DESC, id DESC`,
+          sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`,
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);

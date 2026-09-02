@@ -112,13 +112,14 @@ export default function MachineryTab({ user }: Props) {
     refreshMachinery();
     const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
     const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
-    // 🔄 مزامنة حية كل 20 ثانية: أي معدة أو ساعات يضيفها أي حد تظهر عند الكل تلقائيًا
-    // (بتحدث القوائم بس — متلمسش خانات الساعات اللي بتكتبها دلوقتي)
-    const live = window.setInterval(() => {
-      refreshMachinery();
-      window.setTimeout(() => { load(); }, 900);
-    }, 20000);
-    return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearInterval(live); };
+    // 🔄 مزامنة ذكية كل 60 ثانية — بس لما التاب قدامك (توفير ساعات Neon المجانية)
+    // بتحدث القوائم بس — متلمسش خانات الساعات اللي بتكتبها دلوقتي
+    const syncNow = () => { refreshMachinery(); window.setTimeout(() => { load(); }, 900); };
+    const live = window.setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+    const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearInterval(live); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

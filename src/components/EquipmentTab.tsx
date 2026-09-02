@@ -84,13 +84,13 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     refreshMaintenance();
     const t1 = setTimeout(reload, 1200);
     const t2 = setTimeout(reload, 3500);
-    // 🔄 مزامنة حية كل 20 ثانية: أي جهاز يضيفه أي مساح يظهر عند الكل تلقائيًا
-    const live = setInterval(() => {
-      refreshEquipment();
-      refreshMaintenance();
-      setTimeout(reload, 900);
-    }, 20000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(live); };
+    // 🔄 مزامنة ذكية: كل 60 ثانية — بس لما التاب قدامك (القاعدة بتنام لما محدش باصص، توفير ساعات Neon)
+    const syncNow = () => { refreshEquipment(); refreshMaintenance(); window.setTimeout(reload, 900); };
+    const live = window.setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+    const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(live); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

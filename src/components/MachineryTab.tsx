@@ -67,6 +67,8 @@ export default function MachineryTab({ user }: Props) {
   const isOwnerUser = Boolean((user as any).isOwner);
   // ➕ إضافة معدة جديدة: المالك + الأدمن/المدير
   const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
+  // 🔒 قفل الأيام القديمة: التعديل من المالك + المديرين بس (أنا + عمرو أمين + يعقوب)
+  const canEditLockedDays = isOwnerUser || user.role === 'manager';
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
 
@@ -132,11 +134,15 @@ export default function MachineryTab({ user }: Props) {
   }, [dayDate]);
 
   const active = machinery.filter(m => m.active);
+  const dayLocked = dayDate < today && !canEditLockedDays;
+  const dayFuture = dayDate > today;
   // التراكمي: كل غير الممسوح + الممسوح اللي عنده ساعات قديمة (شغله محفوظ)
   const histList = machinery.filter(m => !m.deleted || getMachineryHours().some(h => h.machineryId === m.id));
   const daySum = active.reduce((s, m) => s + (parseFloat(draft[m.id] || '') || 0), 0);
 
   async function saveDay() {
+    if (dayFuture) { flash('⏳ مينفعش تسجل ساعات ليوم لسه جاي'); return; }
+    if (dayLocked) { flash(`🔒 يوم ${dayDate} مقفول — التعديل من الإدارة بس`); return; }
     try {
       const entries = active.map(m => ({ machineryId: m.id, hours: parseFloat(draft[m.id] || '') || 0, notes: (draftNotes[m.id] || '').trim() }));
       const filled = entries.filter(e => e.hours > 0).length;
@@ -271,6 +277,18 @@ export default function MachineryTab({ user }: Props) {
           </div>
         </div>
 
+        {dayLocked && (
+          <div className="mb-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-center">
+            <span className="text-2xl">🔒</span>
+            <div className="text-sm font-black text-amber-800">يوم {dayDate} اتقفل — تسجيل/تعديل ساعات الأيام اللي فاتت من المالك أو المدير بس</div>
+          </div>
+        )}
+        {dayFuture && (
+          <div className="mb-3 rounded-2xl border-2 border-slate-300 bg-slate-50 p-4 text-center">
+            <span className="text-2xl">⏳</span>
+            <div className="text-sm font-black text-slate-600">مينفعش تسجل ساعات ليوم لسه جاي — استنى لما ييجي اليوم</div>
+          </div>
+        )}
         {active.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
@@ -295,11 +313,13 @@ export default function MachineryTab({ user }: Props) {
                           <td className="p-3"><MName m={m} /></td>
                           <td className="p-3">
                             <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
-                              placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900" />
+                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                              placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                           </td>
                           <td className="p-3">
                             <input type="text" value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
-                              placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)" className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none focus:border-slate-900" />
+                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                              placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)" className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                           </td>
                         </tr>
                       ))}
@@ -316,8 +336,9 @@ export default function MachineryTab({ user }: Props) {
                 </tfoot>
               </table>
             </div>
-            <button type="button" onClick={saveDay} className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700">
-              💾 حفظ ساعات اليوم ({dayDate})
+            <button type="button" onClick={saveDay} disabled={dayLocked || dayFuture}
+              className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900">
+              {dayLocked ? `🔒 يوم ${dayDate} مقفول — للإدارة بس` : dayFuture ? '⏳ استنى اليوم ييجي' : `💾 حفظ ساعات اليوم (${dayDate})`}
             </button>
           </>
         )}

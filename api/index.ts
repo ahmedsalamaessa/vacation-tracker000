@@ -1377,10 +1377,17 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'machinery-hours/bulk' && method === 'POST') {
-      // ⏱️ أي موظف يسجل ساعات اليوم
+      // ⏱️ الموظف يسجل ساعات يومه بس — الأيام اللي فاتت مقفولة: التعديل من المالك/المدير بس
       const b = await readBody<any>(req);
       const date = dateOnly(b?.date);
       if (!date || !Array.isArray(b?.entries)) return json({ error: 'bad_request', message: 'التاريخ والساعات مطلوبين' }, 400);
+      const today = new Date().toISOString().slice(0, 10);
+      if (date > today) return json({ error: 'bad_request', message: 'مينفعش تسجل ساعات ليوم لسه جاي' }, 400);
+      if (date < today) {
+        // 🔒 تعديل الأيام المقفولة: المالك + المديرين بس (أنا + عمرو أمين + يعقوب)
+        const canEditLocked = isOwner(authUser) || authUser.role === 'manager';
+        if (!canEditLocked) return forbidden(`🔒 يوم ${date} اتقفل — تسجيل أو تعديل ساعات الأيام اللي فاتت من المالك أو المدير بس`);
+      }
       let saved = 0;
       for (const en of b.entries) {
         const mid = Number(en?.machineryId);

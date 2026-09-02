@@ -227,26 +227,25 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'تقرير الشغل'], rows);
   }
 
+  /** 📤 كشف الشهر Excel — بنفس الشكل الرأسي بتاع الطباعة: أيام صفوف × معدات أعمدة + إجمالي تحت */
   function exportMonth() {
-    const [y, mo] = month.split('-').map(Number);
-    const days = new Date(y, mo, 0).getDate();
-    const headers = ['المعدة', 'السواق', ...Array.from({ length: days }, (_, i) => String(i + 1)), 'الإجمالي'];
-    const all = getMachineryHours();
-    const rows = histList.map(m => {
-      const mine = all.filter(h => h.machineryId === m.id && h.date.startsWith(month));
-      const perDay = Array.from({ length: days }, (_, i) => {
-        const d = `${month}-${String(i + 1).padStart(2, '0')}`;
-        const hit = mine.find(h => h.date === d);
-        return hit ? hit.hours : '';
-      });
-      const total = mine.reduce((s, h) => s + h.hours, 0);
-      return [mLabel(m), m.driver || '', ...perDay, total];
+    const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
+    // سطر العنوان: اليوم | اسم كل معدة | اليومي
+    const headers = ['📅 اليوم', ...histList.map(m => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '')), 'إجمالي اليوم'];
+    // صف لكل يوم في الشهر
+    const dayRows = monthDays.map(d => {
+      const dayNum = d.slice(8);
+      const dayWd = wd[new Date(d + 'T00:00:00').getDay()];
+      const dayT = dayGridTotal(d);
+      return [
+        `${dayNum} — ${dayWd}`,
+        ...histList.map(m => hoursOf(m.id, d) || ''),
+        dayT || '',
+      ];
     });
-    const sumRow = ['الإجمالي', '', ...Array.from({ length: days }, (_, i) => {
-      const d = `${month}-${String(i + 1).padStart(2, '0')}`;
-      return all.filter(h => h.date === d).reduce((s, h) => s + h.hours, 0) || '';
-    }), all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + h.hours, 0)];
-    downloadCsv(`كشف_ساعات_${month}.csv`, headers, [...rows, sumRow]);
+    // سطر الإجمالي في الآخر
+    const totalRow = ['إجمالي الشهر', ...histList.map(m => monthGridTotal(m.id) || ''), monthGridGrand || ''];
+    downloadCsv(`شيت_ساعات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 
   return (

@@ -103,15 +103,25 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
       await decideOvertimeRequest(ot.id, approve);
       if (approve) {
         addSystemNotification({
+          type: 'overtime_decision',
           employeeId: ot.employeeId,
           title: '✅ تمت الموافقة على السهرة',
-          body: `سهرة ${ot.date} معتمدة — اتسجلت "سهر" في البصمة`,
+          body: `سهرة ${ot.date} معتمدة — اتسجلت "سهر" في شيت الحضور`,
+          targetUserIds: [ot.employeeId],
+          entityType: 'overtime_request',
+          entityId: ot.id,
+          severity: 'info',
         });
       } else {
         addSystemNotification({
+          type: 'overtime_decision',
           employeeId: ot.employeeId,
           title: '❌ تم رفض طلب السهر',
           body: `طلب سهر يوم ${ot.date} اترفض`,
+          targetUserIds: [ot.employeeId],
+          entityType: 'overtime_request',
+          entityId: ot.id,
+          severity: 'warn',
         });
       }
       await refreshFromRemote();

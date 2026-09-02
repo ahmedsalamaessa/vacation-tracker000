@@ -171,6 +171,21 @@ export default function MachineryTab({ user }: Props) {
     }
   }
 
+  /** 🗓️ أيام الشهر المختار + خريطة ساعات: معدة → يوم → ساعات */
+  const monthDaysCount = (() => { const [y, mo] = month.split('-').map(Number); return y && mo ? new Date(y, mo, 0).getDate() : 30; })();
+  const monthDays = Array.from({ length: monthDaysCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
+  const hoursGrid = new Map<number, Map<string, number>>();
+  for (const h of getMachineryHours()) {
+    if (!h.date.startsWith(month)) continue;
+    if (!hoursGrid.has(h.machineryId)) hoursGrid.set(h.machineryId, new Map());
+    const g = hoursGrid.get(h.machineryId)!;
+    g.set(h.date, (g.get(h.date) || 0) + h.hours);
+  }
+  const hoursOf = (mid: number, d: string) => hoursGrid.get(mid)?.get(d) || 0;
+  const monthGridTotal = (mid: number) => { let t = 0; hoursGrid.get(mid)?.forEach(v => t += v); return t; };
+  const dayGridTotal = (d: string) => { let t = 0; hoursGrid.forEach(gm => t += gm.get(d) || 0); return t; };
+  const monthGridGrand = histList.reduce((s, m) => s + monthGridTotal(m.id), 0);
+
   /** التراكمي لكل معدة */
   function totalsFor(m: Machinery) {
     const all = getMachineryHours().filter(h => h.machineryId === m.id);
@@ -308,41 +323,65 @@ export default function MachineryTab({ user }: Props) {
         )}
       </section>
 
-      {/* ===== التراكمي ===== */}
+      {/* ===== 📊 التراكمي — شيت شهري شبكي (المعدات × أيام الشهر) زي تتبع الحضور ===== */}
       {histList.length > 0 && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xl font-black text-slate-900">📊 التراكمي</h3>
+            <div>
+              <h3 className="text-xl font-black text-slate-900">📊 التراكمي — شيت شهر {month}</h3>
+              <p className="text-xs font-bold text-slate-400 mt-1">المساح يسجل ساعات اليوم من فورم التسجيل فوق ⬆️ — بتنزل هنا تلقائي. اضغط على أي يوم لتعديله</p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <input type="month" value={month} onChange={e => setMonth(e.target.value)}
                 className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
               <button type="button" onClick={exportMonth} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 كشف الشهر Excel</button>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="text-center text-xs" style={{ minWidth: `${160 + monthDaysCount * 52 + 90}px` }}>
               <thead>
-                <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
-                  <th className="p-3">المعدة</th>
-                  <th className="p-3">يوم {dayDate}</th>
-                  <th className="p-3">شهر {month}</th>
-                  <th className="p-3">الإجمالي الكلي</th>
+                <tr className="bg-slate-900 text-white">
+                  <th className="sticky right-0 z-10 bg-slate-900 p-2 text-right min-w-[150px]">المعدة</th>
+                  {monthDays.map(d => {
+                    const dayNum = Number(d.slice(-2));
+                    const isToday = d === today;
+                    const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'][new Date(d + 'T00:00:00').getDay()];
+                    return (
+                      <th key={d} title={`${wd} ${d}`}
+                        className={`p-1 min-w-[46px] ${isToday ? 'bg-blue-600' : (dayNum % 2 ? 'bg-slate-800/40' : '')}`}
+                        style={isToday ? { boxShadow: 'inset 0 0 0 2px #3b82f6' } : undefined}>
+                        <div className="font-black">{dayNum}</div>
+                        <div className="text-[9px] font-bold opacity-70">{wd.slice(0, 4)}</div>
+                      </th>
+                    );
+                  })}
+                  <th className="p-2 bg-blue-700 font-black min-w-[70px]">📅 الشهر</th>
                 </tr>
               </thead>
               <tbody>
                 {byGroup(histList).map(g => (
                   <React.Fragment key={g.label}>
-                    <tr className="bg-slate-50/80">
-                      <td colSpan={4} className="p-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</td>
+                    <tr className="bg-slate-100">
+                      <td colSpan={monthDaysCount + 2} className="p-1.5 text-right text-[11px] font-black text-slate-500">{g.label} ({g.items.length})</td>
                     </tr>
                     {g.items.map(m => {
-                      const t = totalsFor(m);
+                      const grand = monthGridTotal(m.id);
                       return (
-                        <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                          <td className="p-3"><MName m={m} /></td>
-                          <td className="p-3">{t.day || '—'}</td>
-                          <td className="p-3">{t.mon || '—'}</td>
-                          <td className="p-3 font-black text-blue-700">{t.total || '—'}</td>
+                        <tr key={m.id} className="border-b border-slate-100 hover:bg-blue-50/40">
+                          <td className="sticky right-0 z-10 bg-white p-2 text-right font-black text-slate-800 shadow-[inset_-8px_0_8px_-6px_rgba(0,0,0,0.08)]"><MName m={m} /></td>
+                          {monthDays.map(d => {
+                            const v = hoursOf(m.id, d);
+                            const isToday = d === today;
+                            return (
+                              <td key={d}
+                                onClick={() => { setDayDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                title={v ? `${v} ساعة — اضغط للتعديل` : 'اضغط للتسجيل لهذا اليوم'}
+                                className={`p-1 cursor-pointer font-bold transition-colors ${v ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100' : 'text-slate-300 hover:bg-slate-100'} ${isToday ? 'ring-2 ring-inset ring-blue-400' : ''}`}>
+                                {v || '·'}
+                              </td>
+                            );
+                          })}
+                          <td className={`p-1 font-black ${grand ? 'text-blue-700 bg-blue-50' : 'text-slate-300'}`}>{grand || '—'}</td>
                         </tr>
                       );
                     })}
@@ -350,17 +389,22 @@ export default function MachineryTab({ user }: Props) {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-slate-200 font-black text-slate-900">
-                  <td className="p-3">الإجمالي</td>
-                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).day, 0) || '—'}</td>
-                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).mon, 0) || '—'}</td>
-                  <td className="p-3">{histList.reduce((s, m) => s + totalsFor(m).total, 0) || '—'}</td>
+                <tr className="bg-slate-900 text-white font-black">
+                  <td className="sticky right-0 z-10 bg-slate-900 p-2 text-right">الإجمالي</td>
+                  {monthDays.map(d => { const t = dayGridTotal(d); return <td key={d} className={`p-1 ${t ? 'text-emerald-300' : 'opacity-40'}`}>{t || '·'}</td>; })}
+                  <td className="p-1 bg-blue-700">{monthGridGrand || '—'}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
+          <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-bold text-slate-500">
+            <span>🟩 خلية خضرا = فيها ساعات مسجلة</span>
+            <span>🔵 إطار أزرق = النهارده</span>
+            <span>👆 اضغط أي خلية لتروح ليومها وتعدلها</span>
+          </div>
         </section>
       )}
+
 
       {/* ===== 👤 كشف الملاك ===== */}
       {histList.length > 0 && (

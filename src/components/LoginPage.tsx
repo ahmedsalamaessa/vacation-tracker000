@@ -122,10 +122,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
 
             <div className="flex items-center justify-between gap-3 text-sm font-bold text-slate-500">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" className="h-5 w-5 rounded border-slate-300" />
-                تذكرني على هذا الجهاز
-              </label>
+              <span>🔒 جلستك محفوظة على جهازك تلقائيًا لحد ما تعمل خروج</span>
               <span>نسيت كلمة المرور؟ تواصل مع مدير النظام</span>
             </div>
 

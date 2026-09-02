@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getAttendance, getVacations, getLocations, getSettings } from '../lib/db';
+import { getAttendance, getVacations, getLocations, getSettings, getOvertimeRequests, refreshOvertimeRequests, submitOvertimeRequest } from '../lib/db';
 import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
-import type { Employee } from '../lib/types';
+import type { Employee, OvertimeRequest } from '../lib/types';
+
+function todayIsoLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // 🆕 دالة حساب المرحلة الحالية
 function getStageInfo(effectivePresent: number): { name: string; range: string; color: string } {
@@ -36,6 +41,12 @@ export default function MyAccountTab({ user }: { user: Employee }) {
   const [casual, setCasual] = useState({ quota: DEFAULT_CASUAL_QUOTA, spent: 0, remaining: DEFAULT_CASUAL_QUOTA, windowStart: '', windowEnd: '' });
   const [locNames, setLocNames] = useState<string[]>([]);
   const [recentVacs, setRecentVacs] = useState<{ type: string; days: number; status: string; date: string }[]>([]);
+  // 🌙 طلبات السهر بتاعتي (مستقلة تمامًا عن البصمة)
+  const [myOt, setMyOt] = useState<OvertimeRequest[]>([]);
+  const [otDate, setOtDate] = useState(todayIsoLocal());
+  const [otNotes, setOtNotes] = useState('');
+  const [otBusy, setOtBusy] = useState(false);
+  const [otMsg, setOtMsg] = useState('');
 
   useEffect(() => {
     const att = getAttendance().filter(a => a.employeeId === user.id);
@@ -68,7 +79,35 @@ export default function MyAccountTab({ user }: { user: Employee }) {
           date: v.startDate || '—',
         }))
     );
+    setMyOt(getOvertimeRequests().filter(o => o.employeeId === user.id));
   }, [user]);
+
+  useEffect(() => {
+    refreshOvertimeRequests();
+    const t = setTimeout(() => setMyOt(getOvertimeRequests().filter(o => o.employeeId === user.id)), 1500);
+    return () => clearTimeout(t);
+  }, [user.id]);
+
+  /** 🌙 ينزل سهرته بتاريخ يختاره — بتفضل معلقة لحد ما الأدمن يوافق فتنزل في شيت الحضور */
+  async function sendOvertime() {
+    if (otBusy) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(otDate)) { setOtMsg('⚠️ اختار تاريخ صحيح'); return; }
+    const dup = myOt.find(o => o.date === otDate && o.status !== 'rejected');
+    if (dup) { setOtMsg(dup.status === 'pending' ? '⚠️ عندك طلب سهر لنفس التاريخ مستني الموافقة' : '⚠️ سهر التاريخ ده متوافق عليه خلاص'); return; }
+    setOtBusy(true);
+    setOtMsg('');
+    try {
+      const remote = await submitOvertimeRequest(otDate, otNotes.trim() || null);
+      setMyOt(prev => [remote, ...prev.filter(o => o.id !== remote.id)]);
+      setOtNotes('');
+      setOtMsg('✅ اتبعت طلب السهر — مستني موافقة الأدمن وهينزل في شيت الحضور تلقائي');
+    } catch (e: any) {
+      const m = String(e?.serverMessage || e?.message || '');
+      setOtMsg(m === 'unauthorized' ? 'انتهت الجلسة — سجل دخولك تاني' : m === 'SERVICE_DOWN' ? 'السيرفر مش متاح دلوقتي' : '⚠️ ' + (m || 'تعذر إرسال الطلب'));
+    } finally {
+      setOtBusy(false);
+    }
+  }
 
   const initials = user.name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
 
@@ -194,6 +233,61 @@ export default function MyAccountTab({ user }: { user: Employee }) {
         <div className="text-xs font-bold text-slate-500">المرحلة الحالية</div>
         <div className="text-lg font-black text-indigo-700 mt-1">{balanceData.stageLabel}</div>
         <p className="text-[11px] text-slate-400 mt-1">هذا رصيدك الشخصي فقط - لا ترى رصيد باقي الموظفين</p>
+      </div>
+
+      {/* 🌙 سهراتي — مستقلة عن البصمة خالص: اختار التاريخ وابعت، والموافقة تنزلها في شيت الحضور تلقائي */}
+      <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
+        <h3 className="font-black text-indigo-900 mb-1">🌙 سهراتي</h3>
+        <p className="text-[11px] font-bold text-indigo-500 mb-3">اختار اليوم اللي سهرت فيه وابعت الطلب — أول ما الأدمن يوافق هينزل تلقائي في شيت الحضور كـ "سهر"</p>
+
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            type="date"
+            value={otDate}
+            max={todayIsoLocal()}
+            onChange={e => { setOtDate(e.target.value); setOtMsg(''); }}
+            className="flex-1 min-w-[150px] bg-white border border-indigo-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+          />
+          <input
+            value={otNotes}
+            onChange={e => setOtNotes(e.target.value)}
+            placeholder="سبب السهر (اختياري)"
+            className="flex-[2] min-w-[180px] bg-white border border-indigo-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
+          />
+          <button
+            onClick={sendOvertime}
+            disabled={otBusy}
+            className="rounded-xl bg-gradient-to-br from-indigo-600 to-purple-700 text-white px-4 py-2.5 text-sm font-black shadow-md hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-60"
+          >
+            {otBusy ? '⏳...' : '🌙 نزّل السهرة'}
+          </button>
+        </div>
+
+        {otMsg && (
+          <div className={`mt-3 text-[12px] font-black p-3 rounded-xl text-right ${otMsg.startsWith('✅') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {otMsg}
+          </div>
+        )}
+
+        {myOt.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {[...myOt].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 8).map(o => (
+              <div key={o.id} className="flex items-center justify-between rounded-xl bg-white border border-indigo-100 p-3">
+                <div>
+                  <span className="font-bold text-slate-700 text-sm">📅 {o.date}</span>
+                  {o.notes && <span className="text-xs text-slate-500 mr-2"> · {o.notes}</span>}
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                  o.status === 'approved' ? 'bg-green-100 text-green-700' :
+                  o.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  {o.status === 'approved' ? '✅ معتمدة — في الشيت' : o.status === 'rejected' ? '❌ مرفوضة' : '⏳ مستنية الأدمن'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* آخر الإجازات */}

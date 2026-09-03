@@ -193,6 +193,17 @@ export default function MachineryTab({ user }: Props) {
   const dayGridTotal = (d: string) => { let t = 0; hoursGrid.forEach(gm => t += gm.get(d) || 0); return t; };
   const monthGridGrand = histList.reduce((s, m) => s + monthGridTotal(m.id), 0);
 
+  // 📝 خريطة تقارير الشغل: معدة → يوم → التقرير (وصف إيه اللي اتعمل النهارده)
+  const notesGrid = new Map<number, Map<string, string>>();
+  for (const h of getMachineryHours()) {
+    if (!h.date.startsWith(month)) continue;
+    if (!h.notes) continue;
+    if (!notesGrid.has(h.machineryId)) notesGrid.set(h.machineryId, new Map());
+    const g = notesGrid.get(h.machineryId)!;
+    g.set(h.date, h.notes || '');
+  }
+  const notesOf = (mid: number, d: string) => notesGrid.get(mid)?.get(d) || '';
+
   /** التراكمي لكل معدة */
   function totalsFor(m: Machinery) {
     const all = getMachineryHours().filter(h => h.machineryId === m.id);
@@ -227,11 +238,12 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'تقرير الشغل'], rows);
   }
 
-  /** 📤 كشف الشهر Excel — بنفس الشكل الرأسي بتاع الطباعة: أيام صفوف × معدات أعمدة + إجمالي تحت */
+  /** 📤 كشف الشهر Excel — أيام صفوف × (ساعة + تقرير الشغل) لكل معدة + إجمالي تحت */
   function exportMonth() {
     const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
-    // سطر العنوان: اليوم | اسم كل معدة | اليومي
-    const headers = ['📅 اليوم', ...histList.map(m => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '')), 'إجمالي اليوم'];
+    const mHeader = (m: Machinery) => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '');
+    // سطر العنوان: اليوم | لكل معدة عمودان (الساعة + تقرير الشغل) | إجمالي اليوم
+    const headers = ['📅 اليوم', ...histList.flatMap(m => [`${mHeader(m)} — الساعة`, `${mHeader(m)} — تقرير الشغل`]), 'إجمالي اليوم'];
     // صف لكل يوم في الشهر
     const dayRows = monthDays.map(d => {
       const dayNum = d.slice(8);
@@ -239,12 +251,12 @@ export default function MachineryTab({ user }: Props) {
       const dayT = dayGridTotal(d);
       return [
         `${dayNum} — ${dayWd}`,
-        ...histList.map(m => hoursOf(m.id, d) || ''),
+        ...histList.flatMap(m => [hoursOf(m.id, d) || '', notesOf(m.id, d) || '']),
         dayT || '',
       ];
     });
     // سطر الإجمالي في الآخر
-    const totalRow = ['إجمالي الشهر', ...histList.map(m => monthGridTotal(m.id) || ''), monthGridGrand || ''];
+    const totalRow = ['إجمالي الشهر', ...histList.flatMap(m => [monthGridTotal(m.id) || '', '']), monthGridGrand || ''];
     downloadCsv(`شيت_ساعات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 

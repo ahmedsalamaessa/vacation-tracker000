@@ -118,16 +118,30 @@ export default function MachineryTab({ user }: Props) {
     refreshMachinery();
     const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
     const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
-    // 🔄 مزامنة ذكية كل 4 دقايق (كانت كل 60 ثانية) — عشان نوفّر ساعات نيون المجانية
-    // بس لما التاب قدامك فعلًا — وبتحدث القوائم بس، متلمسش خانات الساعات اللي بتكتبها دلوقتي
+    // 🔄 مزامنة تلقائية كل 15 دقيقة (كانت كل 60 ثانية، بعدين 4 دقايق) — توفير ساعات نيون
+    // بتحصل لما التاب قدامك فعلًا — وبتحدث لائحة المعدات بس، متمسش خانات الساعات اللي بتكتبها دلوقتي
     const syncNow = () => { if (document.visibilityState === 'visible') { refreshMachinery(); window.setTimeout(() => { load(); }, 900); } };
-    const live = window.setInterval(syncNow, 240000);
+    const live = window.setInterval(syncNow, 900000);
     const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); window.clearInterval(live); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* 🔄 تحديث يدوي: بيجيب آخر بيانات من السيرفر فورًا — وبيحمي ساعات اليوم اللي انت كتبها لسه من التمسح
+     (لو في تعديل غير محفوظ على النهارده => البس لوحة اليوم زي ما هي، وبيحدّث لائحة المعدات بس) */
+  function manualRefresh() {
+    flash('🔄 بجيب آخر بيانات من السيرفر...');
+    const userHadEdits = JSON.stringify(draft) !== JSON.stringify(draftFor(dayDate)) ||
+                         JSON.stringify(draftNotes) !== JSON.stringify(notesFor(dayDate));
+    refreshMachinery();
+    window.setTimeout(() => {
+      load();
+      if (!userHadEdits) { setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }
+      flash(userHadEdits ? '🔄 اتحطّت آخر بيانات — والساعات اللي كتبتها للنهارده محفوظة زي ما هي' : '✅ اتحطّت آخر بيانات من السيرفر');
+    }, 1200);
+  }
 
   useEffect(() => {
     setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
@@ -285,6 +299,7 @@ export default function MachineryTab({ user }: Props) {
             {dayDate !== today && (
               <button type="button" onClick={() => setDayDate(today)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">النهارده</button>
             )}
+            <button type="button" onClick={manualRefresh} title="تحديث فوري من السيرفر" className="rounded-xl border-2 border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">🔄 تحديث</button>
             <button type="button" onClick={exportDay} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel يوم</button>
           </div>
         </div>

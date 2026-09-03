@@ -89,15 +89,24 @@ export default function EquipmentTab({ user }: { user: Employee }) {
     refreshMaintenance();
     const t1 = setTimeout(reload, 1200);
     const t2 = setTimeout(reload, 3500);
-    // 🔄 مزامنة ذكية: كل 60 ثانية — بس لما التاب قدامك (القاعدة بتنام لما محدش باصص، توفير ساعات Neon)
+    // 🔄 مزامنة تلقائية كل 15 دقيقة (كانت كل 60 ثانية) — توفير ساعات نيون
+    // بتحصل لما التاب قدامك فعلًا — وبتحدث القوائم/الشيتات بس، متمسش خانات نموذج الكتابة دلوقتي
     const syncNow = () => { refreshEquipment(); refreshMaintenance(); window.setTimeout(reload, 900); };
-    const live = window.setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+    const live = window.setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 900000);
     const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(live); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* 🔄 تحديث يدوي: بيجيب آخر بيانات من السيرفر فورًا (لائحة العدة + الصيانة) */
+  function manualRefresh() {
+    flash('🔄 بجيب آخر بيانات من السيرفر...');
+    refreshEquipment();
+    refreshMaintenance();
+    window.setTimeout(() => { reload(); flash('✅ اتحطّت آخر بيانات من السيرفر'); }, 1200);
+  }
 
   // للمساح: عدته تتعلّم تلقائي أول ما تظهر (الـ effect نفسه تحت بعد إعلان openCheckouts)
   const [autoFilled, setAutoFilled] = useState(false);
@@ -435,6 +444,7 @@ export default function EquipmentTab({ user }: { user: Employee }) {
       <section className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-black text-slate-700">🏢 الموقع:</span>
+          <button type="button" onClick={manualRefresh} title="تحديث فوري من السيرفر" className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">🔄 تحديث</button>
           {canManage ? (
             <>
               <select value={siteSel} onChange={e => setSiteSel(Number(e.target.value))}

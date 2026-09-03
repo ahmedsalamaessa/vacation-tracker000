@@ -119,10 +119,10 @@ export default function AttendanceTab({
 
   useEffect(() => {
     load();
-    // auto-refresh every 2 minutes while attendance tab is open
+    // auto-refresh every 15 minutes while attendance tab is open (كان 2 دقيقة → توفير ساعات نيون)
     const t = setInterval(() => {
       refreshFromRemote().then(() => applyLocal());
-    }, 2 * 60 * 1000);
+    }, 15 * 60 * 1000);
     return () => clearInterval(t);
   }, [load, applyLocal]);
 
@@ -317,6 +317,13 @@ export default function AttendanceTab({
                 className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50"
               >
                 {saving ? '...' : `💾 حفظ التغييرات (${Object.keys(dirtyValues).length})`}
+              </button>
+              <button
+                onClick={load}
+                title="تحديث فوري من السيرفر"
+                className="bg-slate-100 text-slate-700 px-3 py-2 rounded-lg text-xs font-bold hover:bg-slate-200"
+              >
+                🔄 تحديث
               </button>
               <button
                 onClick={() => changeMonthLock('lock')}

@@ -320,7 +320,8 @@ export default function MachineryTab({ user }: Props) {
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            {/* على الكومبيوتر: جدول التلات أعمدة زي ما هو */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-right text-sm">
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
@@ -363,6 +364,37 @@ export default function MachineryTab({ user }: Props) {
                 </tfoot>
               </table>
             </div>
+            {/* 📱 على الموبايل: بطاقات كبيرة لكل معدة — خانة تقرير الشغل عالية وواضحة عشان تشوف اللي بتكتبه */}
+            <div className="space-y-3 md:hidden">
+              {byGroup(active).map(g => (
+                <div key={g.label}>
+                  <div className="mb-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</div>
+                  <div className="space-y-3">
+                    {g.items.map(m => (
+                      <div key={m.id} className="rounded-2xl border-2 border-slate-200 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1"><MName m={m} /></div>
+                          <div className="shrink-0 text-center">
+                            <div className="mb-1 text-[11px] font-bold text-slate-400">⏱️ الساعات</div>
+                            <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
+                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                              placeholder="—" className="w-24 rounded-xl border-2 border-slate-300 px-3 py-2.5 text-center text-xl font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <div className="mb-1 text-xs font-bold text-slate-500">📝 تقرير الشغل</div>
+                          <textarea rows={3} value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
+                            readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                            placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)"
+                            className="w-full resize-y rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-base font-bold outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <button type="button" onClick={saveDay} disabled={dayLocked || dayFuture}
               className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900">
               {dayLocked ? `🔒 يوم ${dayDate} مقفول — للإدارة بس` : dayFuture ? '⏳ استنى اليوم ييجي' : `💾 حفظ ساعات اليوم (${dayDate})`}

@@ -8,6 +8,7 @@ import {
   updateEmployee,
   deleteEmployee,
 } from '../lib/db';
+import { api } from '../lib/api';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import { getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import type { Employee, WorkLocation } from '../lib/types';
@@ -94,6 +95,12 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; step: number; input: string } | null>(null);
+
+  // 🔑 مودال إعادة تعيين كلمة المرور (المالك/الأدمن يولّد كود ويوصّله للموظف)
+  const [resetModal, setResetModal] = useState<{
+    empId: number; name: string; username: string; maskedPhone: string;
+    code: string; expiresAt: string; busy: boolean; error: string;
+  } | null>(null);
 
   // 🖨️ حالات الطباعة
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -388,6 +395,29 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     setMsg('');
   }
 
+  // 🔑 توليد كود إعادة تعيين الباسورد لموظف
+  async function generateReset(emp: Employee) {
+    setResetModal({
+      empId: emp.id, name: emp.name, username: emp.username || '',
+      maskedPhone: '', code: '', expiresAt: '', busy: true, error: '',
+    });
+    try {
+      const r = await api.generateResetCode(emp.username || emp.name);
+      setResetModal({
+        empId: emp.id, name: r.name, username: emp.username || '',
+        maskedPhone: r.maskedPhone || '', code: r.code || '',
+        expiresAt: r.expiresAt || '', busy: false, error: '',
+      });
+    } catch (e: any) {
+      const msg = String(e?.serverMessage || e?.message || 'عند توليد الكود');
+      setResetModal(prev => prev ? { ...prev, busy: false, error: msg } : prev);
+    }
+  }
+
+  function closeReset() {
+    setResetModal(null);
+  }
+
   // 🖨️ فتح مودال الطباعة
   function openPrintModal() {
     setSelectedForPrint([]);
@@ -620,6 +650,65 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
               <button onClick={confirmDelete} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black hover:bg-red-700">
                 {deleteConfirm.step === 1 ? 'تأكيد' : '🗑️ حذف نهائي'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔑 مودال إعادة تعيين كلمة المرور */}
+      {resetModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-2">🔑</div>
+              <h3 className="text-xl font-black text-slate-800">إعادة تعيين كلمة المرور</h3>
+              <p className="text-sm font-bold text-slate-500 mt-1">كود لمرة واحدة لـ <b>{resetModal.name}</b></p>
+            </div>
+
+            {resetModal.busy ? (
+              <div className="text-center text-slate-500 py-6 font-bold">⏳ جاري توليد الكود...</div>
+            ) : resetModal.error ? (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-center text-sm font-bold text-red-700">
+                ⛔ {resetModal.error}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                  <div className="text-xs font-bold text-blue-500 mb-1">كود الدخول (6 أرقام)</div>
+                  <div className="text-4xl font-black tracking-[0.3em] text-blue-700 select-all" dir="ltr">
+                    {resetModal.code}
+                  </div>
+                  <div className="text-[11px] text-blue-400 mt-2">
+                    صالح لمدة {Math.max(1, Math.round((new Date(resetModal.expiresAt).getTime() - Date.now()) / 60000))} دقيقة — استخدمه مرة واحدة
+                  </div>
+                </div>
+                <div className="text-xs font-bold text-slate-500 bg-slate-50 rounded-lg p-3 leading-relaxed">
+                  📱 ابعت الكود ده للموظف على واتساب أو التليفون.
+                  {resetModal.maskedPhone && (
+                    <div className="mt-1">رقمه المسجل: <b dir="ltr">{resetModal.maskedPhone}</b></div>
+                  )}
+                  <div className="mt-2 text-slate-600">
+                    والموظف يدخل في صفحة «تسجيل الدخول» على «نسيت كلمة المرور؟»: يكتب يوزره + الكود + باسورد جديد.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={closeReset}
+                className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-black hover:bg-slate-300"
+              >
+                إغلاق
+              </button>
+              {!resetModal.busy && !resetModal.error && (
+                <button
+                  onClick={() => generateReset({ id: resetModal.empId, name: resetModal.name, username: resetModal.username } as any)}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700"
+                >
+                  🔄 توليد كود جديد
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -911,6 +1000,11 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                       )}
                       {!showArchived && (
                         <>
+                          {isAdmin && (
+                            <button onClick={() => generateReset(emp)} className="text-emerald-600 hover:text-emerald-800 text-lg" title="إعادة تعيين كلمة المرور">
+                              🔑
+                            </button>
+                          )}
                           <button onClick={() => startEdit(emp)} className="text-blue-500 hover:text-blue-700 text-lg" title="تعديل">
                             ✏️
                           </button>

@@ -61,6 +61,19 @@ export const api = {
     localStorage.setItem('vsys_session_id', res.sessionId);
     return res;
   },
+  // 🔑 إعادة تعيين كلمة المرور
+  async generateResetCode(username: string) {
+    return request('/password/reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  },
+  async resetPassword(username: string, code: string, newPassword: string) {
+    return request('/password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ username, code, newPassword }),
+    });
+  },
   async bootstrap() {
     return request('/bootstrap');
   },

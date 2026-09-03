@@ -279,6 +279,18 @@ async function ensureEquipmentTables(sql: any) {
       created_at TIMESTAMPTZ DEFAULT now(),
       UNIQUE (employee_id, date)
     )`;
+  // 🔑 إعادة تعيين كلمة المرور: كود لمرة واحدة بيولّده المالك/الأدمن ويوصّله للموظف
+  await sql`
+    CREATE TABLE IF NOT EXISTS password_reset_codes (
+      id SERIAL PRIMARY KEY,
+      employee_id INT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_by INT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_password_reset_employee ON password_reset_codes(employee_id)`;
   // 🆕 سجل الصيانة
   // 🔄 ترحيل أسماء الأنواع القديمة: تواتال ستايشن → توتال استيشن، وحامل التوتال بقى خشب بس
   await sql`UPDATE equipment SET kind = 'توتال استيشن' WHERE kind = 'تواتال ستايشن'`;
@@ -309,10 +321,11 @@ export default async function handler(req: Request) {
       return json({ ok: true, service: 'vacation-api', time: new Date().toISOString() });
     }
 
-    // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login)
+    // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login و إعادة تعيين الباسورد)
     const isLogin = path === 'login' && method === 'POST';
+    const isPublic = isLogin || (path === 'password/reset' && method === 'POST');
     let authUser: any = null;
-    if (!isLogin) {
+    if (!isPublic) {
       authUser = await getSessionUser(sql, req);
       if (!authUser) return json({ error: 'unauthorized' }, 401);
     }
@@ -367,6 +380,91 @@ export default async function handler(req: Request) {
         user: { ...safe, hasPassword: Boolean(password), password: password ? '***' : '' },
         sessionId
       });
+    }
+
+    // ============ 🔑 إعادة تعيين كلمة المرور ============
+    // المالك/الأدمن يولّد كود لمرة واحدة ويبعته للموظف (واتساب/تليفون)،
+    // والموظف يدخل يوزره + الكود + باسورد جديد في شاشة "نسيت كلمة المرور".
+    function maskPhone(p: string | null | undefined): string {
+      if (!p) return '';
+      const s = String(p).replace(/\s|-/g, '');
+      if (s.length < 6) return '***';
+      return s.slice(0, 3) + '******' + s.slice(-2);
+    }
+
+    if (path === 'password/reset-code' && method === 'POST') {
+      if (!isOwner(authUser) && authUser.role !== 'admin') {
+        return forbidden('توليد كود إعادة تعيين الباسورد من المالك أو الأدمن بس');
+      }
+      const b = await readBody<any>(req);
+      const loginValue = String(b?.username || '').trim();
+      if (!loginValue) return json({ error: 'bad_request', message: 'اكتب اسم المستخدم أو رقم الهاتف' }, 400);
+      const normalizedPhone = loginValue.replace(/\s|-/g, '');
+      const rows = await sql`
+        SELECT * FROM employees
+        WHERE active = true
+          AND (
+            username = ${loginValue}
+            OR (phone IS NOT NULL AND REPLACE(REPLACE(phone, ' ', ''), '-', '') = ${normalizedPhone})
+          )
+        LIMIT 1
+      `;
+      const emp = rows[0] as any;
+      if (!emp) return json({ error: 'not_found', message: 'مفيش حساب بالاسم/الرقم ده' }, 404);
+      // ✉️ كود 6 أرقام لمرة واحدة — بيتخزن مشفّر (هاش) ومش بيتعرض تاني بعد ما يتولد
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const codeHash = 'sha256:' + await sha256(code);
+      const expires = new Date(Date.now() + 15 * 60 * 1000);
+      // 🔒 إبطال أي كودات قديمة غير مستخدمة لنفس الموظف
+      await sql`UPDATE password_reset_codes SET used = true WHERE employee_id = ${emp.id} AND used = false`;
+      await sql`INSERT INTO password_reset_codes (employee_id, code_hash, expires_at, created_by) VALUES (${emp.id}, ${codeHash}, ${expires.toISOString()}, ${authUser.id})`;
+      return json({
+        ok: true,
+        code,
+        expiresAt: expires.toISOString(),
+        employeeId: emp.id,
+        name: emp.name,
+        maskedPhone: maskPhone(emp.phone),
+      });
+    }
+
+    // 🔓 الموظف بتعبية الكود + الباسورد الجديد — عام (مفيش جلسة مطلوبة)
+    if (path === 'password/reset' && method === 'POST') {
+      const b = await readBody<any>(req);
+      const loginValue = String(b?.username || '').trim();
+      const code = String(b?.code || '').trim();
+      const newPassword = String(b?.newPassword || '');
+      if (!loginValue || !code) return json({ error: 'bad_request', message: 'الاسم/الرقم والكود مطلوبين' }, 400);
+      if (newPassword.length < 6) return json({ error: 'bad_request', message: 'الباسورد الجديد لازم يكون 6 حروف/أرقام على الأقل' }, 400);
+      const normalizedPhone = loginValue.replace(/\s|-/g, '');
+      const rows = await sql`
+        SELECT * FROM employees
+        WHERE active = true
+          AND (
+            username = ${loginValue}
+            OR (phone IS NOT NULL AND REPLACE(REPLACE(phone, ' ', ''), '-', '') = ${normalizedPhone})
+          )
+        LIMIT 1
+      `;
+      const emp = rows[0] as any;
+      if (!emp) return json({ error: 'bad_code', message: 'الكود غلط أو مش موجود' }, 400);
+      const codeHash = 'sha256:' + await sha256(code);
+      const recs = await sql`
+        SELECT id, expires_at, used FROM password_reset_codes
+        WHERE employee_id = ${emp.id} AND code_hash = ${codeHash} AND used = false
+        ORDER BY id DESC LIMIT 1
+      `;
+      const rec = recs[0] as any;
+      if (!rec) return json({ error: 'bad_code', message: 'الكود غلط أو اتصرف خلاص — اطلب كود جديد من الإدارة' }, 400);
+      if (new Date(rec.expires_at).getTime() < Date.now()) {
+        return json({ error: 'expired', message: 'الكود خلص وقته (15 دقيقة) — اطلب كود جديد' }, 400);
+      }
+      const newHash = 'sha256:' + await sha256(newPassword);
+      await sql`UPDATE employees SET password = ${newHash}, updated_at = NOW() WHERE id = ${emp.id}`;
+      await sql`UPDATE password_reset_codes SET used = true WHERE id = ${rec.id}`;
+      // 🔒 إلغاء كل الجلسات القديمة للموظف ده (حتى الجلسات المسروقة)
+      await sql`DELETE FROM sessions WHERE employee_id = ${emp.id}`;
+      return json({ ok: true, name: emp.name });
     }
 
     if (path === 'backup' && method === 'POST') {

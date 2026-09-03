@@ -118,10 +118,10 @@ export default function MachineryTab({ user }: Props) {
     refreshMachinery();
     const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
     const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
-    // 🔄 مزامنة ذكية كل 60 ثانية — بس لما التاب قدامك (توفير ساعات Neon المجانية)
-    // بتحدث القوائم بس — متلمسش خانات الساعات اللي بتكتبها دلوقتي
-    const syncNow = () => { refreshMachinery(); window.setTimeout(() => { load(); }, 900); };
-    const live = window.setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, 60000);
+    // 🔄 مزامنة ذكية كل 4 دقايق (كانت كل 60 ثانية) — عشان نوفّر ساعات نيون المجانية
+    // بس لما التاب قدامك فعلًا — وبتحدث القوائم بس، متلمسش خانات الساعات اللي بتكتبها دلوقتي
+    const syncNow = () => { if (document.visibilityState === 'visible') { refreshMachinery(); window.setTimeout(() => { load(); }, 900); } };
+    const live = window.setInterval(syncNow, 240000);
     const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);

@@ -558,6 +558,41 @@ export default async function handler(req: Request) {
       return json({ v: String((r[0] as any).v ?? '') });
     }
 
+    // ============ 🛡️ مُراقب نيون ============
+    // يقيس حجم الداتا وعدد الصفوف (قراءة فقط) — عشان المالك/الأدمن يتأكد إنه
+    // لسه بعيد عن سقف التخزين المجاني (0.5 جيجا) ومايتفاجأش. مفيش أي مفاتيح سرية.
+    if (path === 'usage' && method === 'GET') {
+      if (!isOwner(authUser) && authUser.role !== 'admin') {
+        return forbidden('مُراقب الاستخدام من المالك أو الأدمن بس');
+      }
+      try {
+        const size = (await sql`SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty, pg_database_size(current_database()) AS bytes`)[0];
+        const counts = (await sql`SELECT
+          (SELECT count(*)::int FROM employees) employees,
+          (SELECT count(*)::int FROM attendance) attendance,
+          (SELECT count(*)::int FROM vacations) vacations,
+          (SELECT count(*)::int FROM check_in_attempts) check_in_attempts,
+          (SELECT count(*)::int FROM audit_logs) audit_logs,
+          (SELECT count(*)::int FROM machinery_hours) machinery_hours,
+          (SELECT count(*)::int FROM equipment) equipment,
+          (SELECT count(*)::int FROM backups) backups`)[0];
+        const MB = Math.round((Number(size.bytes) || 0) / (1024 * 1024) * 10) / 10;
+        const quotaMB = 512; // 0.5 جيجا
+        const pct = Math.min(100, Math.round((MB / quotaMB) * 100));
+        return json({
+          ok: true,
+          storageBytes: Number(size.bytes) || 0,
+          storageMB: MB,
+          quotaMB,
+          percent: pct,
+          counts,
+          checkedAt: new Date().toISOString(),
+        });
+      } catch (e: any) {
+        return json({ error: 'usage_error', message: e?.message || String(e) }, 500);
+      }
+    }
+
     if (path === 'bootstrap' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);

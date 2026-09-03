@@ -216,6 +216,14 @@ export const api = {
       return null;
     }
   },
+  // 🛡️ مُراقب نيون: حجم الداتا وعدد الصفوف (قراءة فقط — بدون مفاتيح)
+  async getUsage(): Promise<{ storageBytes: number; storageMB: number; quotaMB: number; percent: number; counts: Record<string, number> } | null> {
+    try {
+      return await request('/usage');
+    } catch {
+      return null;
+    }
+  },
   // 🚜 المعدات الثقيلة
   async getMachinery() {
     return request('/machinery');

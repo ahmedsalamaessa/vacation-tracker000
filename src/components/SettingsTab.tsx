@@ -10,6 +10,7 @@ import {
 } from '../lib/db';
 import { sha256 } from '../lib/crypto';
 import { calculateEmployeeBalance } from '../lib/balance';
+import { api } from '../lib/api';
 import type { WorkLocation, Settings } from '../lib/types';
 
 // ============ تشخيص المشاكل ============
@@ -51,7 +52,11 @@ export default function SettingsTab() {
   const [resetConfirm, setResetConfirm] = useState(false);
 
   // حالة النافذة
-  const [activeSection, setActiveSection] = useState<'general' | 'locations' | 'diagnostics' | 'backup' | 'reset'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'locations' | 'diagnostics' | 'backup' | 'usage' | 'reset'>('general');
+
+  // 🛡️ حالة مُراقب نيون
+  const [usage, setUsage] = useState<{ storageMB: number; quotaMB: number; percent: number; counts: Record<string, number>; checkedAt: string } | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   // ============ فتح الإعدادات ============
   async function unlock(e: React.FormEvent) {
@@ -93,6 +98,14 @@ export default function SettingsTab() {
     for (const d of defaults) merged[d.key] = settings[d.key as keyof Settings] || d.val;
     setValues(merged);
     setLocationsState(getLocations());
+  }
+
+  // 🛡️ جلب بيانات مُراقب نيون
+  async function loadUsage() {
+    setUsageLoading(true);
+    const u = await api.getUsage();
+    setUsage(u);
+    setUsageLoading(false);
   }
 
   // ============ حفظ إعداد ============
@@ -438,6 +451,7 @@ export default function SettingsTab() {
     { key: 'general' as const, label: '⚙️ عام', emoji: 'عام' },
     { key: 'locations' as const, label: '📍 المواقع', emoji: 'المواقع' },
     { key: 'diagnostics' as const, label: '🔍 تشخيص وحلول', emoji: 'تشخيص' },
+    { key: 'usage' as const, label: '🛡️ مُراقب نيون', emoji: 'نيون' },
     { key: 'backup' as const, label: '💾 نسخ احتياطي', emoji: 'باك اب' },
     { key: 'reset' as const, label: '⚠️ إعادة تهيئة', emoji: 'ريسيت' },
   ];
@@ -447,7 +461,7 @@ export default function SettingsTab() {
       {/* Section Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {sectionTabs.map(t => (
-          <button key={t.key} onClick={() => setActiveSection(t.key)} className={`shrink-0 px-4 py-2 rounded-xl text-sm font-black border transition ${activeSection === t.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{t.label}</button>
+          <button key={t.key} onClick={() => { setActiveSection(t.key); if (t.key === 'usage' && !usage) loadUsage(); }} className={`shrink-0 px-4 py-2 rounded-xl text-sm font-black border transition ${activeSection === t.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -652,6 +666,87 @@ export default function SettingsTab() {
           <div className="mt-6 rounded-2xl bg-blue-50 border border-blue-200 p-4 text-xs font-bold text-blue-800 leading-relaxed">
             💡 <b>نصيحة:</b> خد نسخة احتياطية أسبوعيًا. لو النظام مسح نفسه أو المتصفح مسح البيانات، هتقدر ترجع كل حاجة من ملف الـ JSON.
           </div>
+        </div>
+      )}
+
+      {/* ============ 🛡️ مُراقب نيون ============ */}
+      {activeSection === 'usage' && (
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-5 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-xl font-black text-slate-950">🛡️ مُراقب التخزين والاستخدام</h2>
+              <p className="mt-1 text-xs font-bold text-slate-500">
+                حجم قاعدة البيانات وعدد السجلات الحقيقية — عشان تتأكد إنك بعيد عن سقف الباقة المجانية
+              </p>
+            </div>
+            <button onClick={loadUsage} disabled={usageLoading} className={`rounded-xl px-5 py-2.5 text-xs font-black text-white transition ${usageLoading ? 'bg-slate-300' : 'bg-slate-900 hover:bg-emerald-700'}`}>
+              {usageLoading ? '⏳ جاري القياس...' : '🔄 تحديث القياس'}
+            </button>
+          </div>
+
+          {usageLoading && !usage && (
+            <div className="rounded-2xl bg-slate-50 p-10 text-center font-bold text-slate-500">⏳ بستنى رد السيرفر...</div>
+          )}
+
+          {!usageLoading && !usage && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-8 text-center">
+              <div className="text-4xl mb-3">⚠️</div>
+              <div className="font-black text-amber-800">مقدرش أجيب القياس دلوقتي</div>
+              <div className="mt-2 text-sm font-bold text-amber-600">تأكد إن السيرفر شغال، أو إن حسابك (المالك/الأدمن) — الحياة من تبويب الإعدادات</div>
+            </div>
+          )}
+
+          {usage && (
+            <div className="space-y-5">
+              {/* شريط التخزين */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-black text-slate-800">💾 حجم قاعدة البيانات</span>
+                  <span className="text-sm font-black text-slate-600">{usage.storageMB} ميجا من {usage.quotaMB} ميجا</span>
+                </div>
+                <div className="h-4 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full transition-all" style={{
+                    width: `${Math.max(1, usage.percent)}%`,
+                    backgroundColor: usage.percent > 75 ? '#ef4444' : usage.percent > 45 ? '#f59e0b' : '#10b981',
+                  }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
+                  <span className={usage.percent > 75 ? 'text-red-600' : usage.percent > 45 ? 'text-amber-600' : 'text-emerald-600'}>
+                    {usage.percent > 75 ? '🔴 قربت من الحد — فكّر ترفع الباقة أو تنضف' : usage.percent > 45 ? '🟡 شغل بالك — لسه عندك مساحة' : '🟢 مريح جدًا'}
+                  </span>
+                  <span className="text-slate-400">استهلاك {usage.percent}% من سقف 0.5 جيجا المضمون</span>
+                </div>
+              </div>
+
+              {/* عدد السجلات */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="mb-3 font-black text-slate-800">📊 عدد السجلات الحالية</div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {([
+                    ['employees', '👥 الموظفين'],
+                    ['attendance', '📅 الحضور'],
+                    ['vacations', '🏖️ الإجازات'],
+                    ['check_in_attempts', '📍 بصمات'],
+                    ['audit_logs', '📋 سجل الحركات'],
+                    ['machinery_hours', '🚜 ساعات المعدات'],
+                    ['equipment', '🧰 العدة'],
+                    ['backups', '💾 النسخ الاحتياطية'],
+                  ] as [string, string][]).map(([k, label]) => (
+                    <div key={k} className="rounded-xl bg-white border border-slate-200 p-3 text-center">
+                      <div className="text-2xl font-black text-slate-900">{usage.counts?.[k] ?? '—'}</div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-400">{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-xs font-bold text-emerald-800 leading-relaxed">
+                🟢 <b>خلاصة:</b> الداتا كلها خفيفة جدًا وممكن تفضل شغالة سنين على الباقة المجانية من غير ما تقرب من حد التخزين.
+                <br />
+                لو حصل يومًا إن ساعات التشغيل خلصت، الباقة بتوقف مؤقتًا (مش بتمسح حاجة) وترجع تلقائي أول الشهر — ورسالة واضحة تظهر للناس.
+              </div>
+            </div>
+          )}
         </div>
       )}
 

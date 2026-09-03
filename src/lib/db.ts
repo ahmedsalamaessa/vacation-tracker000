@@ -868,25 +868,16 @@ export async function login(username: string, password: string): Promise<Employe
         return user;
       }
     } catch (e: any) {
-      // ⚠️ الخدمة متوقفة أو محاولات كتيرة — قول الحقيقة ولا تقول "بيانات غير صحيحة"
-      if (e?.message === 'SERVICE_DOWN' || e?.message === 'too_many_attempts' || String(e?.message || '').includes('محاولات كتيرة')) throw e;
-      console.warn('remote login failed, trying local', e);
+      const msg = String(e?.message || '');
+      // ⚠️ الخدمة متوقفة أو محاولات كتيرة أو انتهت المهلة → قول الحقيقة ولا تقول "بيانات غير صحيحة"
+      if (msg === 'SERVICE_DOWN' || msg === 'too_many_attempts' || msg.includes('محاولات كتيرة') || msg === 'NETWORK_TIMEOUT') throw e;
+      // 🔓 السيرفر وصل ورفض الداتا (401) → ردّ فعلي: الداتا غلط، مفيش داعي ننزل لنسخة محلية بتقارن بباسورد مقنّع
+      if (msg === 'unauthorized') return null;
+      // 🌐 بخلاف كده (انقطاع نت/خطأ شبكة) → طلّع رسالة واضحة، ماتظهرش "بيانات غير صحيحة" بالغلط
+      throw new Error('حدث خطأ أثناء تسجيل الدخول — تأكد من الإنترنت وحاول تاني');
     }
   }
-  const employees = getEmployees();
-  const passwordHash = 'sha256:' + (await sha256(password));
-  const loginValue = username.trim();
-  const normalizedPhone = loginValue.replace(/\s|-/g, '');
-  const employee = employees.find(e => {
-    const empPhone = (e.phone || '').replace(/\s|-/g, '');
-    const matchesUsername = e.username === loginValue;
-    const matchesPhone = empPhone !== '' && empPhone === normalizedPhone;
-    return (matchesUsername || matchesPhone) && e.password === passwordHash && e.active;
-  });
-  if (employee) {
-    setCurrentUser(employee);
-    return employee;
-  }
+  // ⚠️ الوضع الأوفلاين حقيقي: اللوجين لازم يتحقق من السيرفر (الباسورد متشفّر، مفيش نسخة محلية تتحقق منه)
   return null;
 }
 

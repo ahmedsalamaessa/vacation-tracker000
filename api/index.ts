@@ -21,32 +21,53 @@ import { sha256 } from './lib/crypto';
 
 export const config = { runtime: 'edge' };
 
-// 🆕 Rate Limiting بسيط ضد brute force على /login
+// 🆕 Rate Limiting ضد brute force على /login
+// 🔍 الإصلاح المهم: كان بيحسب على الـ IP بس، فلو كذا حد على نفس النت
+// (شبكة الشركة) كتبوا غلط أو اعتمدوا بيانات قديمة، الـ 10 محاولات
+// كانت بتتجمع على نفس رقم النت وتقفّل اللوجين على كل الناس في المكان.
+// دلوقتي العدّادة لكل (IP + اسم المستخدم)، وبيبقى سقف عام أعلى للـ IP.
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const MAX_ATTEMPTS = 10;
+const MAX_ATTEMPTS_PER_USER = 10;   // غلطات نفس اليوزر على نفس الجهاز
+const MAX_ATTEMPTS_PER_IP = 40;     // سقف عام أعلى بكثير (كل الشبكة) عشان ضد الاختراق
 const WINDOW_MS = 120_000;
 
-function checkRateLimit(ip: string): { allowed: boolean; wait?: number } {
-  const now = Date.now();
-  const record = loginAttempts.get(ip);
-  if (!record || record.resetAt < now) {
-    loginAttempts.set(ip, { count: 0, resetAt: now + WINDOW_MS });
-    return { allowed: true };
+function attemptsKey(ip: string, user: string): string {
+  return `u::${ip}::${(user || '').trim().toLowerCase()}`;
+}
+function ipKey(ip: string): string {
+  return `ip::${ip}`;
+}
+function touch(now: number, key: string): { count: number; resetAt: number } {
+  const r = loginAttempts.get(key);
+  if (!r || r.resetAt < now) {
+    const rec = { count: 0, resetAt: now + WINDOW_MS };
+    loginAttempts.set(key, rec);
+    return rec;
   }
-  if (record.count >= MAX_ATTEMPTS) {
-    return { allowed: false, wait: Math.ceil((record.resetAt - now) / 1000) };
+  return r;
+}
+function checkRateLimit(ip: string, user: string): { allowed: boolean; wait?: number } {
+  const now = Date.now();
+  const u = touch(now, attemptsKey(ip, user));
+  const i = touch(now, ipKey(ip));
+  if (u.count >= MAX_ATTEMPTS_PER_USER || i.count >= MAX_ATTEMPTS_PER_IP) {
+    const resetAt = Math.max(u.resetAt, i.resetAt);
+    return { allowed: false, wait: Math.ceil((resetAt - now) / 1000) };
   }
   return { allowed: true };
 }
 
-function recordFailedAttempt(ip: string): void {
+function recordFailedAttempt(ip: string, user: string): void {
   const now = Date.now();
-  const record = loginAttempts.get(ip);
-  if (!record || record.resetAt < now) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
-  } else {
-    record.count++;
+  for (const key of [attemptsKey(ip, user), ipKey(ip)]) {
+    const rec = touch(now, key);
+    rec.count += 1;
   }
+}
+
+function clearAttempts(ip: string, user: string): void {
+  loginAttempts.delete(attemptsKey(ip, user));
+  loginAttempts.delete(ipKey(ip));
 }
 
 function pathOf(req: Request) {
@@ -297,21 +318,22 @@ export default async function handler(req: Request) {
     }
 
     if (path === 'login' && method === 'POST') {
-      // 🆕 فحص Rate Limit
+      const body = await readBody<{ username?: string; password?: string }>(req);
+      const loginValue = (body.username || '').trim();
+
+      // 🆕 فحص Rate Limit (مفصّل لكل يوزر على نفس الـ IP)
       const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
               || req.headers.get('cf-connecting-ip')
               || 'unknown';
-      const rateCheck = checkRateLimit(ip);
+      const rateCheck = checkRateLimit(ip, loginValue);
       if (!rateCheck.allowed) {
         return json({
           error: 'too_many_attempts',
-          message: `محاولات كتيرة. حاول تاني بعد ${rateCheck.wait} ثانية`,
+          message: `محاولات كتيرة على نفس الحساب. حاول تاني بعد ${rateCheck.wait} ثانية`,
           wait: rateCheck.wait
         }, 429);
       }
 
-      const body = await readBody<{ username?: string; password?: string }>(req);
-      const loginValue = (body.username || '').trim();
       const passwordHash = 'sha256:' + await sha256(body.password || '');
       const normalizedPhone = loginValue.replace(/\s|-/g, '');
       const rows = await sql`
@@ -326,10 +348,10 @@ export default async function handler(req: Request) {
       `;
       const emp = mapEmployee(rows[0]);
       if (!emp) {
-        recordFailedAttempt(ip);
+        recordFailedAttempt(ip, loginValue);
         return json({ error: 'invalid_credentials' }, 401);
       }
-      loginAttempts.delete(ip);
+      clearAttempts(ip, loginValue);
       try { await sql`DELETE FROM sessions WHERE expires_at < NOW()`; } catch {}
 
       const { password, ...safe } = emp as any;

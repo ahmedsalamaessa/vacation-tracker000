@@ -2,7 +2,7 @@ import { Employee } from './types';
 
 const API_BASE = '/api';
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 20000): Promise<T> {
   const sessionId = localStorage.getItem('vsys_session_id');
   const headers = new Headers(options.headers);
   if (sessionId) {
@@ -11,10 +11,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  // ⏱️ مهلة أمان: لو الخدمة واقفة أو قاعدة البيانات بتبرد (Neon cold start)
+  // مبيستناش للزمн الميت ونطلّع رسالة واضحة بدل «بيانات غير صحيحة» بالغلط.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    clearTimeout(timer);
+    if (e?.name === 'AbortError') {
+      throw new Error('NETWORK_TIMEOUT');
+    }
+    throw e;
+  }
+  clearTimeout(timer);
   if (res.status === 401) {
     localStorage.removeItem('vsys_session_id');
     throw new Error('unauthorized');
@@ -38,10 +53,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   async login(username: string, password: string) {
+    // مهلة أطول للوجين عشان أول برودة لقاعدة البيانات (Neon cold start) تعمل
     const res = await request<{ user: Employee; sessionId: string }>('/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    });
+    }, 45000);
     localStorage.setItem('vsys_session_id', res.sessionId);
     return res;
   },

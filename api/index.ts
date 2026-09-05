@@ -614,8 +614,12 @@ export default async function handler(req: Request) {
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
-      // 👑 المالك مش بيظهر لأي حد غير نفسه
-      if (!isOwner(user)) filteredEmployees = filteredEmployees.filter((e: any) => !e?.isOwner);
+      // 👑 المالك مش بيظهر لأي حد غير نفسه، والحساب الاحتياطي مخفي تماماً
+      if (!isOwner(user)) {
+        filteredEmployees = filteredEmployees.filter((e: any) => !e?.isOwner);
+      } else {
+        filteredEmployees = filteredEmployees.filter((e: any) => e.id === user.id || !e?.isOwner);
+      }
       if (user.role === 'employee') {
         filteredEmployees = filteredEmployees.filter((e: any) => e && e.id === user.id);
       } else if (user.role === 'manager') {
@@ -631,9 +635,9 @@ export default async function handler(req: Request) {
       const settings: Record<string, string> = {};
       for (const r of settingsRows as any[]) settings[r.key] = r.value;
 
-      // 📇 دليل الأسماء للكل (اسم ولقب بس) — عشان قوائم المساحين والمساعدين تظهر عند كل الموظفين
+      // 📇 دليل الأسماء للكل (اسم ولقب بس) — أصحاب النظام لا يظهروا في قوائم المساحين/المساعدين
       let directorySrc: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
-      if (!isOwner(user)) directorySrc = directorySrc.filter((e: any) => !e?.isOwner);
+      directorySrc = directorySrc.filter((e: any) => !e?.isOwner);
       const directory = directorySrc
         .map((e: any) => ({ id: e.id, name: e.name, jobTitle: e.jobTitle, role: e.role, active: e.active !== false }));
 
@@ -680,7 +684,11 @@ export default async function handler(req: Request) {
       if (!user) return json({ error: 'unauthorized' }, 401);
       const rows = await sql`SELECT * FROM employees ORDER BY id`;
       let filteredRows = (rows as any[]);
-      if (!isOwner(user)) filteredRows = filteredRows.filter((r: any) => !r.is_owner);
+      if (!isOwner(user)) {
+        filteredRows = filteredRows.filter((r: any) => !r.is_owner);
+      } else {
+        filteredRows = filteredRows.filter((r: any) => r.id === user.id || !r.is_owner);
+      }
       if (user.role === 'employee') {
         filteredRows = filteredRows.filter((r: any) => r.id === user.id);
       } else if (user.role === 'manager') {

@@ -241,6 +241,14 @@ export interface MachineryHours {
   notes?: string | null;
   createdBy: number | null;
   createdAt: string;
+  hoursBy?: number | null;
+  hoursByName?: string | null;
+  hoursAt?: string | null;
+  notesBy?: number | null;
+  notesByName?: string | null;
+  notesAt?: string | null;
+  updatedBy?: number | null;
+  updatedAt?: string | null;
 }
 
 export interface OvertimeRequest {

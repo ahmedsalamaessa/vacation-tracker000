@@ -228,6 +228,14 @@ export function mapMachineryHours(r: any) {
     notes: r.notes ?? null,
     createdBy: r.created_by ?? null,
     createdAt: r.created_at,
+    hoursBy: r.hours_by ?? r.created_by ?? null,
+    hoursByName: r.hours_by_name ?? null,
+    hoursAt: r.hours_at ?? null,
+    notesBy: r.notes_by ?? null,
+    notesByName: r.notes_by_name ?? null,
+    notesAt: r.notes_at ?? null,
+    updatedBy: r.updated_by ?? null,
+    updatedAt: r.updated_at ?? null,
   };
 }
 

@@ -267,6 +267,14 @@ async function ensureEquipmentTables(sql: any) {
       created_at TIMESTAMPTZ DEFAULT now(),
       UNIQUE (machinery_id, date)
     )`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_by INT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_by_name TEXT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_by INT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_by_name TEXT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS updated_by INT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`;
 
   // 🌙 طلبات السهر: المساح يطلبها → الأدمن يوافق → بتظهر في البصمة كحالة "سهر"
   await sql`
@@ -1558,12 +1566,84 @@ export default async function handler(req: Request) {
       for (const en of b.entries) {
         const mid = Number(en?.machineryId);
         const hours = Number(en?.hours) || 0;
+        const notes = (en?.notes ?? '').trim();
         if (!mid) continue;
-        if (hours > 0) {
+
+        if (hours > 0 || notes.length > 0) {
+          const existing = await sql`
+            SELECT hours, notes, hours_by, hours_by_name, hours_at, notes_by, notes_by_name, notes_at, created_by
+            FROM machinery_hours
+            WHERE machinery_id = ${mid} AND date = ${date}
+            LIMIT 1
+          `;
+          const prev = (existing as any[])[0];
+
+          let hoursBy = prev ? prev.hours_by : null;
+          let hoursByName = prev ? prev.hours_by_name : null;
+          let hoursAt = prev ? prev.hours_at : null;
+
+          let notesBy = prev ? prev.notes_by : null;
+          let notesByName = prev ? prev.notes_by_name : null;
+          let notesAt = prev ? prev.notes_at : null;
+
+          if (!prev) {
+            if (hours > 0) {
+              hoursBy = authUser.id;
+              hoursByName = authUser.name;
+              hoursAt = new Date().toISOString();
+            }
+            if (notes.length > 0) {
+              notesBy = authUser.id;
+              notesByName = authUser.name;
+              notesAt = new Date().toISOString();
+            }
+          } else {
+            const prevHours = Number(prev.hours) || 0;
+            const prevNotes = (prev.notes || '').trim();
+
+            if (hours !== prevHours) {
+              hoursBy = hours > 0 ? authUser.id : null;
+              hoursByName = hours > 0 ? authUser.name : null;
+              hoursAt = hours > 0 ? new Date().toISOString() : null;
+            } else if (!hoursByName && hours > 0) {
+              hoursBy = authUser.id;
+              hoursByName = authUser.name;
+            }
+
+            if (notes !== prevNotes) {
+              notesBy = notes.length > 0 ? authUser.id : null;
+              notesByName = notes.length > 0 ? authUser.name : null;
+              notesAt = notes.length > 0 ? new Date().toISOString() : null;
+            } else if (!notesByName && notes.length > 0) {
+              notesBy = authUser.id;
+              notesByName = authUser.name;
+            }
+          }
+
           await sql`
-            INSERT INTO machinery_hours (machinery_id, date, hours, notes, created_by)
-            VALUES (${mid}, ${date}, ${hours}, ${en.notes ?? null}, ${authUser.id})
-            ON CONFLICT (machinery_id, date) DO UPDATE SET hours = EXCLUDED.hours, notes = EXCLUDED.notes, created_by = EXCLUDED.created_by`;
+            INSERT INTO machinery_hours (
+              machinery_id, date, hours, notes, created_by,
+              hours_by, hours_by_name, hours_at,
+              notes_by, notes_by_name, notes_at,
+              updated_by, updated_at
+            ) VALUES (
+              ${mid}, ${date}, ${hours}, ${notes || null}, ${authUser.id},
+              ${hoursBy}, ${hoursByName}, ${hoursAt},
+              ${notesBy}, ${notesByName}, ${notesAt},
+              ${authUser.id}, NOW()
+            )
+            ON CONFLICT (machinery_id, date) DO UPDATE SET
+              hours = EXCLUDED.hours,
+              notes = EXCLUDED.notes,
+              hours_by = EXCLUDED.hours_by,
+              hours_by_name = EXCLUDED.hours_by_name,
+              hours_at = EXCLUDED.hours_at,
+              notes_by = EXCLUDED.notes_by,
+              notes_by_name = EXCLUDED.notes_by_name,
+              notes_at = EXCLUDED.notes_at,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = EXCLUDED.updated_at
+          `;
           saved++;
         } else {
           await sql`DELETE FROM machinery_hours WHERE machinery_id = ${mid} AND date = ${date}`;

@@ -139,6 +139,23 @@ export default function MachineryTab({ user }: Props) {
     return d;
   }
 
+  /** 👑 تفاصيل من سجّل الساعات ومن سجّل التوجيه (تظهر للمالك فقط) */
+  function getLogInfo(mId: number, day: string) {
+    const h = getMachineryHours().find(x => x.machineryId === mId && x.date === day);
+    if (!h) return null;
+    const hoursUser = h.hoursByName || (h.hoursBy ? getEmployees().find(e => e.id === h.hoursBy)?.name : null);
+    const notesUser = h.notesByName || (h.notesBy ? getEmployees().find(e => e.id === h.notesBy)?.name : null);
+    const createdUser = h.createdBy ? getEmployees().find(e => e.id === h.createdBy)?.name : null;
+    const hUser = hoursUser || (h.hours > 0 ? createdUser : null);
+    const nUser = notesUser || (h.notes ? createdUser : null);
+    if (!hUser && !nUser) return null;
+    return {
+      hoursUser: hUser,
+      notesUser: nUser,
+      sameUser: Boolean(hUser && nUser && hUser === nUser),
+    };
+  }
+
   useEffect(() => {
     load();
     setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
@@ -469,7 +486,26 @@ export default function MachineryTab({ user }: Props) {
                       </tr>
                       {g.items.map(m => (
                         <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
-                          <td className="p-3"><MName m={m} /></td>
+                          <td className="p-3">
+                            <MName m={m} />
+                            {isOwnerUser && (() => {
+                              const log = getLogInfo(m.id, dayDate);
+                              if (!log) return null;
+                              return (
+                                <div className="mt-1.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[11px] font-bold text-indigo-950 shadow-xs">
+                                  {log.sameUser ? (
+                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                  ) : (
+                                    <>
+                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.hoursUser && log.notesUser && <span className="text-indigo-300">|</span>}
+                                      {log.notesUser && <span>📝 التوجيه: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
                           <td className="p-3">
                             <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
                               readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
@@ -504,7 +540,26 @@ export default function MachineryTab({ user }: Props) {
                     {g.items.map(m => (
                       <div key={m.id} className="rounded-2xl border-2 border-slate-200 bg-white p-4">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1"><MName m={m} /></div>
+                          <div className="flex-1">
+                            <MName m={m} />
+                            {isOwnerUser && (() => {
+                              const log = getLogInfo(m.id, dayDate);
+                              if (!log) return null;
+                              return (
+                                <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-950 shadow-xs">
+                                  {log.sameUser ? (
+                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                  ) : (
+                                    <>
+                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.hoursUser && log.notesUser && <span className="text-indigo-300">•</span>}
+                                      {log.notesUser && <span>📝 التوجيه: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
                           <div className="shrink-0 text-center">
                             <div className="mb-1 text-[11px] font-bold text-slate-400">⏱️ الساعات</div>
                             <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}

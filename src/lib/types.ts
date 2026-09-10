@@ -238,12 +238,16 @@ export interface MachineryHours {
   machineryId: number;
   date: string;
   hours: number;
+  trips?: number;
   notes?: string | null;
   createdBy: number | null;
   createdAt: string;
   hoursBy?: number | null;
   hoursByName?: string | null;
   hoursAt?: string | null;
+  tripsBy?: number | null;
+  tripsByName?: string | null;
+  tripsAt?: string | null;
   notesBy?: number | null;
   notesByName?: string | null;
   notesAt?: string | null;

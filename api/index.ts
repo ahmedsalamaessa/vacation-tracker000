@@ -270,6 +270,10 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_by INT`;
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_by_name TEXT`;
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS hours_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS trips NUMERIC(6,2) DEFAULT 0`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS trips_by INT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS trips_by_name TEXT`;
+  await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS trips_at TIMESTAMPTZ`;
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_by INT`;
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_by_name TEXT`;
   await sql`ALTER TABLE machinery_hours ADD COLUMN IF NOT EXISTS notes_at TIMESTAMPTZ`;
@@ -1566,12 +1570,13 @@ export default async function handler(req: Request) {
       for (const en of b.entries) {
         const mid = Number(en?.machineryId);
         const hours = Number(en?.hours) || 0;
+        const trips = Number(en?.trips) || 0;
         const notes = (en?.notes ?? '').trim();
         if (!mid) continue;
 
-        if (hours > 0 || notes.length > 0) {
+        if (hours > 0 || trips > 0 || notes.length > 0) {
           const existing = await sql`
-            SELECT hours, notes, hours_by, hours_by_name, hours_at, notes_by, notes_by_name, notes_at, created_by
+            SELECT hours, trips, notes, hours_by, hours_by_name, hours_at, trips_by, trips_by_name, trips_at, notes_by, notes_by_name, notes_at, created_by
             FROM machinery_hours
             WHERE machinery_id = ${mid} AND date = ${date}
             LIMIT 1
@@ -1581,6 +1586,10 @@ export default async function handler(req: Request) {
           let hoursBy = prev ? prev.hours_by : null;
           let hoursByName = prev ? prev.hours_by_name : null;
           let hoursAt = prev ? prev.hours_at : null;
+
+          let tripsBy = prev ? prev.trips_by : null;
+          let tripsByName = prev ? prev.trips_by_name : null;
+          let tripsAt = prev ? prev.trips_at : null;
 
           let notesBy = prev ? prev.notes_by : null;
           let notesByName = prev ? prev.notes_by_name : null;
@@ -1592,6 +1601,11 @@ export default async function handler(req: Request) {
               hoursByName = authUser.name;
               hoursAt = new Date().toISOString();
             }
+            if (trips > 0) {
+              tripsBy = authUser.id;
+              tripsByName = authUser.name;
+              tripsAt = new Date().toISOString();
+            }
             if (notes.length > 0) {
               notesBy = authUser.id;
               notesByName = authUser.name;
@@ -1599,6 +1613,7 @@ export default async function handler(req: Request) {
             }
           } else {
             const prevHours = Number(prev.hours) || 0;
+            const prevTrips = Number(prev.trips) || 0;
             const prevNotes = (prev.notes || '').trim();
 
             if (hours !== prevHours) {
@@ -1608,6 +1623,15 @@ export default async function handler(req: Request) {
             } else if (!hoursByName && hours > 0) {
               hoursBy = authUser.id;
               hoursByName = authUser.name;
+            }
+
+            if (trips !== prevTrips) {
+              tripsBy = trips > 0 ? authUser.id : null;
+              tripsByName = trips > 0 ? authUser.name : null;
+              tripsAt = trips > 0 ? new Date().toISOString() : null;
+            } else if (!tripsByName && trips > 0) {
+              tripsBy = authUser.id;
+              tripsByName = authUser.name;
             }
 
             if (notes !== prevNotes) {
@@ -1622,22 +1646,28 @@ export default async function handler(req: Request) {
 
           await sql`
             INSERT INTO machinery_hours (
-              machinery_id, date, hours, notes, created_by,
+              machinery_id, date, hours, trips, notes, created_by,
               hours_by, hours_by_name, hours_at,
+              trips_by, trips_by_name, trips_at,
               notes_by, notes_by_name, notes_at,
               updated_by, updated_at
             ) VALUES (
-              ${mid}, ${date}, ${hours}, ${notes || null}, ${authUser.id},
+              ${mid}, ${date}, ${hours}, ${trips}, ${notes || null}, ${authUser.id},
               ${hoursBy}, ${hoursByName}, ${hoursAt},
+              ${tripsBy}, ${tripsByName}, ${tripsAt},
               ${notesBy}, ${notesByName}, ${notesAt},
               ${authUser.id}, NOW()
             )
             ON CONFLICT (machinery_id, date) DO UPDATE SET
               hours = EXCLUDED.hours,
+              trips = EXCLUDED.trips,
               notes = EXCLUDED.notes,
               hours_by = EXCLUDED.hours_by,
               hours_by_name = EXCLUDED.hours_by_name,
               hours_at = EXCLUDED.hours_at,
+              trips_by = EXCLUDED.trips_by,
+              trips_by_name = EXCLUDED.trips_by_name,
+              trips_at = EXCLUDED.trips_at,
               notes_by = EXCLUDED.notes_by,
               notes_by_name = EXCLUDED.notes_by_name,
               notes_at = EXCLUDED.notes_at,

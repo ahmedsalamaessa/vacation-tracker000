@@ -243,7 +243,7 @@ export const api = {
   async getMachineryHours() {
     return request('/machinery-hours');
   },
-  async saveMachineryHours(payload: { date: string; entries: { machineryId: number; hours: number }[] }) {
+  async saveMachineryHours(payload: { date: string; entries: { machineryId: number; hours: number; trips?: number; notes?: string }[] }) {
     return request('/machinery-hours/bulk', { method: 'POST', body: JSON.stringify(payload) });
   },
   // 🌙 طلبات السهر

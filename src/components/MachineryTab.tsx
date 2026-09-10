@@ -82,6 +82,7 @@ export default function MachineryTab({ user }: Props) {
   const [dayDate, setDayDate] = useState(today);
   const [month, setMonth] = useState(monthNow);
   const [draft, setDraft] = useState<Record<number, string>>({});
+  const [draftTrips, setDraftTrips] = useState<Record<number, string>>({});
   const [draftNotes, setDraftNotes] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState<{ id: number | null; kind: string; custom: string; owner: string; size: string; driver: string; notes: string }>({ id: null, kind: 'لودر', custom: '', owner: '', size: '', driver: '', notes: '' });
@@ -130,6 +131,15 @@ export default function MachineryTab({ user }: Props) {
     return d;
   }
 
+  /** النقلات المحفوظة لليوم المختار */
+  function draftTripsFor(date: string): Record<number, string> {
+    const d: Record<number, string> = {};
+    for (const h of getMachineryHours()) {
+      if (h.date === date && (h.trips ?? 0) > 0) d[h.machineryId] = String(h.trips);
+    }
+    return d;
+  }
+
   /** تقارير الشغل المحفوظة لليوم المختار */
   function notesFor(date: string): Record<number, string> {
     const d: Record<number, string> = {};
@@ -139,31 +149,37 @@ export default function MachineryTab({ user }: Props) {
     return d;
   }
 
-  /** 👑 تفاصيل من سجّل الساعات ومن سجّل التوجيه (تظهر للمالك فقط) */
+  /** 👑 تفاصيل من سجّل الساعات والنقلات ومن سجّل التوجيه (تظهر للمالك فقط) */
   function getLogInfo(mId: number, day: string) {
     const h = getMachineryHours().find(x => x.machineryId === mId && x.date === day);
     if (!h) return null;
     const hoursUser = h.hoursByName || (h.hoursBy ? getEmployees().find(e => e.id === h.hoursBy)?.name : null);
+    const tripsUser = h.tripsByName || (h.tripsBy ? getEmployees().find(e => e.id === h.tripsBy)?.name : null);
     const notesUser = h.notesByName || (h.notesBy ? getEmployees().find(e => e.id === h.notesBy)?.name : null);
     const createdUser = h.createdBy ? getEmployees().find(e => e.id === h.createdBy)?.name : null;
     const hUser = hoursUser || (h.hours > 0 ? createdUser : null);
+    const tUser = tripsUser || ((h.trips ?? 0) > 0 ? createdUser : null);
     const nUser = notesUser || (h.notes ? createdUser : null);
-    if (!hUser && !nUser) return null;
+    if (!hUser && !tUser && !nUser) return null;
+    const users = [hUser, tUser, nUser].filter(Boolean);
+    const allSame = users.length > 0 && users.every(u => u === users[0]);
     return {
       hoursUser: hUser,
+      tripsUser: tUser,
       notesUser: nUser,
-      sameUser: Boolean(hUser && nUser && hUser === nUser),
+      allSame: Boolean(allSame),
+      mainUser: users[0] || null,
     };
   }
 
   useEffect(() => {
     load();
-    setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
+    setDraft(draftFor(dayDate));
+    setDraftTrips(draftTripsFor(dayDate));
+    setDraftNotes(notesFor(dayDate));
     refreshMachinery();
-    const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
-    const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
-    // 🔄 مزامنة تلقائية كل 15 دقيقة (كانت كل 60 ثانية، بعدين 4 دقايق) — توفير ساعات نيون
-    // بتحصل لما التاب قدامك فعلًا — وبتحدث لائحة المعدات بس، متمسش خانات الساعات اللي بتكتبها دلوقتي
+    const t1 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftTrips(draftTripsFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 1500);
+    const t2 = window.setTimeout(() => { load(); setDraft(draftFor(dayDate)); setDraftTrips(draftTripsFor(dayDate)); setDraftNotes(notesFor(dayDate)); }, 4000);
     const syncNow = () => { if (document.visibilityState === 'visible') { refreshMachinery(); window.setTimeout(() => { load(); }, 900); } };
     const live = window.setInterval(syncNow, 900000);
     const onVisible = () => { if (document.visibilityState === 'visible') syncNow(); };
@@ -173,40 +189,52 @@ export default function MachineryTab({ user }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 🔄 تحديث يدوي: بيجيب آخر بيانات من السيرفر فورًا — وبيحمي ساعات اليوم اللي انت كتبها لسه من التمسح
-     (لو في تعديل غير محفوظ على النهارده => البس لوحة اليوم زي ما هي، وبيحدّث لائحة المعدات بس) */
+  /* 🔄 تحديث يدوي: بيجيب آخر بيانات من السيرفر فورًا — وبيحمي ساعات ونقلات اليوم اللي انت كتبها لسه من التمسح */
   function manualRefresh() {
     flash('🔄 بجيب آخر بيانات من السيرفر...');
     const userHadEdits = JSON.stringify(draft) !== JSON.stringify(draftFor(dayDate)) ||
+                         JSON.stringify(draftTrips) !== JSON.stringify(draftTripsFor(dayDate)) ||
                          JSON.stringify(draftNotes) !== JSON.stringify(notesFor(dayDate));
     refreshMachinery();
     window.setTimeout(() => {
       load();
-      if (!userHadEdits) { setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate)); }
-      flash(userHadEdits ? '🔄 اتحطّت آخر بيانات — والساعات اللي كتبتها للنهارده محفوظة زي ما هي' : '✅ اتحطّت آخر بيانات من السيرفر');
+      if (!userHadEdits) {
+        setDraft(draftFor(dayDate));
+        setDraftTrips(draftTripsFor(dayDate));
+        setDraftNotes(notesFor(dayDate));
+      }
+      flash(userHadEdits ? '🔄 اتحطّت آخر بيانات — والساعات والنقلات اللي كتبتها للنهارده محفوظة زي ما هي' : '✅ اتحطّت آخر بيانات من السيرفر');
     }, 1200);
   }
 
   useEffect(() => {
-    setDraft(draftFor(dayDate)); setDraftNotes(notesFor(dayDate));
+    setDraft(draftFor(dayDate));
+    setDraftTrips(draftTripsFor(dayDate));
+    setDraftNotes(notesFor(dayDate));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayDate]);
 
   const active = machinery.filter(m => m.active);
   const dayLocked = dayDate < today && !canEditLockedDays;
   const dayFuture = dayDate > today;
-  // التراكمي: كل غير الممسوح + الممسوح اللي عنده ساعات قديمة (شغله محفوظ)
+  // التراكمي: كل غير الممسوح + الممسوح اللي عنده ساعات أو نقلات قديمة (شغله محفوظ)
   const histList = machinery.filter(m => !m.deleted || getMachineryHours().some(h => h.machineryId === m.id));
   const daySum = active.reduce((s, m) => s + (parseFloat(draft[m.id] || '') || 0), 0);
+  const dayTripsSum = active.reduce((s, m) => s + (parseFloat(draftTrips[m.id] || '') || 0), 0);
 
   async function saveDay() {
-    if (dayFuture) { flash('⏳ مينفعش تسجل ساعات ليوم لسه جاي'); return; }
+    if (dayFuture) { flash('⏳ مينفعش تسجل ساعات أو نقلات ليوم لسه جاي'); return; }
     if (dayLocked) { flash(`🔒 يوم ${dayDate} مقفول — التعديل من الإدارة بس`); return; }
     try {
-      const entries = active.map(m => ({ machineryId: m.id, hours: parseFloat(draft[m.id] || '') || 0, notes: (draftNotes[m.id] || '').trim() }));
-      const filled = entries.filter(e => e.hours > 0).length;
+      const entries = active.map(m => ({
+        machineryId: m.id,
+        hours: parseFloat(draft[m.id] || '') || 0,
+        trips: parseFloat(draftTrips[m.id] || '') || 0,
+        notes: (draftNotes[m.id] || '').trim(),
+      }));
+      const filled = entries.filter(e => e.hours > 0 || e.trips > 0 || e.notes).length;
       const r = await saveMachineryHours(dayDate, entries);
-      flash(`💾 اتحفظت على السيرفر ساعات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
+      flash(`💾 اتحفظت على السيرفر بيانات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
       load();
     } catch (err: any) {
       flash('⛔ ماتحفظتش على السيرفر: ' + (err?.message || 'حصل خطأ'));
@@ -236,20 +264,32 @@ export default function MachineryTab({ user }: Props) {
     }
   }
 
-  /** 🗓️ أيام الشهر المختار + خريطة ساعات: معدة → يوم → ساعات */
+  /** 🗓️ أيام الشهر المختار + خريطة ساعات ونقلات: معدة → يوم → ساعات / نقلات */
   const monthDaysCount = (() => { const [y, mo] = month.split('-').map(Number); return y && mo ? new Date(y, mo, 0).getDate() : 30; })();
   const monthDays = Array.from({ length: monthDaysCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
   const hoursGrid = new Map<number, Map<string, number>>();
+  const tripsGrid = new Map<number, Map<string, number>>();
   for (const h of getMachineryHours()) {
     if (!h.date.startsWith(month)) continue;
-    if (!hoursGrid.has(h.machineryId)) hoursGrid.set(h.machineryId, new Map());
-    const g = hoursGrid.get(h.machineryId)!;
-    g.set(h.date, (g.get(h.date) || 0) + h.hours);
+    if (h.hours > 0) {
+      if (!hoursGrid.has(h.machineryId)) hoursGrid.set(h.machineryId, new Map());
+      const g = hoursGrid.get(h.machineryId)!;
+      g.set(h.date, (g.get(h.date) || 0) + h.hours);
+    }
+    if ((h.trips ?? 0) > 0) {
+      if (!tripsGrid.has(h.machineryId)) tripsGrid.set(h.machineryId, new Map());
+      const tg = tripsGrid.get(h.machineryId)!;
+      tg.set(h.date, (tg.get(h.date) || 0) + (h.trips || 0));
+    }
   }
   const hoursOf = (mid: number, d: string) => hoursGrid.get(mid)?.get(d) || 0;
+  const tripsOf = (mid: number, d: string) => tripsGrid.get(mid)?.get(d) || 0;
   const monthGridTotal = (mid: number) => { let t = 0; hoursGrid.get(mid)?.forEach(v => t += v); return t; };
+  const monthGridTotalTrips = (mid: number) => { let t = 0; tripsGrid.get(mid)?.forEach(v => t += v); return t; };
   const dayGridTotal = (d: string) => { let t = 0; hoursGrid.forEach(gm => t += gm.get(d) || 0); return t; };
+  const dayGridTotalTrips = (d: string) => { let t = 0; tripsGrid.forEach(gm => t += gm.get(d) || 0); return t; };
   const monthGridGrand = histList.reduce((s, m) => s + monthGridTotal(m.id), 0);
+  const monthGridGrandTrips = histList.reduce((s, m) => s + monthGridTotalTrips(m.id), 0);
 
   // 📝 خريطة تقارير الشغل: معدة → يوم → التقرير (وصف إيه اللي اتعمل النهارده)
   const notesGrid = new Map<number, Map<string, string>>();
@@ -266,14 +306,17 @@ export default function MachineryTab({ user }: Props) {
   function totalsFor(m: Machinery) {
     const all = getMachineryHours().filter(h => h.machineryId === m.id);
     const day = all.filter(h => h.date === dayDate).reduce((s, h) => s + h.hours, 0);
+    const dayTrips = all.filter(h => h.date === dayDate).reduce((s, h) => s + (h.trips || 0), 0);
     const mon = all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + h.hours, 0);
+    const monTrips = all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + (h.trips || 0), 0);
     const total = all.reduce((s, h) => s + h.hours, 0);
-    return { day, mon, total };
+    const totalTrips = all.reduce((s, h) => s + (h.trips || 0), 0);
+    return { day, dayTrips, mon, monTrips, total, totalTrips };
   }
 
   /** أيام الشغل في الشهر للمعدة */
   function workDays(m: Machinery): number {
-    return getMachineryHours().filter(h => h.machineryId === m.id && h.date.startsWith(month) && h.hours > 0).length;
+    return getMachineryHours().filter(h => h.machineryId === m.id && h.date.startsWith(month) && (h.hours > 0 || (h.trips ?? 0) > 0)).length;
   }
 
   /** 👤 كشف الملاك: كل مالك ومعداته وإجمالي شهره */
@@ -281,41 +324,45 @@ export default function MachineryTab({ user }: Props) {
     .map(owner => {
       const machines = histList.filter(m => m.owner.trim() === owner);
       const mon = machines.reduce((s2, m) => s2 + totalsFor(m).mon, 0);
+      const monTrips = machines.reduce((s2, m) => s2 + totalsFor(m).monTrips, 0);
       const total = machines.reduce((s2, m) => s2 + totalsFor(m).total, 0);
-      return { owner, machines, mon, total };
+      const totalTrips = machines.reduce((s2, m) => s2 + totalsFor(m).totalTrips, 0);
+      return { owner, machines, mon, monTrips, total, totalTrips };
     })
-    .sort((a, b) => b.mon - a.mon || a.owner.localeCompare(b.owner, 'ar'));
+    .sort((a, b) => b.mon - a.mon || b.monTrips - a.monTrips || a.owner.localeCompare(b.owner, 'ar'));
 
   function exportOwners() {
-    const rows = ownersList.map(o => [o.owner, o.machines.length, o.mon, o.total]);
-    downloadCsv(`كشف_الملاك_${month}.csv`, ['المالك', 'عدد المعدات', `ساعات ${month}`, 'الإجمالي الكلي'], [...rows, ['الإجمالي', '', ownersList.reduce((s2, o) => s2 + o.mon, 0), ownersList.reduce((s2, o) => s2 + o.total, 0)]]);
+    const rows = ownersList.map(o => [o.owner, o.machines.length, o.mon, o.monTrips, o.total, o.totalTrips]);
+    downloadCsv(`كشف_الملاك_${month}.csv`, ['المالك', 'عدد المعدات', `ساعات ${month}`, `نقلات ${month}`, 'إجمالي الساعات', 'إجمالي النقلات'], [...rows, ['الإجمالي', '', ownersList.reduce((s2, o) => s2 + o.mon, 0), ownersList.reduce((s2, o) => s2 + o.monTrips, 0), ownersList.reduce((s2, o) => s2 + o.total, 0), ownersList.reduce((s2, o) => s2 + o.totalTrips, 0)]]);
   }
 
   function exportDay() {
-    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0, (draftNotes[m.id] || '').trim()]);
-    downloadCsv(`ساعات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'تقرير الشغل'], rows);
+    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0, parseFloat(draftTrips[m.id] || '') || 0, (draftNotes[m.id] || '').trim()]);
+    downloadCsv(`ساعات_ونقلات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'النقلات', 'تقرير الشغل'], rows);
   }
 
-  /** 📤 كشف الشهر Excel — أيام صفوف × (ساعة + تقرير الشغل) لكل معدة + إجمالي تحت */
+  /** 📤 كشف الشهر Excel — أيام صفوف × (ساعة + نقلة + تقرير الشغل) لكل معدة + إجمالي تحت */
   function exportMonth() {
     const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
     const mHeader = (m: Machinery) => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '');
-    // سطر العنوان: اليوم | لكل معدة عمودان (الساعة + تقرير الشغل) | إجمالي اليوم
-    const headers = ['📅 اليوم', ...histList.flatMap(m => [`${mHeader(m)} — الساعة`, `${mHeader(m)} — تقرير الشغل`]), 'إجمالي اليوم'];
+    // سطر العنوان: اليوم | لكل معدة 3 أعمدة (الساعة + النقلة + تقرير الشغل) | إجمالي ساعات اليوم | إجمالي نقلات اليوم
+    const headers = ['📅 اليوم', ...histList.flatMap(m => [`${mHeader(m)} — الساعة`, `${mHeader(m)} — النقلة`, `${mHeader(m)} — تقرير الشغل`]), 'إجمالي ساعات اليوم', 'إجمالي نقلات اليوم'];
     // صف لكل يوم في الشهر
     const dayRows = monthDays.map(d => {
       const dayNum = d.slice(8);
       const dayWd = wd[new Date(d + 'T00:00:00').getDay()];
       const dayT = dayGridTotal(d);
+      const dayTripsT = dayGridTotalTrips(d);
       return [
         `${dayNum} — ${dayWd}`,
-        ...histList.flatMap(m => [hoursOf(m.id, d) || '', notesOf(m.id, d) || '']),
+        ...histList.flatMap(m => [hoursOf(m.id, d) || '', tripsOf(m.id, d) || '', notesOf(m.id, d) || '']),
         dayT || '',
+        dayTripsT || '',
       ];
     });
     // سطر الإجمالي في الآخر
-    const totalRow = ['إجمالي الشهر', ...histList.flatMap(m => [monthGridTotal(m.id) || '', '']), monthGridGrand || ''];
-    downloadCsv(`شيت_ساعات_${month}.csv`, headers, [...dayRows, totalRow]);
+    const totalRow = ['إجمالي الشهر', ...histList.flatMap(m => [monthGridTotal(m.id) || '', monthGridTotalTrips(m.id) || '', '']), monthGridGrand || '', monthGridGrandTrips || ''];
+    downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 
   return (
@@ -468,13 +515,14 @@ export default function MachineryTab({ user }: Props) {
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
           <>
-            {/* على الكومبيوتر: جدول التلات أعمدة زي ما هو */}
+            {/* على الكومبيوتر: جدول الأربع أعمدة: المعدة | ⏱️ الساعات | 🚛 النقلات | 📝 تقرير الشغل */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-right text-sm">
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
                     <th className="p-3">المعدة</th>
-                    <th className="p-3 w-40">⏱️ الساعات</th>
+                    <th className="p-3 w-32">⏱️ الساعات</th>
+                    <th className="p-3 w-32">🚛 النقلات</th>
                     <th className="p-3">📝 تقرير الشغل</th>
                   </tr>
                 </thead>
@@ -482,7 +530,7 @@ export default function MachineryTab({ user }: Props) {
                   {byGroup(active).map(g => (
                     <React.Fragment key={g.label}>
                       <tr className="bg-slate-50/80">
-                        <td colSpan={3} className="p-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</td>
+                        <td colSpan={4} className="p-2 text-xs font-black text-slate-500">{g.label} ({g.items.length})</td>
                       </tr>
                       {g.items.map(m => (
                         <tr key={m.id} className="border-b border-slate-100 font-bold text-slate-800">
@@ -493,15 +541,15 @@ export default function MachineryTab({ user }: Props) {
                               if (!log) return null;
                               return (
                                 <div className="mt-1.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[11px] font-bold text-indigo-950 shadow-xs">
-                                  {log.sameUser ? (
-                                    <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                  {log.allSame ? (
+                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.mainUser}</b></span>
                                   ) : (
                                     <>
-                                      {log.hoursUser && <span>⏱️ مسجل الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
-                                      {log.hoursUser && log.notesUser && <span className="text-indigo-300">|</span>}
-
-                                      {log.notesUser && <span>📝 كاتب التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
-
+                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.hoursUser && (log.tripsUser || log.notesUser) && <span className="text-indigo-300">|</span>}
+                                      {log.tripsUser && <span>🚛 النقلات: <b className="font-black text-indigo-900">{log.tripsUser}</b></span>}
+                                      {log.tripsUser && log.notesUser && <span className="text-indigo-300">|</span>}
+                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
                                     </>
                                   )}
                                 </div>
@@ -514,9 +562,14 @@ export default function MachineryTab({ user }: Props) {
                               placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                           </td>
                           <td className="p-3">
+                            <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
+                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                              placeholder="—" className="w-full rounded-xl border-2 border-amber-300 bg-amber-50/30 px-3 py-2 text-center text-sm font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
+                          </td>
+                          <td className="p-3">
                             <input type="text" value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
                               readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                              placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)" className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                              placeholder="اتعمل إيه؟ (حفر، نقل ردم...)" className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                           </td>
                         </tr>
                       ))}
@@ -525,15 +578,15 @@ export default function MachineryTab({ user }: Props) {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 font-black text-slate-900">
-                    <td className="p-3">الإجمالي</td>
-                    <td className="p-3">{active.length} معدة</td>
-                    <td className="p-3 text-center">{daySum}</td>
-                    <td className="p-3 text-xs text-slate-500">{active.filter(m => parseFloat(draft[m.id] || '') > 0).length} شغالة النهارده</td>
+                    <td className="p-3">الإجمالي ({active.length} معدة)</td>
+                    <td className="p-3 text-center text-blue-700">{daySum} س</td>
+                    <td className="p-3 text-center text-amber-700">{dayTripsSum} نقلة</td>
+                    <td className="p-3 text-xs text-slate-500">{active.filter(m => parseFloat(draft[m.id] || '') > 0 || parseFloat(draftTrips[m.id] || '') > 0).length} شغالة النهارده</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
-            {/* 📱 على الموبايل: بطاقات كبيرة لكل معدة — خانة تقرير الشغل عالية وواضحة عشان تشوف اللي بتكتبه */}
+            {/* 📱 على الموبايل: بطاقات لكل معدة تشمل الساعات والنقلات وتقرير الشغل */}
             <div className="space-y-3 md:hidden">
               {byGroup(active).map(g => (
                 <div key={g.label}>
@@ -549,33 +602,43 @@ export default function MachineryTab({ user }: Props) {
                               if (!log) return null;
                               return (
                                 <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-950 shadow-xs">
-                                  {log.sameUser ? (
-                                    <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                  {log.allSame ? (
+                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.mainUser}</b></span>
                                   ) : (
                                     <>
-                                      {log.hoursUser && <span>⏱️ مسجل الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
-                                      {log.hoursUser && log.notesUser && <span className="text-indigo-300">•</span>}
-
-                                      {log.notesUser && <span>📝 كاتب التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
-
+                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.tripsUser && <span>🚛 النقلات: <b className="font-black text-indigo-900">{log.tripsUser}</b></span>}
+                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
                                     </>
                                   )}
                                 </div>
                               );
                             })()}
                           </div>
-                          <div className="shrink-0 text-center">
-                            <div className="mb-1 text-[11px] font-bold text-slate-400">⏱️ الساعات</div>
+                        </div>
+
+                        {/* خانات الساعات والنقلات جنب بعض */}
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <div className="text-center bg-blue-50/60 p-2 rounded-xl border border-blue-100">
+                            <div className="mb-1 text-[11px] font-bold text-blue-900">⏱️ الساعات</div>
                             <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
                               readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                              placeholder="—" className="w-24 rounded-xl border-2 border-slate-300 px-3 py-2.5 text-center text-xl font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                              placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                          </div>
+
+                          <div className="text-center bg-amber-50/60 p-2 rounded-xl border border-amber-100">
+                            <div className="mb-1 text-[11px] font-bold text-amber-900">🚛 النقلات</div>
+                            <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
+                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                              placeholder="—" className="w-full rounded-xl border-2 border-amber-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
                           </div>
                         </div>
+
                         <div className="mt-3">
                           <div className="mb-1 text-xs font-bold text-slate-500">📝 تقرير الشغل</div>
                           <textarea rows={3} value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
                             readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                            placeholder="اتعمل إيه؟ (حفر محور 5، نقل ردم...)"
+                            placeholder="اتعمل إيه؟ (حفر، نقل ردم...)"
                             className="w-full resize-y rounded-xl border-2 border-slate-200 bg-slate-50 px-3 py-2.5 text-base font-bold outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                         </div>
                       </div>
@@ -636,23 +699,38 @@ export default function MachineryTab({ user }: Props) {
                       <td colSpan={monthDaysCount + 2} className="p-1.5 text-right text-[11px] font-black text-slate-500">{g.label} ({g.items.length})</td>
                     </tr>
                     {g.items.map(m => {
-                      const grand = monthGridTotal(m.id);
+                      const grandH = monthGridTotal(m.id);
+                      const grandT = monthGridTotalTrips(m.id);
                       return (
                         <tr key={m.id} className="border-b border-slate-100 hover:bg-blue-50/40">
                           <td className="sticky right-0 z-10 bg-white p-2 text-right font-black text-slate-800 shadow-[inset_-8px_0_8px_-6px_rgba(0,0,0,0.08)]"><MName m={m} /></td>
                           {monthDays.map(d => {
                             const v = hoursOf(m.id, d);
+                            const tv = tripsOf(m.id, d);
+                            const hasVal = v > 0 || tv > 0;
                             const isToday = d === today;
+                            const log = isOwnerUser ? getLogInfo(m.id, d) : null;
+                            const tooltip = `${v > 0 ? `${v}س` : ''}${v > 0 && tv > 0 ? ' و ' : ''}${tv > 0 ? `${tv} نقلة` : ''}${log ? ` (${log.mainUser})` : ''} — اضغط للتسجيل/التعديل`;
                             return (
                               <td key={d}
                                 onClick={() => { setDayDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                                title={v ? `${v} ساعة — اضغط للتعديل` : 'اضغط للتسجيل لهذا اليوم'}
-                                className={`p-1 cursor-pointer font-bold transition-colors ${v ? 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100' : 'text-slate-300 hover:bg-slate-100'} ${isToday ? 'ring-2 ring-inset ring-blue-400' : ''}`}>
-                                {v || '·'}
+                                title={hasVal ? tooltip : 'اضغط للتسجيل لهذا اليوم'}
+                                className={`p-1 cursor-pointer font-bold transition-colors ${hasVal ? 'text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100' : 'text-slate-300 hover:bg-slate-100'} ${isToday ? 'ring-2 ring-inset ring-blue-400' : ''}`}>
+                                {hasVal ? (
+                                  <div className="text-[11px] leading-tight font-black">
+                                    {v > 0 && <span>{v}س</span>}
+                                    {v > 0 && tv > 0 && <span className="opacity-40"> / </span>}
+                                    {tv > 0 && <span className="text-amber-800">{tv}ن</span>}
+                                  </div>
+                                ) : '·'}
                               </td>
                             );
                           })}
-                          <td className={`p-1 font-black ${grand ? 'text-blue-700 bg-blue-50' : 'text-slate-300'}`}>{grand || '—'}</td>
+                          <td className={`p-1 font-black ${grandH || grandT ? 'text-blue-700 bg-blue-50' : 'text-slate-300'}`}>
+                            {grandH > 0 && <div>{grandH}س</div>}
+                            {grandT > 0 && <div className="text-[10px] text-amber-700">{grandT}ن</div>}
+                            {!grandH && !grandT && '—'}
+                          </td>
                         </tr>
                       );
                     })}
@@ -662,14 +740,27 @@ export default function MachineryTab({ user }: Props) {
               <tfoot>
                 <tr className="bg-slate-900 text-white font-black">
                   <td className="sticky right-0 z-10 bg-slate-900 p-2 text-right">الإجمالي</td>
-                  {monthDays.map(d => { const t = dayGridTotal(d); return <td key={d} className={`p-1 ${t ? 'text-emerald-300' : 'opacity-40'}`}>{t || '·'}</td>; })}
-                  <td className="p-1 bg-blue-700">{monthGridGrand || '—'}</td>
+                  {monthDays.map(d => {
+                    const ht = dayGridTotal(d);
+                    const tt = dayGridTotalTrips(d);
+                    return (
+                      <td key={d} className={`p-1 ${ht || tt ? 'text-emerald-300' : 'opacity-40'}`}>
+                        {ht > 0 && <div>{ht}س</div>}
+                        {tt > 0 && <div className="text-[9px] text-amber-300">{tt}ن</div>}
+                        {!ht && !tt && '·'}
+                      </td>
+                    );
+                  })}
+                  <td className="p-1 bg-blue-700">
+                    <div>{monthGridGrand}س</div>
+                    {monthGridGrandTrips > 0 && <div className="text-[10px] text-amber-200">{monthGridGrandTrips}ن</div>}
+                  </td>
                 </tr>
               </tfoot>
             </table>
           </div>
           <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-bold text-slate-500">
-            <span>🟩 خلية خضرا = فيها ساعات مسجلة</span>
+            <span>🟩 خلية خضرا = فيها ساعات (س) أو نقلات (ن)</span>
             <span>🔵 إطار أزرق = النهارده</span>
             <span>👆 اضغط أي خلية لتروح ليومها وتعدلها</span>
           </div>
@@ -693,7 +784,9 @@ export default function MachineryTab({ user }: Props) {
                   <th className="p-3">المالك</th>
                   <th className="p-3">معداته</th>
                   <th className="p-3">ساعات الشهر</th>
-                  <th className="p-3">الإجمالي الكلي</th>
+                  <th className="p-3">نقلات الشهر</th>
+                  <th className="p-3">إجمالي الساعات</th>
+                  <th className="p-3">إجمالي النقلات</th>
                   <th className="p-3"></th>
                 </tr>
               </thead>
@@ -702,8 +795,10 @@ export default function MachineryTab({ user }: Props) {
                   <tr key={o.owner} className="border-b border-slate-100 font-bold text-slate-800">
                     <td className="p-3 font-black">👤 {o.owner}</td>
                     <td className="p-3 text-xs text-slate-500">{o.machines.length} معدة — {o.machines.map(mLabel).join('، ')}</td>
-                    <td className="p-3 font-black text-blue-700">{o.mon || '—'}</td>
-                    <td className="p-3">{o.total || '—'}</td>
+                    <td className="p-3 font-black text-blue-700">{o.mon ? `${o.mon} س` : '—'}</td>
+                    <td className="p-3 font-black text-amber-700">{o.monTrips ? `${o.monTrips} نقلة` : '—'}</td>
+                    <td className="p-3 font-bold">{o.total ? `${o.total} س` : '—'}</td>
+                    <td className="p-3 font-bold text-amber-800">{o.totalTrips ? `${o.totalTrips} نقلة` : '—'}</td>
                     <td className="p-3">
                       <button type="button" onClick={() => setPrintOwner(o.owner)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">🖨️ كشف للتوقيع</button>
                     </td>
@@ -714,8 +809,10 @@ export default function MachineryTab({ user }: Props) {
                 <tr className="border-t-2 border-slate-200 font-black text-slate-900">
                   <td className="p-3">الإجمالي</td>
                   <td className="p-3"></td>
-                  <td className="p-3">{ownersList.reduce((s2, o) => s2 + o.mon, 0) || '—'}</td>
-                  <td className="p-3">{ownersList.reduce((s2, o) => s2 + o.total, 0) || '—'}</td>
+                  <td className="p-3 text-blue-700">{ownersList.reduce((s2, o) => s2 + o.mon, 0) || '—'} س</td>
+                  <td className="p-3 text-amber-700">{ownersList.reduce((s2, o) => s2 + o.monTrips, 0) || '—'} نقلة</td>
+                  <td className="p-3">{ownersList.reduce((s2, o) => s2 + o.total, 0) || '—'} س</td>
+                  <td className="p-3 text-amber-800">{ownersList.reduce((s2, o) => s2 + o.totalTrips, 0) || '—'} نقلة</td>
                   <td className="p-3"></td>
                 </tr>
               </tfoot>
@@ -828,7 +925,7 @@ export default function MachineryTab({ user }: Props) {
             <div className="print-sheet rounded-2xl bg-white p-6 text-slate-900 shadow-2xl" dir="rtl">
               <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
                 <div className="text-lg font-black">{deptName}</div>
-                <div className="mt-1 text-2xl font-black">📊 شيت ساعات المعدات — شهر {month}</div>
+                <div className="mt-1 text-2xl font-black">📊 شيت ساعات ونقلات المعدات — شهر {month}</div>
               </div>
               <table className="mt-4 w-full border-collapse text-[11px]">
                 <thead>
@@ -840,21 +937,35 @@ export default function MachineryTab({ user }: Props) {
                         <div className="text-[9px] font-normal text-slate-500">{m.owner}{m.driver ? ` — ${m.driver}` : ''}</div>
                       </th>
                     ))}
-                    <th className="border border-slate-400 bg-slate-800 p-1.5 text-white w-14">اليومي</th>
+                    <th className="border border-slate-400 bg-slate-800 p-1.5 text-white w-20">اليومي</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthDays.map((d, i) => {
                     const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'][new Date(d + 'T00:00:00').getDay()];
                     const dayT = dayGridTotal(d);
+                    const dayTT = dayGridTotalTrips(d);
                     return (
                       <tr key={d} className={i % 2 ? 'bg-slate-50' : ''}>
                         <td className="border border-slate-300 p-1.5 font-black whitespace-nowrap">{d.slice(8)} — {wd}</td>
                         {histList.map(m => {
                           const v = hoursOf(m.id, d);
-                          return <td key={m.id} className={`border border-slate-300 p-1.5 text-center font-black ${v ? 'text-slate-900' : 'text-slate-300'}`}>{v || '—'}</td>;
+                          const tv = tripsOf(m.id, d);
+                          return (
+                            <td key={m.id} className={`border border-slate-300 p-1.5 text-center font-black ${v || tv ? 'text-slate-900' : 'text-slate-300'}`}>
+                              {v > 0 && <span>{v}س</span>}
+                              {v > 0 && tv > 0 && <span> / </span>}
+                              {tv > 0 && <span className="text-amber-800">{tv}ن</span>}
+                              {!v && !tv && '—'}
+                            </td>
+                          );
                         })}
-                        <td className={`border border-slate-300 p-1.5 text-center font-black ${dayT ? 'bg-blue-50 text-blue-800' : 'text-slate-300'}`}>{dayT || '—'}</td>
+                        <td className={`border border-slate-300 p-1.5 text-center font-black ${dayT || dayTT ? 'bg-blue-50 text-blue-800' : 'text-slate-300'}`}>
+                          {dayT > 0 && <span>{dayT}س</span>}
+                          {dayT > 0 && dayTT > 0 && <span> / </span>}
+                          {dayTT > 0 && <span className="text-amber-800">{dayTT}ن</span>}
+                          {!dayT && !dayTT && '—'}
+                        </td>
                       </tr>
                     );
                   })}
@@ -864,14 +975,24 @@ export default function MachineryTab({ user }: Props) {
                     <td className="border border-slate-400 p-2 font-black">إجمالي الشهر</td>
                     {histList.map(m => {
                       const t = monthGridTotal(m.id);
-                      return <td key={m.id} className={`border border-slate-400 p-2 text-center font-black ${t ? 'text-emerald-300' : 'opacity-40'}`}>{t || '—'}</td>;
+                      const tt = monthGridTotalTrips(m.id);
+                      return (
+                        <td key={m.id} className={`border border-slate-400 p-2 text-center font-black ${t || tt ? 'text-emerald-300' : 'opacity-40'}`}>
+                          {t > 0 && <div>{t}س</div>}
+                          {tt > 0 && <div className="text-[9px] text-amber-200">{tt}ن</div>}
+                          {!t && !tt && '—'}
+                        </td>
+                      );
                     })}
-                    <td className="border border-slate-400 bg-blue-700 p-2 text-center font-black">{monthGridGrand || '—'}</td>
+                    <td className="border border-slate-400 bg-blue-700 p-2 text-center font-black">
+                      <div>{monthGridGrand}س</div>
+                      {monthGridGrandTrips > 0 && <div className="text-[10px] text-amber-200">{monthGridGrandTrips}ن</div>}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
               <div className="mt-4 flex justify-between text-[11px] font-bold text-slate-500">
-                <span>إجمالي الشهر الكلي: <b className="text-slate-900">{monthGridGrand}</b> ساعة</span>
+                <span>إجمالي الشهر: <b className="text-slate-900">{monthGridGrand}</b> ساعة {monthGridGrandTrips > 0 && <>· <b className="text-amber-800">{monthGridGrandTrips}</b> نقلة</>}</span>
                 <span>تاريخ الطباعة: {today}</span>
               </div>
             </div>
@@ -894,14 +1015,16 @@ export default function MachineryTab({ user }: Props) {
                 <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl" dir="rtl">
                   <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
                     <div className="text-lg font-black">{deptName}</div>
-                    <div className="mt-1 text-2xl font-black">كشف ساعات معدات — شهر {month}</div>
+                    <div className="mt-1 text-2xl font-black">كشف ساعات ونقلات معدات — شهر {month}</div>
                   </div>
                   <div className="mt-4 space-y-2 text-base font-bold">
                     <div>👤 المالك: <b className="text-lg">{o.owner}</b></div>
                     <div>🚜 عدد المعدات: <b>{o.machines.length}</b></div>
-                    <div className="flex justify-between border-b border-dashed border-slate-300 pb-1">
-                      <span>إجمالي ساعات الشهر: <b>{o.mon}</b></span>
-                      <span>الإجمالي الكلي: <b>{o.total}</b></span>
+                    <div className="flex flex-wrap justify-between border-b border-dashed border-slate-300 pb-2 text-sm">
+                      <span>ساعات الشهر: <b>{o.mon || 0} س</b></span>
+                      <span>نقلات الشهر: <b>{o.monTrips || 0} نقلة</b></span>
+                      <span>إجمالي الساعات: <b>{o.total || 0} س</b></span>
+                      <span>إجمالي النقلات: <b>{o.totalTrips || 0} نقلة</b></span>
                     </div>
                   </div>
                   <table className="mt-4 w-full border-collapse text-sm">
@@ -912,6 +1035,7 @@ export default function MachineryTab({ user }: Props) {
                         <th className="border border-slate-400 p-2">السواق</th>
                         <th className="border border-slate-400 p-2">أيام الشغل</th>
                         <th className="border border-slate-400 p-2">ساعات الشهر</th>
+                        <th className="border border-slate-400 p-2">نقلات الشهر</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -921,12 +1045,14 @@ export default function MachineryTab({ user }: Props) {
                           <td className="border border-slate-400 p-2 font-black">{m.kind}{m.size ? ` ${m.size}` : ''}</td>
                           <td className="border border-slate-400 p-2">{m.driver || '—'}</td>
                           <td className="border border-slate-400 p-2 text-center">{workDays(m)}</td>
-                          <td className="border border-slate-400 p-2 text-center font-black">{totalsFor(m).mon}</td>
+                          <td className="border border-slate-400 p-2 text-center font-black">{totalsFor(m).mon || '—'}</td>
+                          <td className="border border-slate-400 p-2 text-center font-black text-amber-800">{totalsFor(m).monTrips || '—'}</td>
                         </tr>
                       ))}
                       <tr className="bg-slate-50">
                         <td className="border border-slate-400 p-2 text-center font-black" colSpan={4}>الإجمالي</td>
-                        <td className="border border-slate-400 p-2 text-center font-black">{o.mon}</td>
+                        <td className="border border-slate-400 p-2 text-center font-black">{o.mon || '—'}</td>
+                        <td className="border border-slate-400 p-2 text-center font-black text-amber-800">{o.monTrips || '—'}</td>
                       </tr>
                     </tbody>
                   </table>

@@ -1302,11 +1302,11 @@ export async function clearAllMachinery(): Promise<void> {
   setItem(STORAGE_KEYS.machineryHours, []);
 }
 
-/** ✅ حفظ ساعات يوم كامل — سيرفر-أولانى: لو السيرفر رفض، مفيش حاجة بتتحسب */
-export async function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; notes?: string }[]): Promise<{ saved: number }> {
+/** ✅ حفظ ساعات ونقلات يوم كامل — سيرفر-أولانى: لو السيرفر رفض، مفيش حاجة بتتحسب */
+export async function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; trips?: number; notes?: string }[]): Promise<{ saved: number }> {
   const r = await api.saveMachineryHours({ date, entries }) as { saved?: number };
   await syncMachineryFromRemote();
-  return { saved: typeof r?.saved === 'number' ? r.saved : entries.filter(e => e.hours > 0).length };
+  return { saved: typeof r?.saved === 'number' ? r.saved : entries.filter(e => e.hours > 0 || (e.trips && e.trips > 0) || e.notes).length };
 }
 
 // ============ 🔧 سجل صيانة المعدات ============

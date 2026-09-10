@@ -497,9 +497,11 @@ export default function MachineryTab({ user }: Props) {
                                     <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
                                   ) : (
                                     <>
-                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.hoursUser && <span>⏱️ مسجل الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
                                       {log.hoursUser && log.notesUser && <span className="text-indigo-300">|</span>}
-                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+
+                                      {log.notesUser && <span>📝 كاتب التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+
                                     </>
                                   )}
                                 </div>
@@ -551,9 +553,11 @@ export default function MachineryTab({ user }: Props) {
                                     <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
                                   ) : (
                                     <>
-                                      {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
+                                      {log.hoursUser && <span>⏱️ مسجل الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
                                       {log.hoursUser && log.notesUser && <span className="text-indigo-300">•</span>}
-                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+
+                                      {log.notesUser && <span>📝 كاتب التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+
                                     </>
                                   )}
                                 </div>

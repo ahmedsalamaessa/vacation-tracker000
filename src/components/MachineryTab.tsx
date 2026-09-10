@@ -494,12 +494,12 @@ export default function MachineryTab({ user }: Props) {
                               return (
                                 <div className="mt-1.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50/90 px-2 py-0.5 text-[11px] font-bold text-indigo-950 shadow-xs">
                                   {log.sameUser ? (
-                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                    <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
                                   ) : (
                                     <>
                                       {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
                                       {log.hoursUser && log.notesUser && <span className="text-indigo-300">|</span>}
-                                      {log.notesUser && <span>📝 التوجيه: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
                                     </>
                                   )}
                                 </div>
@@ -548,12 +548,12 @@ export default function MachineryTab({ user }: Props) {
                               return (
                                 <div className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-950 shadow-xs">
                                   {log.sameUser ? (
-                                    <span>✍️ المسجل: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
+                                    <span>✍️ الساعات والتقرير: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>
                                   ) : (
                                     <>
                                       {log.hoursUser && <span>⏱️ الساعات: <b className="font-black text-indigo-900">{log.hoursUser}</b></span>}
                                       {log.hoursUser && log.notesUser && <span className="text-indigo-300">•</span>}
-                                      {log.notesUser && <span>📝 التوجيه: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
+                                      {log.notesUser && <span>📝 التقرير: <b className="font-black text-indigo-900">{log.notesUser}</b></span>}
                                     </>
                                   )}
                                 </div>

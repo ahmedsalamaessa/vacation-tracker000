@@ -41,6 +41,23 @@ function mLabel(m: Machinery): string {
   return `${m.kind}${m.size ? ` ${m.size}` : ''} ${m.owner}`.trim();
 }
 
+/** هل المعدة عربية نقل / قلاب / مية تقبل خانة النقلات؟ */
+function isTruck(m: Machinery): boolean {
+  const k = (m.kind || '').trim();
+  return (
+    k === 'عربية قلاب' ||
+    k === 'عربية مية' ||
+    k.includes('عربية') ||
+    k.includes('قلاب') ||
+    k.includes('مية') ||
+    k.includes('تريلا') ||
+    k.includes('جامبو') ||
+    k.includes('سيارة') ||
+    k.includes('نقل') ||
+    k.includes('فنطاس')
+  );
+}
+
 /** الاسم في الشاشة: عريض (النوع + المقاس + السواق) وتحته المالك */
 function MName({ m }: { m: Machinery }) {
   const bold = [m.kind, m.size, m.driver].filter(Boolean).join(' ');
@@ -562,9 +579,13 @@ export default function MachineryTab({ user }: Props) {
                               placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-sm font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
                           </td>
                           <td className="p-3">
-                            <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
-                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                              placeholder="—" className="w-full rounded-xl border-2 border-amber-300 bg-amber-50/30 px-3 py-2 text-center text-sm font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
+                            {isTruck(m) ? (
+                              <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
+                                readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                                placeholder="—" className="w-full rounded-xl border-2 border-amber-300 bg-amber-50/30 px-3 py-2 text-center text-sm font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
+                            ) : (
+                              <div className="text-center text-xs font-bold text-slate-300 select-none py-2">—</div>
+                            )}
                           </td>
                           <td className="p-3">
                             <input type="text" value={draftNotes[m.id] ?? ''} onChange={e => setDraftNotes(d => ({ ...d, [m.id]: e.target.value }))}
@@ -617,22 +638,33 @@ export default function MachineryTab({ user }: Props) {
                           </div>
                         </div>
 
-                        {/* خانات الساعات والنقلات جنب بعض */}
-                        <div className="grid grid-cols-2 gap-2 mt-3">
-                          <div className="text-center bg-blue-50/60 p-2 rounded-xl border border-blue-100">
-                            <div className="mb-1 text-[11px] font-bold text-blue-900">⏱️ الساعات</div>
-                            <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
-                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                              placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
-                          </div>
+                        {/* خانات الساعات والنقلات (النقلات للعربيات فقط) */}
+                        {isTruck(m) ? (
+                          <div className="grid grid-cols-2 gap-2 mt-3">
+                            <div className="text-center bg-blue-50/60 p-2 rounded-xl border border-blue-100">
+                              <div className="mb-1 text-[11px] font-bold text-blue-900">⏱️ الساعات</div>
+                              <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
+                                readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                                placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                            </div>
 
-                          <div className="text-center bg-amber-50/60 p-2 rounded-xl border border-amber-100">
-                            <div className="mb-1 text-[11px] font-bold text-amber-900">🚛 النقلات</div>
-                            <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
-                              readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
-                              placeholder="—" className="w-full rounded-xl border-2 border-amber-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
+                            <div className="text-center bg-amber-50/60 p-2 rounded-xl border border-amber-100">
+                              <div className="mb-1 text-[11px] font-bold text-amber-900">🚛 النقلات</div>
+                              <input type="number" step="0.5" min="0" value={draftTrips[m.id] ?? ''} onChange={e => setDraftTrips(d => ({ ...d, [m.id]: e.target.value }))}
+                                readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                                placeholder="—" className="w-full rounded-xl border-2 border-amber-300 px-2 py-2 text-center text-lg font-black outline-none focus:border-amber-600 disabled:bg-slate-100 disabled:text-slate-400" />
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="mt-3">
+                            <div className="text-center bg-blue-50/60 p-2 rounded-xl border border-blue-100">
+                              <div className="mb-1 text-[11px] font-bold text-blue-900">⏱️ الساعات</div>
+                              <input type="number" step="0.5" min="0" value={draft[m.id] ?? ''} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))}
+                                readOnly={dayLocked || dayFuture} disabled={dayLocked || dayFuture}
+                                placeholder="—" className="w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-center text-lg font-black outline-none focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400" />
+                            </div>
+                          </div>
+                        )}
 
                         <div className="mt-3">
                           <div className="mb-1 text-xs font-bold text-slate-500">📝 تقرير الشغل</div>

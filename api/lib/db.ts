@@ -75,6 +75,7 @@ export function mapEmployee(r: any) {
     canManageLocations: r.can_manage_locations,
     canLockMonths: r.can_lock_months,
     canViewAuditLog: r.can_view_audit_log,
+    canEditPastMachinery: Boolean(r.can_edit_past_machinery),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

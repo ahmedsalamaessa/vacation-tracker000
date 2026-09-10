@@ -3,6 +3,8 @@ import type { Employee, Machinery } from '../lib/types';
 import {
   getMachinery,
   getMachineryHours,
+  getEmployees,
+  updateEmployee,
   addMachinery,
   updateMachinery,
   deactivateMachinery,
@@ -67,12 +69,15 @@ export default function MachineryTab({ user }: Props) {
   const isOwnerUser = Boolean((user as any).isOwner);
   // ➕ إضافة معدة جديدة: المالك + الأدمن/المدير
   const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
-  // 🔒 قفل الأيام القديمة: التعديل من المالك + المديرين بس (أنا + عمرو أمين + يعقوب)
-  const canEditLockedDays = isOwnerUser || user.role === 'manager';
+  // 🔒 قفل الأيام القديمة: التعديل من المالك + المديرين + أي موظف فك له المالك القفل صراحة
+  const canEditLockedDays = isOwnerUser || user.role === 'manager' || Boolean((user as any).canEditPastMachinery);
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
 
   const [machinery, setMachinery] = useState<Machinery[]>([]);
+  const [employeesList, setEmployeesList] = useState<Employee[]>([]);
+  const [selectedEmpId, setSelectedEmpId] = useState<number | null>(null);
+  const [empToggling, setEmpToggling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dayDate, setDayDate] = useState(today);
   const [month, setMonth] = useState(monthNow);
@@ -92,6 +97,28 @@ export default function MachineryTab({ user }: Props) {
   function load() {
     setMachinery(getMachinery());
     setDeptName(getSettings().department_name || 'قسم المساحة');
+    const emps = getEmployees().filter(e => e.active && !e.isOwner);
+    setEmployeesList(emps);
+    if (emps.length > 0) {
+      setSelectedEmpId(prev => (prev && emps.some(e => e.id === prev) ? prev : emps[0].id));
+    }
+  }
+
+  async function togglePastMachineryPermission(empId: number, currentVal: boolean) {
+    if (!isOwnerUser) return;
+    const target = employeesList.find(e => e.id === empId);
+    if (!target) return;
+    setEmpToggling(true);
+    try {
+      const newVal = !currentVal;
+      await updateEmployee(empId, { canEditPastMachinery: newVal });
+      setEmployeesList(prev => prev.map(e => e.id === empId ? { ...e, canEditPastMachinery: newVal } : e));
+      flash(newVal ? `🔓 تم فتح تسجيل الأيام السابقة لـ (${target.name}) بنجاح` : `🔒 تم قفل تسجيل الأيام السابقة لـ (${target.name})`);
+    } catch (err: any) {
+      flash('❌ فشل تغيير الإذن: ' + (err?.message || 'خطأ غير معروف'));
+    } finally {
+      setEmpToggling(false);
+    }
   }
 
   /** الساعات المحفوظة لليوم المختار */
@@ -282,6 +309,104 @@ export default function MachineryTab({ user }: Props) {
         </div>
       )}
 
+      {/* ===== 👑 تحكم المالك في فتح/قفل التعديل للمساحين ===== */}
+      {isOwnerUser && (
+        <section className="rounded-[2rem] border-2 border-indigo-200 bg-gradient-to-br from-indigo-50/90 via-white to-blue-50/80 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-xl text-white shadow-md">
+                👑
+              </span>
+              <div>
+                <h4 className="text-base font-black text-indigo-950">تحكم المالك: فك / قفل تسجيل الأيام السابقة</h4>
+                <p className="text-xs font-bold text-indigo-700">تحكم فوري في مين مسموح له يعدل الأيام اللي فاتت ومين مقفول عليه (النهارده بس)</p>
+              </div>
+            </div>
+            {/* مؤشر عدد المفتوح لهم */}
+            {(() => {
+              const unlockedCount = employeesList.filter(e => e.canEditPastMachinery).length;
+              return (
+                <span className={`rounded-xl px-3 py-1.5 text-xs font-black shadow-sm ${
+                  unlockedCount > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                }`}>
+                  {unlockedCount > 0 ? `⚠️ مفتوح حالياً لـ ${unlockedCount} موظف` : '🔒 الكل مقفول (الوضع الطبيعي: النهارده بس)'}
+                </span>
+              );
+            })()}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm">
+            <div className="md:col-span-6">
+              <label className="block text-xs font-black text-slate-700 mb-1">اختر المساح أو المساعد:</label>
+              <select
+                value={selectedEmpId ?? ''}
+                onChange={e => setSelectedEmpId(Number(e.target.value))}
+                className="w-full rounded-xl border-2 border-indigo-200 bg-indigo-50/30 px-3 py-2 text-sm font-black text-slate-800 outline-none focus:border-indigo-600"
+              >
+                {employeesList.map(e => (
+                  <option key={e.id} value={e.id}>
+                    {e.canEditPastMachinery ? '🔓 ' : '🔒 '} {e.name} ({e.jobTitle || 'موظف'}) {e.canEditPastMachinery ? '— مفتوح' : '— مقفول'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const currentEmp = employeesList.find(e => e.id === selectedEmpId);
+              if (!currentEmp) return null;
+              const isUnlocked = Boolean(currentEmp.canEditPastMachinery);
+              return (
+                <div className="md:col-span-6 flex flex-wrap items-center justify-between gap-3 pt-2 md:pt-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500">الحالة:</span>
+                    <span className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-black ${
+                      isUnlocked ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-700 border border-slate-300'
+                    }`}>
+                      {isUnlocked ? '🔓 مسموح بتعديل الأيام السابقة' : '🔒 مقفول (النهارده بس)'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={empToggling}
+                    onClick={() => togglePastMachineryPermission(currentEmp.id, isUnlocked)}
+                    className={`rounded-xl px-4 py-2 text-xs font-black text-white shadow-md transition-all active:scale-95 disabled:opacity-50 ${
+                      isUnlocked ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    {empToggling ? 'جاري التعديل...' : isUnlocked ? '🔒 إعادة القفل (النهارده بس)' : '🔓 فتح التعديل للأيام السابقة'}
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* قائمة المفتوح لهم حالياً مع زر إلغاء فوري */}
+          {(() => {
+            const unlockedList = employeesList.filter(e => e.canEditPastMachinery);
+            if (unlockedList.length === 0) return null;
+            return (
+              <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100 text-xs font-bold text-slate-700">
+                <span className="text-amber-800 font-black">المسموح لهم حالياً:</span>
+                {unlockedList.map(e => (
+                  <span key={e.id} className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 border border-amber-300 px-2.5 py-1 text-xs font-black text-amber-900 shadow-sm">
+                    <span>🔓 {e.name}</span>
+                    <button
+                      type="button"
+                      title="قفل التعديل فوراً"
+                      onClick={() => togglePastMachineryPermission(e.id, true)}
+                      className="text-red-600 hover:text-red-800 font-black px-1 text-sm leading-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+        </section>
+      )}
+
       {/* ===== ورقة اليوم ===== */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -308,6 +433,12 @@ export default function MachineryTab({ user }: Props) {
           <div className="mb-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-center">
             <span className="text-2xl">🔒</span>
             <div className="text-sm font-black text-amber-800">يوم {dayDate} اتقفل — تسجيل/تعديل ساعات الأيام اللي فاتت من المالك أو المدير بس</div>
+          </div>
+        )}
+        {dayDate < today && !isOwnerUser && Boolean((user as any).canEditPastMachinery) && (
+          <div className="mb-3 rounded-2xl border-2 border-blue-300 bg-blue-50 p-3 text-center">
+            <span className="text-xl">🔓</span>
+            <div className="text-xs font-black text-blue-900">مسموح لك بتسجيل وتعديل ساعات الأيام السابقة (إذن خاص من الإدارة)</div>
           </div>
         )}
         {dayFuture && (

@@ -16,6 +16,7 @@ export interface Permissions {
   canManageLocations: boolean;
   canLockMonths: boolean;
   canViewAuditLog: boolean;
+  canEditPastMachinery?: boolean;
 }
 
 export interface Employee extends Permissions {

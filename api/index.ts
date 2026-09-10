@@ -230,7 +230,9 @@ async function ensureEquipmentTables(sql: any) {
   await sql`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS site_id INT`;
   // 👑 المالك الخفي: أعلى من الأدمن — مخفي عن الجميع
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS is_owner BOOLEAN DEFAULT false`;
-  await sql`UPDATE employees SET is_owner = true WHERE username = 'admin' AND is_owner = false`
+  await sql`UPDATE employees SET is_owner = true WHERE username = 'admin' AND is_owner = false`;
+  // 🔓 إذن خاص: السماح لمساح/مساعد بتعديل ساعات المعدات للأيام السابقة
+  await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS can_edit_past_machinery BOOLEAN DEFAULT false`;
 
   // 🚜 المعدات الثقيلة: ساعات الشغل اليومية
   await sql`
@@ -723,7 +725,7 @@ export default async function handler(req: Request) {
           can_view_dashboard, can_check_in, can_view_my_account, can_request_vacations,
           can_view_notifications, can_view_daily_review, can_view_attendance, can_edit_attendance,
           can_approve_vacations, can_view_reports, can_manage_employees, can_manage_settings,
-          can_manage_locations, can_lock_months, can_view_audit_log
+          can_manage_locations, can_lock_months, can_view_audit_log, can_edit_past_machinery
         ) VALUES (
           ${b.name}, ${b.username}, ${b.jobTitle ?? null}, ${b.phone ?? null},
           ${b.workCycle ?? 12}, ${b.cycleType ?? 'graduated'}, ${b.role ?? 'employee'}, ${password},
@@ -732,7 +734,7 @@ export default async function handler(req: Request) {
           ${!!b.canViewDashboard}, ${b.canCheckIn ?? true}, ${b.canViewMyAccount ?? true}, ${b.canRequestVacations ?? true},
           ${b.canViewNotifications ?? true}, ${!!b.canViewDailyReview}, ${!!b.canViewAttendance}, ${!!b.canEditAttendance},
           ${!!b.canApproveVacations}, ${!!b.canViewReports}, ${!!b.canManageEmployees}, ${!!b.canManageSettings},
-          ${!!b.canManageLocations}, ${!!b.canLockMonths}, ${!!b.canViewAuditLog}
+          ${!!b.canManageLocations}, ${!!b.canLockMonths}, ${!!b.canViewAuditLog}, ${!!b.canEditPastMachinery}
         ) RETURNING *
       `;
       const e = mapEmployee(rows[0]) as any;
@@ -785,6 +787,7 @@ export default async function handler(req: Request) {
           can_manage_locations = COALESCE(${b.canManageLocations ?? null}, can_manage_locations),
           can_lock_months = COALESCE(${b.canLockMonths ?? null}, can_lock_months),
           can_view_audit_log = COALESCE(${b.canViewAuditLog ?? null}, can_view_audit_log),
+          can_edit_past_machinery = COALESCE(${b.canEditPastMachinery !== undefined ? b.canEditPastMachinery : null}, can_edit_past_machinery),
           updated_at = NOW()
         WHERE id = ${id}
         RETURNING *
@@ -1547,9 +1550,9 @@ export default async function handler(req: Request) {
       const today = new Date().toISOString().slice(0, 10);
       if (date > today) return json({ error: 'bad_request', message: 'مينفعش تسجل ساعات ليوم لسه جاي' }, 400);
       if (date < today) {
-        // 🔒 تعديل الأيام المقفولة: المالك + المديرين بس (أنا + عمرو أمين + يعقوب)
-        const canEditLocked = isOwner(authUser) || authUser.role === 'manager';
-        if (!canEditLocked) return forbidden(`🔒 يوم ${date} اتقفل — تسجيل أو تعديل ساعات الأيام اللي فاتت من المالك أو المدير بس`);
+        // 🔒 تعديل الأيام المقفولة: المالك + المديرين + أي موظف تم فك القفل له صراحة من المالك
+        const canEditLocked = isOwner(authUser) || authUser.role === 'manager' || Boolean(authUser.canEditPastMachinery);
+        if (!canEditLocked) return forbidden(`🔒 يوم ${date} اتقفل — تسجيل أو تعديل ساعات الأيام اللي فاتت من المالك أو بإذن خاص`);
       }
       let saved = 0;
       for (const en of b.entries) {

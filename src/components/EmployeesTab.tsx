@@ -45,6 +45,7 @@ interface FormState {
   canManageLocations: boolean;
   canLockMonths: boolean;
   canViewAuditLog: boolean;
+  canEditPastMachinery: boolean;
 }
 
 const EMPTY: FormState = {
@@ -72,6 +73,7 @@ const EMPTY: FormState = {
   canManageLocations: false,
   canLockMonths: false,
   canViewAuditLog: false,
+  canEditPastMachinery: false,
 };
 
 const CYCLE_LABELS: Record<string, { label: string; cls: string }> = {
@@ -181,6 +183,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       canManageLocations: emp.canManageLocations,
       canLockMonths: emp.canLockMonths,
       canViewAuditLog: emp.canViewAuditLog,
+      canEditPastMachinery: Boolean(emp.canEditPastMachinery),
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -253,6 +256,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     { key: 'canManageLocations', label: 'إدارة المواقع' },
     { key: 'canLockMonths', label: 'قفل الشهور' },
     { key: 'canViewAuditLog', label: 'سجل الحركات' },
+    { key: 'canEditPastMachinery', label: '🔓 تعديل ساعات المعدات للأيام السابقة (إذن خاص)' },
   ];
 
   function submit(e: React.FormEvent) {
@@ -315,6 +319,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
       canManageLocations: finalRole === 'admin' || form.canManageLocations,
       canLockMonths: finalRole === 'admin' || form.canLockMonths,
       canViewAuditLog: finalRole === 'admin' || form.canViewAuditLog,
+      canEditPastMachinery: form.canEditPastMachinery,
     };
 
     if (editId) {
@@ -1056,6 +1061,11 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                     ) : (
                       <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
                         ⚠️ بدون باسورد
+                      </span>
+                    )}
+                    {emp.canEditPastMachinery && (
+                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-black">
+                        🔓 تعديل المعدات مفتوح
                       </span>
                     )}
                   </div>

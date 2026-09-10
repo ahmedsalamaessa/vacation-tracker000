@@ -600,8 +600,8 @@ export default function MachineryTab({ user }: Props) {
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 font-black text-slate-900">
                     <td className="p-3">الإجمالي ({active.length} معدة)</td>
-                    <td className="p-3 text-center text-blue-700">{daySum} س</td>
-                    <td className="p-3 text-center text-amber-700">{dayTripsSum} نقلة</td>
+                    <td className="p-3 text-center text-blue-700">{daySum}</td>
+                    <td className="p-3 text-center text-amber-700">{dayTripsSum > 0 ? `${dayTripsSum}ن` : '—'}</td>
                     <td className="p-3 text-xs text-slate-500">{active.filter(m => parseFloat(draft[m.id] || '') > 0 || parseFloat(draftTrips[m.id] || '') > 0).length} شغالة النهارده</td>
                   </tr>
                 </tfoot>
@@ -742,7 +742,7 @@ export default function MachineryTab({ user }: Props) {
                             const hasVal = v > 0 || tv > 0;
                             const isToday = d === today;
                             const log = isOwnerUser ? getLogInfo(m.id, d) : null;
-                            const tooltip = `${v > 0 ? `${v}س` : ''}${v > 0 && tv > 0 ? ' و ' : ''}${tv > 0 ? `${tv} نقلة` : ''}${log ? ` (${log.mainUser})` : ''} — اضغط للتسجيل/التعديل`;
+                            const tooltip = `${v > 0 ? `${v} ساعة` : ''}${v > 0 && tv > 0 ? ' و ' : ''}${tv > 0 ? `${tv} نقلة` : ''}${log ? ` (${log.mainUser})` : ''} — اضغط للتسجيل/التعديل`;
                             return (
                               <td key={d}
                                 onClick={() => { setDayDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -750,17 +750,17 @@ export default function MachineryTab({ user }: Props) {
                                 className={`p-1 cursor-pointer font-bold transition-colors ${hasVal ? 'text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100' : 'text-slate-300 hover:bg-slate-100'} ${isToday ? 'ring-2 ring-inset ring-blue-400' : ''}`}>
                                 {hasVal ? (
                                   <div className="text-[11px] leading-tight font-black">
-                                    {v > 0 && <span>{v}س</span>}
+                                    {v > 0 && <span>{v}</span>}
                                     {v > 0 && tv > 0 && <span className="opacity-40"> / </span>}
-                                    {tv > 0 && <span className="text-amber-800">{tv}ن</span>}
+                                    {tv > 0 && <span className="text-amber-800 font-black">{tv}ن</span>}
                                   </div>
                                 ) : '·'}
                               </td>
                             );
                           })}
                           <td className={`p-1 font-black ${grandH || grandT ? 'text-blue-700 bg-blue-50' : 'text-slate-300'}`}>
-                            {grandH > 0 && <div>{grandH}س</div>}
-                            {grandT > 0 && <div className="text-[10px] text-amber-700">{grandT}ن</div>}
+                            {grandH > 0 && <div>{grandH}</div>}
+                            {grandT > 0 && <div className="text-[10px] text-amber-700 font-black">{grandT}ن</div>}
                             {!grandH && !grandT && '—'}
                           </td>
                         </tr>
@@ -777,14 +777,14 @@ export default function MachineryTab({ user }: Props) {
                     const tt = dayGridTotalTrips(d);
                     return (
                       <td key={d} className={`p-1 ${ht || tt ? 'text-emerald-300' : 'opacity-40'}`}>
-                        {ht > 0 && <div>{ht}س</div>}
+                        {ht > 0 && <div>{ht}</div>}
                         {tt > 0 && <div className="text-[9px] text-amber-300">{tt}ن</div>}
                         {!ht && !tt && '·'}
                       </td>
                     );
                   })}
                   <td className="p-1 bg-blue-700">
-                    <div>{monthGridGrand}س</div>
+                    <div>{monthGridGrand}</div>
                     {monthGridGrandTrips > 0 && <div className="text-[10px] text-amber-200">{monthGridGrandTrips}ن</div>}
                   </td>
                 </tr>
@@ -792,7 +792,7 @@ export default function MachineryTab({ user }: Props) {
             </table>
           </div>
           <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-bold text-slate-500">
-            <span>🟩 خلية خضرا = فيها ساعات (س) أو نقلات (ن)</span>
+            <span>🟩 خلية خضرا = فيها ساعات أو نقلات (ن)</span>
             <span>🔵 إطار أزرق = النهارده</span>
             <span>👆 اضغط أي خلية لتروح ليومها وتعدلها</span>
           </div>
@@ -985,7 +985,7 @@ export default function MachineryTab({ user }: Props) {
                           const tv = tripsOf(m.id, d);
                           return (
                             <td key={m.id} className={`border border-slate-300 p-1.5 text-center font-black ${v || tv ? 'text-slate-900' : 'text-slate-300'}`}>
-                              {v > 0 && <span>{v}س</span>}
+                              {v > 0 && <span>{v}</span>}
                               {v > 0 && tv > 0 && <span> / </span>}
                               {tv > 0 && <span className="text-amber-800">{tv}ن</span>}
                               {!v && !tv && '—'}
@@ -993,7 +993,7 @@ export default function MachineryTab({ user }: Props) {
                           );
                         })}
                         <td className={`border border-slate-300 p-1.5 text-center font-black ${dayT || dayTT ? 'bg-blue-50 text-blue-800' : 'text-slate-300'}`}>
-                          {dayT > 0 && <span>{dayT}س</span>}
+                          {dayT > 0 && <span>{dayT}</span>}
                           {dayT > 0 && dayTT > 0 && <span> / </span>}
                           {dayTT > 0 && <span className="text-amber-800">{dayTT}ن</span>}
                           {!dayT && !dayTT && '—'}
@@ -1010,14 +1010,14 @@ export default function MachineryTab({ user }: Props) {
                       const tt = monthGridTotalTrips(m.id);
                       return (
                         <td key={m.id} className={`border border-slate-400 p-2 text-center font-black ${t || tt ? 'text-emerald-300' : 'opacity-40'}`}>
-                          {t > 0 && <div>{t}س</div>}
+                          {t > 0 && <div>{t}</div>}
                           {tt > 0 && <div className="text-[9px] text-amber-200">{tt}ن</div>}
                           {!t && !tt && '—'}
                         </td>
                       );
                     })}
                     <td className="border border-slate-400 bg-blue-700 p-2 text-center font-black">
-                      <div>{monthGridGrand}س</div>
+                      <div>{monthGridGrand}</div>
                       {monthGridGrandTrips > 0 && <div className="text-[10px] text-amber-200">{monthGridGrandTrips}ن</div>}
                     </td>
                   </tr>

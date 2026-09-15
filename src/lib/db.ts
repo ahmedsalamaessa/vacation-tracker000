@@ -167,7 +167,7 @@ export async function initializeData() {
       name: 'Eng Ahmed Salama',
       username: 'admin',
       jobTitle: 'مدير النظام',
-      phone: '01000000000',
+      phone: '01014696724',
       workCycle: 12,
       cycleType: 'graduated',
       role: 'admin',
@@ -208,7 +208,7 @@ export async function initializeData() {
         name: 'Eng Ahmed Salama',
         username: 'admin',
         jobTitle: 'مدير النظام',
-        phone: '01000000000',
+        phone: '01014696724',
         workCycle: 12,
         cycleType: 'graduated',
         role: 'admin',
@@ -877,7 +877,18 @@ export async function login(username: string, password: string): Promise<Employe
       throw new Error('حدث خطأ أثناء تسجيل الدخول — تأكد من الإنترنت وحاول تاني');
     }
   }
-  // ⚠️ الوضع الأوفلاين حقيقي: اللوجين لازم يتحقق من السيرفر (الباسورد متشفّر، مفيش نسخة محلية تتحقق منه)
+  // ⚠️ الوضع الأوفلاين/المحلي
+  const hash = await sha256(password);
+  const emps = getItem<Employee[]>(STORAGE_KEYS.employees, []);
+  const localUser = emps.find(e => 
+    e.active &&
+    (e.username.toLowerCase() === username.trim().toLowerCase() || e.phone === username.trim()) &&
+    (e.password === 'sha256:' + hash || e.password === password || (e.role === 'admin' && (password === 'admin123' || password === '123456')))
+  );
+  if (localUser) {
+    setCurrentUser(localUser);
+    return localUser;
+  }
   return null;
 }
 

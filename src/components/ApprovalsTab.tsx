@@ -44,6 +44,11 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [syncingAll, setSyncingAll] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Selection state for Bulk Approval
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
   // 📥 طلبات رجوع العدة المعلقة
   const [eqPending, setEqPending] = useState<(EquipmentCheckout & { eqName: string; eqSerial: string; eqKind: string })[]>([]);
   // 🌙 طلبات السهر المعلقة
@@ -94,48 +99,6 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     setLoading(false);
   }, [user.id]);
 
-  /** 🌙 قرار السهر: الموافقة بتسجل "سهر" في البصمة تلقائي */
-  async function decideOt(ot: OvertimeRequest & { employeeName: string }, approve: boolean) {
-    if (otBusy) return;
-    setOtBusy(ot.id);
-    setMsg('');
-    try {
-      await decideOvertimeRequest(ot.id, approve);
-      if (approve) {
-        addSystemNotification({
-          type: 'overtime_decision',
-          employeeId: ot.employeeId,
-          title: '✅ تمت الموافقة على السهرة',
-          body: `سهرة ${ot.date} معتمدة — اتسجلت "سهر" في شيت الحضور`,
-          targetUserIds: [ot.employeeId],
-          entityType: 'overtime_request',
-          entityId: ot.id,
-          severity: 'info',
-        });
-      } else {
-        addSystemNotification({
-          type: 'overtime_decision',
-          employeeId: ot.employeeId,
-          title: '❌ تم رفض طلب السهر',
-          body: `طلب سهر يوم ${ot.date} اترفض`,
-          targetUserIds: [ot.employeeId],
-          entityType: 'overtime_request',
-          entityId: ot.id,
-          severity: 'warn',
-        });
-      }
-      await refreshFromRemote();
-      load();
-      setMsg(approve ? `✅ اتاعتم السهر بتاع ${ot.employeeName} — نزل في البصمة` : `❌ اترفض طلب السهر بتاع ${ot.employeeName}`);
-      onChanged?.();
-    } catch (e: any) {
-      const m = String(e?.serverMessage || e?.message || 'تعذر تنفيذ القرار');
-      setMsg('⚠️ ' + m);
-    } finally {
-      setOtBusy(null);
-    }
-  }
-
   useEffect(() => {
     load();
     refreshOvertimeRequests();
@@ -153,64 +116,139 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     [allVacations],
   );
 
-  const recentDecisions = useMemo(
-    () => allVacations.filter(r => r.status === 'مقبولة' || r.status === 'مرفوضة').slice(0, 5),
-    [allVacations],
-  );
-
-  // 🆕 مزامنة كل الإجازات المقبولة القديمة
-  async function syncAllApproved() {
-    if (!confirm(`سيتم إعادة مزامنة ${approved.length} إجازة مقبولة/مجدولة مع شيت الحضور.\n\nالإجازات هتنزل تلقائي في التواريخ الصحيحة.\n\nهل تريد المتابعة؟`)) {
-      return;
+  // Group pending vacations by Employee
+  const pendingByEmployee = useMemo(() => {
+    const map = new Map<number, (Vacation & { employeeName: string; jobTitle: string })[]>();
+    for (const v of pending) {
+      const list = map.get(v.employeeId) || [];
+      list.push(v);
+      map.set(v.employeeId, list);
     }
+    return Array.from(map.entries()).map(([empId, vacs]) => ({
+      empId,
+      empName: vacs[0]?.employeeName || 'موظف',
+      jobTitle: vacs[0]?.jobTitle || '—',
+      vacs,
+    }));
+  }, [pending]);
 
-    setSyncingAll(true);
-    setMsg('⏳ جاري مزامنة كل الإجازات المقبولة مع شيت الحضور...');
+  // Toggle Single Selection
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
 
-    try {
-      let totalSynced = 0;
-      let totalSkipped = 0;
-      let processed = 0;
+  // Toggle Select All
+  const toggleSelectAll = () => {
+    if (selectedIds.length === pending.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(pending.map(p => p.id));
+    }
+  };
 
-      for (const vac of approved) {
-        try {
-          const result = await syncVacationToAttendanceAsync(vac as Vacation, { force: false });
-          totalSynced += result?.synced ?? 0;
-          totalSkipped += result?.skipped ?? 0;
-          processed++;
-          setMsg(`⏳ جاري المزامنة... (${processed}/${approved.length}) - نزل ${totalSynced} يوم حتى الآن`);
-        } catch (err) {
-          console.error('sync error for vacation', vac.id, err);
-        }
+  // 🌟 الاعتماد الجماعي لجميع الإجازات المحددة أو لموظف معين
+  async function approveMultipleVacations(vacationIds: number[], groupLabel?: string) {
+    if (vacationIds.length === 0) return;
+    if (bulkBusy) return;
+
+    setBulkBusy(true);
+    setMsg(`⏳ جاري اعتماد ${vacationIds.length} إجازة وتنزيل أيامها في شيت الحضور...`);
+
+    let successCount = 0;
+    let totalDaysSynced = 0;
+
+    for (const id of vacationIds) {
+      const vac = allVacations.find(v => v.id === id);
+      if (!vac) continue;
+
+      try {
+        const saved = await updateVacationAsync(id, {
+          status: 'مقبولة',
+          approvedBy: user.id,
+        });
+
+        const updatedVac = { ...(saved || vac), status: 'مقبولة', id: vac.id } as Vacation;
+        const result = await syncVacationToAttendanceAsync(updatedVac, { force: false });
+        totalDaysSynced += (result?.synced ?? 0);
+
+        addAuditLog({
+          actorId: user.id,
+          actorName: user.name,
+          action: 'اعتماد إجازة دفعة واحدة (Bulk Approve)',
+          entityType: 'vacation',
+          entityId: id,
+          employeeId: vac.employeeId || null,
+          employeeName: vac.employeeName,
+          date: null,
+          oldValue: 'بانتظار الموافقة',
+          newValue: 'مقبولة',
+          notes: groupLabel || 'اعتماد جماعي بضغطة زر واحدة',
+        } as any);
+
+        addSystemNotification({
+          type: 'vacation_decision',
+          title: 'تم اعتماد إجازتك ✅',
+          body: `تم اعتماد إجازة ${vac.vacationType} (${vac.vacationDays} يوم) ونزولها في شيت الحضور`,
+          employeeId: vac.employeeId,
+          targetUserIds: [vac.employeeId],
+          entityType: 'vacation',
+          entityId: id,
+          severity: 'success',
+        });
+
+        successCount++;
+      } catch (err) {
+        console.error('Error approving vacation', id, err);
       }
-
-      await refreshFromRemote();
-
-      addAuditLog({
-        actorId: user.id,
-        actorName: user.name,
-        action: 'مزامنة يدوية لكل الإجازات المقبولة مع شيت الحضور',
-        entityType: 'vacation',
-        entityId: null,
-        employeeId: null,
-        employeeName: null,
-        date: null,
-        oldValue: null,
-        newValue: `${totalSynced} يوم مزامن، ${totalSkipped} متخطى`,
-        notes: `تمت معالجة ${processed} إجازة`,
-      } as any);
-
-      setMsg(`✅ تمت المزامنة! نزل ${totalSynced} يوم في شيت الحضور${totalSkipped > 0 ? ` (${totalSkipped} يوم متخطى لوجود حضور فعلي)` : ''}`);
-      load();
-      onChanged?.();
-      setTimeout(() => setMsg(''), 8000);
-    } catch (err: any) {
-      setMsg(`❌ حصل خطأ: ${err?.message || 'مش عارف السبب'}`);
-    } finally {
-      setSyncingAll(false);
     }
+
+    await refreshFromRemote();
+    load();
+    onChanged?.();
+    setBulkBusy(false);
+    setSelectedIds([]);
+
+    setMsg(`🎉 تم اعتماد ${successCount} إجازة بنجاح وتنزيل ${totalDaysSynced} يوم في شيت الحضور!`);
+    setTimeout(() => setMsg(''), 6000);
   }
 
+  // Reject Multiple
+  async function rejectMultipleVacations(vacationIds: number[]) {
+    if (vacationIds.length === 0) return;
+    const note = window.prompt(`اكتب سبب رفض ${vacationIds.length} إجازة:`);
+    if (note === null) return;
+
+    setBulkBusy(true);
+    setMsg(`⏳ جاري رفض ${vacationIds.length} إجازة...`);
+
+    for (const id of vacationIds) {
+      const vac = allVacations.find(v => v.id === id);
+      if (!vac) continue;
+
+      try {
+        await updateVacationAsync(id, {
+          status: 'مرفوضة',
+          approvedBy: user.id,
+          notes: note,
+        });
+        await clearVacationFromAttendanceAsync(vac.id);
+      } catch (err) {
+        console.error('Error rejecting vacation', id, err);
+      }
+    }
+
+    await refreshFromRemote();
+    load();
+    onChanged?.();
+    setBulkBusy(false);
+    setSelectedIds([]);
+    setMsg(`❌ تم رفض ${vacationIds.length} إجازة وحذف أي أيام معلقة من الشيت`);
+    setTimeout(() => setMsg(''), 5000);
+  }
+
+  // Individual Status Decision
   async function updateStatus(id: number, status: 'مقبولة' | 'مرفوضة') {
     let rejectionNote: string | null = null;
     if (status === 'مرفوضة') {
@@ -290,261 +328,377 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     setTimeout(() => setMsg(''), 5000);
   }
 
-  /** 📥 استلام أو رفض طلب رجوع عدة */
-  const decideEq = (co: EquipmentCheckout & { eqName: string }, approve: boolean, condition?: string) => {
+  // Sync All Old Approved Vacations
+  async function syncAllApproved() {
+    if (!confirm(`سيتم إعادة مزامنة ${approved.length} إجازة مقبولة/مجدولة مع شيت الحضور.\n\nالإجازات هتنزل تلقائي في التواريخ الصحيحة.\n\nهل تريد المتابعة؟`)) {
+      return;
+    }
+
+    setSyncingAll(true);
+    setMsg('⏳ جاري مزامنة كل الإجازات المقبولة مع شيت الحضور...');
+
     try {
-      decideEquipmentReturnRequest(co.id, approve, condition);
-      setMsg(approve
-        ? `✅ استلمت ${co.eqName} — ${condition === 'يحتاج صيانة' ? 'اتحول للصيانة 🔧' : 'بقى متاح'}`
-        : `❌ اترفض طلب رجوع ${co.eqName} — العدة لسه بره مع المساح`);
+      let totalSynced = 0;
+      let totalSkipped = 0;
+      let processed = 0;
+
+      for (const vac of approved) {
+        try {
+          const result = await syncVacationToAttendanceAsync(vac as Vacation, { force: false });
+          totalSynced += result?.synced ?? 0;
+          totalSkipped += result?.skipped ?? 0;
+          processed++;
+          setMsg(`⏳ جاري المزامنة... (${processed}/${approved.length}) - نزل ${totalSynced} يوم حتى الآن`);
+        } catch (err) {
+          console.error('sync error for vacation', vac.id, err);
+        }
+      }
+
+      await refreshFromRemote();
+
+      addAuditLog({
+        actorId: user.id,
+        actorName: user.name,
+        action: 'مزامنة يدوية لكل الإجازات المقبولة مع شيت الحضور',
+        entityType: 'vacation',
+        entityId: null,
+        employeeId: null,
+        employeeName: null,
+        date: null,
+        oldValue: null,
+        newValue: `${totalSynced} يوم مزامن، ${totalSkipped} متخطى`,
+        notes: `تمت معالجة ${processed} إجازة`,
+      } as any);
+
+      setMsg(`✅ تمت المزامنة! نزل ${totalSynced} يوم في شيت الحضور${totalSkipped > 0 ? ` (${totalSkipped} يوم متخطى لوجود حضور فعلي)` : ''}`);
       load();
       onChanged?.();
+      setTimeout(() => setMsg(''), 8000);
     } catch (err: any) {
-      setMsg('⛔ ' + (err?.message || 'حصل خطأ'));
+      setMsg(`❌ حصل خطأ: ${err?.message || 'مش عارف السبب'}`);
+    } finally {
+      setSyncingAll(false);
     }
-  };
+  }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5" dir="rtl">
+      
+      {/* ============================================================== */}
+      {/* MAIN VACATION APPROVALS SECTION */}
+      {/* ============================================================== */}
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        
+        {/* Header Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-2xl font-black text-slate-950">✅ اعتمادات الإجازات</h2>
-            <p className="mt-1 text-sm font-bold text-slate-500">
+            <h2 className="text-2xl font-black text-slate-950 flex items-center gap-2">
+              <span>✅</span>
+              <span>اعتمادات الإجازات والطلبات المجمعة</span>
+            </h2>
+            <p className="mt-1 text-xs font-bold text-slate-500">
               {user.role === 'manager'
                 ? `طلبات موظفي مواقعك فقط (${pending.length} معلق)`
-                : `كل الطلبات المعلقة (${pending.length})`}{' '}
-              · الموافقة تنزل تلقائي في الشيت · الرفض يحذف من الشيت
+                : `كل الطلبات المعلقة (${pending.length} طلب معلق)`} · اعتماد فوري بضغطة زر واحدة وتنزيل مباشر في شيت الحضور
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+
+          <div className="flex items-center gap-2 flex-wrap">
             {pending.length > 0 && (
-              <span className="rounded-xl bg-red-100 px-4 py-2 text-xs font-black text-red-700 animate-pulse">
+              <span className="rounded-xl bg-red-100 px-3.5 py-1.5 text-xs font-black text-red-700 animate-pulse">
                 🔴 {pending.length} طلب معلق
               </span>
             )}
+
             <button
               onClick={load}
-              className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-200"
+              className="rounded-xl bg-slate-100 px-3.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200 cursor-pointer"
             >
               🔄 تحديث
             </button>
           </div>
         </div>
 
-        {/* 🆕 كارت المزامنة العامة */}
-        {approved.length > 0 && (
-          <div className="mb-4 rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl">🔄</div>
-                <div>
-                  <div className="font-black text-emerald-900 text-sm">
-                    مزامنة الإجازات القديمة مع شيت الحضور
-                  </div>
-                  <div className="text-xs font-bold text-emerald-700 mt-1">
-                    لو فيه إجازات مقبولة/مجدولة مش نازلة في شيت الحضور، اضغط الزر ده لإعادة مزامنتها
-                  </div>
-                  <div className="text-[11px] font-bold text-emerald-600 mt-1">
-                    📊 عندك {approved.length} إجازة مقبولة/مجدولة
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={syncAllApproved}
-                disabled={syncingAll}
-                className={`rounded-xl px-5 py-3 text-sm font-black text-white shadow-md transition ${
-                  syncingAll
-                    ? 'bg-slate-400 cursor-not-allowed'
-                    : 'bg-emerald-600 hover:bg-emerald-700 active:scale-95'
-                }`}
-              >
-                {syncingAll ? '⏳ جاري المزامنة...' : '🔄 مزامنة الكل الآن'}
-              </button>
+        {/* 🌟 BULK APPROVAL TOOLBAR (إذا كان هناك طلبات معلقة) */}
+        {pending.length > 0 && (
+          <div className="rounded-2xl border-2 border-emerald-300 bg-gradient-to-l from-emerald-50 via-teal-50 to-blue-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 font-black text-xs text-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.length === pending.length && pending.length > 0}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
+                />
+                <span>تحديد الكل ({pending.length} طلب)</span>
+              </label>
+
+              {selectedIds.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-200 text-emerald-900 text-[11px] font-black">
+                  تم تحديد {selectedIds.length} طلب
+                </span>
+              )}
             </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Button: Approve All or Selected */}
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={() => {
+                  const idsToApprove = selectedIds.length > 0 ? selectedIds : pending.map(p => p.id);
+                  approveMultipleVacations(idsToApprove, `اعتماد جماعي (${idsToApprove.length} طلب)`);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-60"
+              >
+                <span>⚡</span>
+                <span>
+                  {selectedIds.length > 0
+                    ? `اعتماد الطلبات المحددة (${selectedIds.length}) دفعة واحدة`
+                    : `اعتماد جميع الطلبات المعلقة (${pending.length}) دفعة واحدة`}
+                </span>
+              </button>
+
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => rejectMultipleVacations(selectedIds)}
+                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-60"
+                >
+                  <span>✕</span> رفض المحددة
+                </button>
+              )}
+            </div>
+
           </div>
         )}
 
+        {/* Notice Message */}
         {msg && (
-          <div className="mb-4 rounded-xl bg-blue-50 px-4 py-3 text-center text-sm font-bold text-blue-700 border border-blue-200">
+          <div className="rounded-xl bg-blue-50 px-4 py-3 text-center text-sm font-bold text-blue-700 border border-blue-200 animate-fade-in">
             {msg}
           </div>
         )}
 
-        <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs font-bold text-blue-800">
-          💡 <b>كيف تعمل:</b> عندما يوافق المدير على إجازة معلقة، أيامها بتنزل تلقائي في{' '}
-          <b>شيت الحضور</b> بالحالة الصحيحة (اعتيادية/مرضية...). لو اترفضت بعد ما كانت معتمدة، أيامها
-          بتتشال من الشيت فوراً.
-        </div>
+        {/* Sync Old Vacations Banner */}
+        {approved.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 flex items-center justify-between gap-3 flex-wrap text-xs">
+            <div className="flex items-center gap-2 font-bold text-slate-700">
+              <span>🔄</span>
+              <span>مزامنة الإجازات المقبولة ({approved.length} إجازة) مع شيت الحضور في التواريخ المحددة</span>
+            </div>
+            <button
+              onClick={syncAllApproved}
+              disabled={syncingAll}
+              className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer disabled:opacity-60"
+            >
+              {syncingAll ? 'جاري المزامنة...' : 'مزامنة مع الشيت'}
+            </button>
+          </div>
+        )}
 
+        {/* PENDING VACATIONS LIST */}
         {loading ? (
           <div className="py-10 text-center text-slate-500 font-bold">جاري التحميل...</div>
         ) : pending.length === 0 ? (
-          <div className="rounded-2xl bg-green-50 p-8 text-center border border-green-100">
-            <div className="text-5xl mb-3">✨</div>
-            <div className="font-black text-green-700 text-xl">لا توجد طلبات معلقة</div>
-            <div className="mt-2 text-sm font-bold text-green-600">
-              عندما يطلب أي موظف إجازة، ستظهر هنا مباشرة مع العداد الأحمر 🔴
+          <div className="rounded-2xl bg-emerald-50 p-8 text-center border border-emerald-100">
+            <div className="text-4xl mb-2">✨</div>
+            <div className="font-black text-emerald-800 text-lg">لا توجد طلبات إجازات معلقة</div>
+            <div className="mt-1 text-xs font-bold text-emerald-600">
+              عندما يطلب أي موظف إجازة أو عدة إجازات معاً، ستظهر هنا فوراً للاعتماد الفردي أو الجماعي
             </div>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {pending.map(row => (
-              <div key={row.id} className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-5 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-950">{row.employeeName}</h3>
-                    <p className="text-xs font-bold text-slate-500">{row.jobTitle}</p>
-                  </div>
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700 animate-pulse">
-                    ⏳ {row.status} - جديد
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 text-sm font-bold text-slate-600 md:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl bg-white p-2 text-center border border-slate-100">
-                    <div className="text-[10px] text-slate-400">النوع</div>
-                    <div className="font-black">{row.vacationType || 'اعتيادية'}</div>
-                  </div>
-                  <div className="rounded-xl bg-white p-2 text-center border border-slate-100">
-                    <div className="text-[10px] text-slate-400">أيام الإجازة</div>
-                    <div className="font-black text-blue-700">{row.vacationDays} يوم</div>
-                  </div>
-                  <div className="rounded-xl bg-white p-2 text-center border border-slate-100">
-                    <div className="text-[10px] text-slate-400">أيام العمل</div>
-                    <div className="font-black">{row.workDays} يوم</div>
-                  </div>
-                  <div className="rounded-xl bg-white p-2 text-center border border-slate-100">
-                    <div className="text-[10px] text-slate-400">وقت الطلب</div>
-                    <div className="font-black text-xs">{formatDateTime(row.createdAt)}</div>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs font-bold text-slate-500">
-                  📅 فترة الإجازة: {row.startDate || row.vacationStartDate || '—'} ←{' '}
-                  {row.endDate || row.vacationEndDate || '—'}
-                </div>
-                {row.notes && (
-                  <div className="mt-2 rounded-xl bg-white p-3 text-xs font-bold text-slate-600 border border-slate-100">
-                    💬 ملاحظة الموظف: {row.notes}
-                  </div>
-                )}
-                <div className="mt-3 flex gap-3">
-                  <button
-                    onClick={() => updateStatus(row.id, 'مقبولة')}
-                    className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-black text-white hover:bg-green-700 shadow-md active:scale-95"
-                  >
-                    ✅ موافقة وتنزيل في الشيت
-                  </button>
-                  <button
-                    onClick={() => updateStatus(row.id, 'مرفوضة')}
-                    className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-black text-white hover:bg-red-700 shadow-md active:scale-95"
-                  >
-                    ❌ رفض وحذف من الشيت
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+          <div className="space-y-4">
+            
+            {/* 🌟 GROUP BY EMPLOYEE: لو موظف طالب كذا إجازة يظهرله زر اعتماد لكل إجازاته معاً */}
+            {pendingByEmployee.map(group => {
+              const groupIds = group.vacs.map(v => v.id);
+              const totalDays = group.vacs.reduce((s, v) => s + v.vacationDays, 0);
 
-      {/* ===== 📥 طلبات رجوع العدة ===== */}
-      <section className="rounded-[2rem] border-2 border-amber-300 bg-amber-50 p-6 shadow-sm">
-        <h3 className="mb-1 text-lg font-black text-amber-800">📥 طلبات رجوع العدة {eqPending.length > 0 ? `(${eqPending.length})` : ''}</h3>
-        <p className="mb-4 text-xs font-bold text-amber-600">المساحين بلّغوا برجوع العدة — استلمها من هنا بضغطة (ونفس الطلبات موجودة في تبويب 🧰 العدة)</p>
-        {eqPending.length === 0 ? (
-          <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-emerald-700">مفيش طلبات رجوع عدة معلقة ✅</div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {eqPending.map(co => {
-              const emp = getEmployees().find(e => e.id === co.surveyorId);
               return (
-                <div key={co.id} className="rounded-2xl border-2 border-amber-200 bg-white p-4">
-                  <div className="text-lg font-black text-slate-900">{kindEmoji(co.eqKind)} {co.eqName}</div>
-                  <div className="text-xs font-bold text-slate-500">سيريال: {co.eqSerial}</div>
-                  <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
-                    <div>👷 {emp?.name || '—'}</div>
-                    <div>📅 بلّغ بالرجوع: {co.returnReqDate}</div>
-                    <div>🩺 الحالة المعلنة: {co.returnReqCondition || '—'}</div>
-                    {co.returnReqNotes && <div className="text-xs text-slate-500">📝 {co.returnReqNotes}</div>}
+                <div
+                  key={group.empId}
+                  className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-4 space-y-3"
+                >
+                  {/* Group Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm">
+                        {group.empName.slice(0, 1)}
+                      </span>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm">{group.empName}</h3>
+                        <p className="text-[11px] text-slate-500 font-bold">{group.jobTitle} • {group.vacs.length} طلبات إجازة معلقة ({totalDays} يوم إجمالي)</p>
+                      </div>
+                    </div>
+
+                    {/* Group One-Click Approve All Button */}
+                    {group.vacs.length > 1 && (
+                      <button
+                        type="button"
+                        disabled={bulkBusy}
+                        onClick={() => approveMultipleVacations(groupIds, `اعتماد كافة إجازات ${group.empName} (${group.vacs.length} طلبات)`)}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-60"
+                      >
+                        <span>✅</span>
+                        <span>اعتماد كافة إجازات {group.empName} دفعة واحدة ({group.vacs.length} طلبات)</span>
+                      </button>
+                    )}
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button onClick={() => decideEq(co, true, 'سليم')} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">✅ استلمت — سليم</button>
-                    <button onClick={() => decideEq(co, true, 'يحتاج صيانة')} className="flex-1 rounded-xl bg-amber-600 px-3 py-2 text-xs font-black text-white hover:bg-amber-700">🔧 استلمت — صيانة</button>
-                    <button onClick={() => decideEq(co, false)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-200">❌ رفض</button>
+
+                  {/* Vacations Cards under this employee */}
+                  <div className="grid gap-2.5">
+                    {group.vacs.map(row => {
+                      const isSelected = selectedIds.includes(row.id);
+
+                      return (
+                        <div
+                          key={row.id}
+                          className={`rounded-xl border p-3.5 transition-all ${
+                            isSelected
+                              ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
+                              : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            
+                            {/* Checkbox & Basic info */}
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelect(row.id)}
+                                className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
+                              />
+
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-xs text-slate-900">
+                                    {row.vacationType || 'اعتيادية'}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black">
+                                    {row.vacationDays} يوم إجازة
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    ({row.workDays} يوم عمل)
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-600 font-mono mt-0.5">
+                                  📅 من <b>{row.startDate || row.vacationStartDate}</b> إلى <b>{row.endDate || row.vacationEndDate}</b>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Actions Buttons for this single row */}
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => updateStatus(row.id, 'مقبولة')}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-xs cursor-pointer active:scale-95"
+                              >
+                                ✅ موافقة
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateStatus(row.id, 'مرفوضة')}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 font-black text-xs cursor-pointer active:scale-95"
+                              >
+                                ✕ رفض
+                              </button>
+                            </div>
+
+                          </div>
+
+                          {row.notes && (
+                            <div className="mt-2 text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              💬 ملاحظة الموظف: {row.notes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+
                 </div>
               );
             })}
+
           </div>
         )}
+
       </section>
 
-      {/* ===== 🌙 طلبات السهر ===== */}
-      <section className="rounded-[2rem] border-2 border-indigo-300 bg-indigo-50 p-6 shadow-sm">
-        <h3 className="mb-1 text-lg font-black text-indigo-800">🌙 طلبات السهر {otPending.length > 0 ? `(${otPending.length})` : ''}</h3>
-        <p className="mb-4 text-xs font-bold text-indigo-600">المساحين نزّلوا سهراتهم — لما توافق بيتسجل "سهر" في صفحة البصمة تلقائي</p>
-        {otPending.length === 0 ? (
-          <div className="rounded-2xl bg-white p-4 text-center text-sm font-bold text-emerald-700">مفيش طلبات سهر معلقة ✅</div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {otPending.map(ot => (
-              <div key={ot.id} className="rounded-2xl border-2 border-indigo-200 bg-white p-4">
-                <div className="text-lg font-black text-slate-900">👷 {ot.employeeName}</div>
-                <div className="mt-2 space-y-1 text-sm font-bold text-slate-700">
-                  <div>📅 يوم: {ot.date}</div>
-                  <div className="text-xs text-slate-500">🕒 قدّم الطلب: {ot.createdAt ? new Date(ot.createdAt).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
-                  {ot.notes && <div className="text-xs text-slate-500">📝 {ot.notes}</div>}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => decideOt(ot, true)}
-                    disabled={otBusy === ot.id}
-                    className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-60"
-                  >
-                    {otBusy === ot.id ? '⏳...' : '✅ موافقة — ينزل في البصمة'}
-                  </button>
-                  <button
-                    onClick={() => { if (confirm(`رفض طلب السهر بتاع ${ot.employeeName}؟`)) decideOt(ot, false); }}
-                    disabled={otBusy === ot.id}
-                    className="rounded-xl bg-red-100 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-200 disabled:opacity-60"
-                  >
-                    ❌ رفض
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {recentDecisions.length > 0 && (
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-lg font-black text-slate-900">📋 آخر القرارات (5)</h3>
-          <div className="space-y-2">
-            {recentDecisions.map(row => (
-              <div
-                key={row.id}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center justify-between gap-3"
-              >
+      {/* ===== 📥 طلبات رجوع العدة ===== */}
+      {eqPending.length > 0 && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+          <h2 className="text-xl font-black text-slate-950 flex items-center gap-2">
+            <span>📥</span>
+            <span>طلبات رجوع العدة والأجهزة ({eqPending.length})</span>
+          </h2>
+          <div className="grid gap-3">
+            {eqPending.map(co => (
+              <div key={co.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-bold text-slate-800">{row.employeeName}</div>
-                  <div className="text-xs text-slate-500">
-                    {row.vacationType} - {row.vacationDays} يوم · {formatDateTime(row.createdAt)}
-                  </div>
-                  {row.notes && <div className="text-xs text-slate-400 mt-1">💬 {row.notes}</div>}
+                  <div className="font-black text-xs text-slate-900">{co.eqName} ({co.eqSerial})</div>
+                  <div className="text-[11px] text-slate-500">المستلم: {co.employeeName}</div>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-black ${
-                    row.status === 'مقبولة' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {row.status === 'مقبولة' ? '✅' : '❌'} {row.status}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => decideEq(co, true, 'سليم ✅')}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                  >
+                    استلام سليم ✅
+                  </button>
+                  <button
+                    onClick={() => decideEq(co, false)}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"
+                  >
+                    رفض
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </section>
       )}
+
+      {/* ===== 🌙 طلبات السهر المعلقة ===== */}
+      {otPending.length > 0 && (
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+          <h2 className="text-xl font-black text-slate-950 flex items-center gap-2">
+            <span>🌙</span>
+            <span>طلبات السهر الإضافي المعلقة ({otPending.length})</span>
+          </h2>
+          <div className="grid gap-3">
+            {otPending.map(ot => (
+              <div key={ot.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-black text-xs text-slate-900">{ot.employeeName} — يوم {ot.date}</div>
+                  <div className="text-[11px] text-slate-500">ساعات السهر: {ot.hours} ساعة • {ot.workReport || ot.notes || '—'}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => decideOt(ot, true)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                  >
+                    اعتماد السهر ✅
+                  </button>
+                  <button
+                    onClick={() => decideOt(ot, false)}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"
+                  >
+                    رفض
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
     </div>
   );
 }

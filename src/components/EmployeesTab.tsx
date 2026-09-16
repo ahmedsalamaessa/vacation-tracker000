@@ -92,6 +92,7 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
   const [allLocations, setLocationsState] = useState<WorkLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [showEmpPassword, setShowEmpPassword] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -852,7 +853,24 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                 <label className="block text-sm text-slate-600 mb-1">
                   كلمة المرور {editId ? '(فارغة = بدون تغيير)' : '*'}
                 </label>
-                <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full border border-slate-300 rounded-lg px-3 py-2" autoComplete="new-password" />
+                <div className="relative">
+                  <input
+                    type={showEmpPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={e => setForm({ ...form, password: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 pl-10 text-sm font-bold"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowEmpPassword(p => !p)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 p-1 text-sm cursor-pointer"
+                    title={showEmpPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                  >
+                    {showEmpPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
               </div>
             </div>
 

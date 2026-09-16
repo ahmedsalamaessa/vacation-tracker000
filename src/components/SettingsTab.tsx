@@ -28,6 +28,7 @@ export default function SettingsTab() {
   // حالة القفل
   const [unlocked, setUnlocked] = useState(false);
   const [gatePassword, setGatePassword] = useState('');
+  const [showGatePassword, setShowGatePassword] = useState(false);
   const [gateError, setGateError] = useState('');
 
   // حالة الإعدادات
@@ -438,7 +439,25 @@ export default function SettingsTab() {
           <h2 className="text-3xl font-black text-slate-950">الإعدادات محمية</h2>
           <p className="mt-3 text-sm font-bold text-slate-500">أدخل كلمة مرور الإعدادات</p>
           {gateError && <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{gateError}</div>}
-          <input type="password" value={gatePassword} onChange={(e) => setGatePassword(e.target.value)} placeholder="كلمة مرور الإعدادات..." className="mt-8 w-full rounded-2xl border-4 border-indigo-200 bg-white px-6 py-4 text-center text-lg font-bold outline-none transition focus:border-indigo-500" autoFocus />
+          <div className="relative mt-8">
+            <input
+              type={showGatePassword ? 'text' : 'password'}
+              value={gatePassword}
+              onChange={(e) => setGatePassword(e.target.value)}
+              placeholder="كلمة مرور الإعدادات..."
+              className="w-full rounded-2xl border-4 border-indigo-200 bg-white px-6 py-4 pl-14 text-center text-lg font-bold outline-none transition focus:border-indigo-500"
+              autoFocus
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowGatePassword(p => !p)}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 text-xl cursor-pointer select-none"
+              title={showGatePassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+            >
+              {showGatePassword ? '🙈' : '👁️'}
+            </button>
+          </div>
           <button type="submit" className="mt-6 w-full rounded-2xl bg-gradient-to-l from-blue-600 to-violet-600 px-6 py-4 text-lg font-black text-white shadow-2xl shadow-blue-100 transition hover:scale-[1.01]">فتح الإعدادات 🔓</button>
           <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-500">الافتراضية: <b>settings123</b></div>
         </form>

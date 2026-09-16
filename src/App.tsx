@@ -41,6 +41,7 @@ import EmployeeProfileTab from './components/EmployeeProfileTab';
 import NotificationsTab from './components/NotificationsTab';
 import MyAccountTab from './components/MyAccountTab';
 import DailyReviewTab from './components/DailyReviewTab';
+import OfflineSyncBanner from './components/OfflineSyncBanner';
 
 type TabKey =
   | 'dashboard'
@@ -768,6 +769,7 @@ export default function App() {
           Developed & Maintained by Eng Ahmed Salama
         </p>
       </footer>
+      <OfflineSyncBanner />
     </div>
   );
 }

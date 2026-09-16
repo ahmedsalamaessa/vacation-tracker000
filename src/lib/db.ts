@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { sha256 } from './crypto';
 import { api, probeRemote, remoteAvailable } from './api';
+import { addToOfflineQueue } from './syncQueue';
 
 const PREFIX = 'vsys_';
 
@@ -484,6 +485,10 @@ function upsertAttendanceLocal(record: any): AttendanceRecord {
 
 export function upsertAttendance(record: any): AttendanceRecord {
   const result = upsertAttendanceLocal(record);
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    addToOfflineQueue('upsert_attendance', record, `بصمة الموظف (${record.employeeId}) ليوم ${record.date}`);
+    return result;
+  }
   if (remoteAvailable()) {
     api
       .upsertAttendance(record)
@@ -497,7 +502,10 @@ export function upsertAttendance(record: any): AttendanceRecord {
           setAttendance(att);
         }
       })
-      .catch(e => console.warn('remote upsertAttendance', e));
+      .catch(e => {
+        console.warn('remote upsertAttendance failed, queued offline', e);
+        addToOfflineQueue('upsert_attendance', record, `بصمة الموظف (${record.employeeId}) ليوم ${record.date}`);
+      });
   }
   return result;
 }
@@ -578,6 +586,10 @@ export function addVacation(vacation: Omit<Vacation, 'id' | 'createdAt'>): Vacat
     createdAt: new Date().toISOString(),
   };
   setVacations([...vacations, newVacation]);
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    addToOfflineQueue('add_vacation', vacation, `طلب إجازة للموظف (${vacation.employeeId})`);
+    return newVacation;
+  }
   if (remoteAvailable()) {
     api.addVacation(vacation).then(created => {
       const list = getVacations().map(v =>
@@ -588,7 +600,10 @@ export function addVacation(vacation: Omit<Vacation, 'id' | 'createdAt'>): Vacat
       } else {
         setVacations(getVacations().map(v => (v.id === created.id ? created : v)));
       }
-    }).catch(e => console.warn('remote addVacation', e));
+    }).catch(e => {
+      console.warn('remote addVacation failed, queued offline', e);
+      addToOfflineQueue('add_vacation', vacation, `طلب إجازة للموظف (${vacation.employeeId})`);
+    });
   }
   return newVacation;
 }
@@ -773,8 +788,15 @@ export function addCheckInAttempt(attempt: Omit<CheckInAttempt, 'id' | 'createdA
     createdAt: new Date().toISOString(),
   } as CheckInAttempt;
   setItem(STORAGE_KEYS.checkInAttempts, [...attempts, newAttempt]);
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    addToOfflineQueue('check_in_attempt', attempt, `محاولة بصمة (${attempt.employeeName || attempt.employeeId})`);
+    return newAttempt;
+  }
   if (remoteAvailable()) {
-    api.addAttempt(attempt).catch(e => console.warn('remote addAttempt', e));
+    api.addAttempt(attempt).catch(e => {
+      console.warn('remote addAttempt failed, queued offline', e);
+      addToOfflineQueue('check_in_attempt', attempt, `محاولة بصمة (${attempt.employeeName || attempt.employeeId})`);
+    });
   }
   return newAttempt;
 }
@@ -1315,9 +1337,33 @@ export async function clearAllMachinery(): Promise<void> {
 
 /** ✅ حفظ ساعات ونقلات يوم كامل — سيرفر-أولانى: لو السيرفر رفض، مفيش حاجة بتتحسب */
 export async function saveMachineryHours(date: string, entries: { machineryId: number; hours: number; trips?: number; notes?: string }[]): Promise<{ saved: number }> {
-  const r = await api.saveMachineryHours({ date, entries }) as { saved?: number };
-  await syncMachineryFromRemote();
-  return { saved: typeof r?.saved === 'number' ? r.saved : entries.filter(e => e.hours > 0 || (e.trips && e.trips > 0) || e.notes).length };
+  // حفظ محلي فوري لمنع مسح الخلايا عند انقطاع الشبكة في الموقع
+  const currentHours = getMachineryHours().filter(h => String(h.date).slice(0, 10) !== String(date).slice(0, 10));
+  const newHours: MachineryHours[] = entries.map(e => ({
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    machineryId: e.machineryId,
+    date,
+    hours: e.hours,
+    trips: e.trips || 0,
+    notes: e.notes || null,
+    createdAt: new Date().toISOString(),
+  }));
+  setItem(STORAGE_KEYS.machineryHours, [...currentHours, ...newHours]);
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    addToOfflineQueue('save_machinery_hours', { date, entries }, `ساعات ونقلات معدات ليوم ${date}`);
+    return { saved: entries.filter(e => e.hours > 0 || (e.trips && e.trips > 0) || e.notes).length };
+  }
+
+  try {
+    const r = await api.saveMachineryHours({ date, entries }) as { saved?: number };
+    await syncMachineryFromRemote().catch(() => {});
+    return { saved: typeof r?.saved === 'number' ? r.saved : entries.filter(e => e.hours > 0 || (e.trips && e.trips > 0) || e.notes).length };
+  } catch (err) {
+    console.warn('saveMachineryHours failed, queued offline', err);
+    addToOfflineQueue('save_machinery_hours', { date, entries }, `ساعات ونقلات معدات ليوم ${date}`);
+    return { saved: entries.filter(e => e.hours > 0 || (e.trips && e.trips > 0) || e.notes).length };
+  }
 }
 
 // ============ 🔧 سجل صيانة المعدات ============

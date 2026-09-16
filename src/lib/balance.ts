@@ -1,5 +1,5 @@
 import type { AttendanceRecord, Vacation } from './types';
-import { computeGraduatedVacation, earnedVacationDaysForWorkDays } from './vacation';
+import { computeGraduatedVacation } from './vacation';
 
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
 
@@ -31,7 +31,7 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
       .flatMap(v => {
         const start = new Date(v.startDate);
         const end = new Date(v.endDate);
-        const dates = [];
+        const dates: string[] = [];
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           dates.push(d.toISOString().split('T')[0]);
         }
@@ -56,8 +56,7 @@ export function getVacationDaysTaken(attendance: AttendanceRecord[], vacations: 
 }
 
 /**
- * 🆕 حساب إجمالي أيام العمل المستهلكة من work_days المخزنة في الداتابيز
- * فقط للاعتيادية (اللي تخصم)
+ * 🆕 المستهلك من work_days المخزنة في الداتابيز (محسوبة لحظة الاعتماد) — مش إعادة حساب بالجملة
  */
 export function getTotalWorkDaysConsumed(vacations: Vacation[]): number {
   return vacations
@@ -96,39 +95,35 @@ export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacat
 }
 
 /**
- * 🎯 حساب رصيد الموظف وفق المعادلة القديمة المعتمدة الأصلية
- * 
- * المعادلة القديمة:
- * 1️⃣ المرحلة 1 (1 إلى 12 يوم عمل): كل 4 أيام عمل تُكسب 1 يوم إجازة (÷ 4).
- * 2️⃣ المرحلة 2 (13 إلى 18 يوم عمل): كل 4.5 أيام عمل تُكسب 1 يوم إجازة (÷ 4.5).
- * 3️⃣ المرحلة 3 (19 يوم عمل فأكثر): كل 5 أيام عمل تُكسب 1 يوم إجازة (÷ 5).
- * 
- * الخصم:
- * - الاعتيادية فقط تخصم من الرصيد وأيام العمل بمضاعف المرحلة الأصلية.
- * - العارضة والرسمية والمرضية والسنوية والبدون مرتب مبتخصمش.
- * - بدل السهرة يخصم من رصيد السهر المستقل.
+ * 🎯 حساب رصيد الموظف بالنسخة الأصلية المعتمدة
  */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // 1️⃣ إجمالي أيام الحضور الفعلي
+  // 1️⃣ إجمالي أيام الحضور
   const totalPresent = attendance.filter(r => 
     ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
   ).length;
   
-  // 2️⃣ إجمالي الإجازات الاعتيادية المأخوذة
+  // 2️⃣ إجمالي أيام العمل المستهلكة من work_days المخزنة
+  const totalWorkDaysConsumed = getTotalWorkDaysConsumed(vacations);
+  
+  // 3️⃣ الأيام الفعلية = الحضور - المستهلك
+  const effectivePresent = totalPresent - totalWorkDaysConsumed;
+  
+  // 4️⃣ إجمالي الإجازات المأخوذة
   const taken = getVacationDaysTaken(attendance, vacations);
   
-  // 3️⃣ الحساب الدقيق بالمعادلة القديمة المتدرجة
-  const result = computeGraduatedVacation(totalPresent, taken);
+  // 5️⃣ حساب المرحلة والرصيد من الأيام الفعلية المتبقية
+  const result = computeGraduatedVacation(Math.max(0, effectivePresent), 0);
   
-  // 4️⃣ حساب العجز في حال استهلاك أيام أكثر من الحضور
+  // 6️⃣ حساب العجز
   let deficitDays = 0;
   let netBalance = result.earned;
   
-  if (result.effectivePresent < 0) {
-    const absoluteDeficit = Math.abs(result.effectivePresent);
+  if (effectivePresent < 0) {
+    const absoluteDeficit = Math.abs(effectivePresent);
     let multiplier = 5;
-    if (totalPresent <= 12) multiplier = 4;
-    else if (totalPresent <= 18) multiplier = 4.5;
+    if (absoluteDeficit <= 12) multiplier = 4;
+    else if (absoluteDeficit <= 18) multiplier = 4.5;
     deficitDays = Math.ceil(absoluteDeficit / multiplier);
     netBalance = -deficitDays;
   }
@@ -137,8 +132,8 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     totalPresent,
     taken,
     earned: result.earned,
-    effectivePresent: result.effectivePresent,
-    consumedWorkDays: result.consumedWorkDays,
+    effectivePresent,
+    consumedWorkDays: totalWorkDaysConsumed,
     stageLabel: result.stageLabel,
     netBalance,
     deficitDays,

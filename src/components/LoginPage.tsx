@@ -47,8 +47,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setBusy(false);
   }
 
-  // 📲 طلب كود الواتساب برقم الموبايل
-  async function handleRequestWhatsAppCode(e: React.FormEvent) {
+  // 📲 طلب كود الاستعادة برقم الموبايل تلقائياً بدون فتح تطبيقات خارجية
+  async function handleRequestCode(e: React.FormEvent) {
     e.preventDefault();
     setResetMsg('');
     if (!phoneInput.trim()) {
@@ -67,35 +67,23 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         waPhone: res.waPhone,
       });
 
-      // إنشاء رسالة الواتساب وتجهيز الرابط
-      const waText = encodeURIComponent(
-        `🔐 *نظام إدارة الإجازات والمساحة*\n` +
-        `👤 مرحباً يا مهندس/ ${res.name}\n` +
-        `🔢 كود إعادة تعيين كلمة المرور الخاص بك هو: *${res.code}*\n` +
-        `⏳ الكود صالح لمدة 15 دقيقة فقط لاستعادة حسابك.`
-      );
-
-      const waUrl = `https://api.whatsapp.com/send?phone=${res.waPhone}&text=${waText}`;
-
-      // فتح الواتساب تلقائياً للموظف لإرسال الكود إليه
-      window.open(waUrl, '_blank');
-
-      setResetCode(res.code); // نضع الكود تلقائياً للتسهيل
+      // وضع الكود تلقائياً في الخانة مباشرة
+      setResetCode(res.code);
       setForgotStep('verify');
-      setResetMsg(`✅ مرحباً ${res.name}، تم إرسال كود التحقق (${res.code}) إلى الواتساب! اكتب كلمة المرور الجديدة الآن.`);
+      setResetMsg(`✅ تم التحقق من رقمك (${res.phone || phoneInput}) بنجاح! تم تعبئة كود الدخول تلقائياً. اكتب كلمة المرور الجديدة الآن.`);
     } catch (err: any) {
       const m = String(err?.serverMessage || err?.message || '');
       if (m.includes('غير مسجل') || err?.message === 'not_found') {
-        setResetMsg('❌ رقم الهاتف أو الحساب غير مسجل في النظام. تأكد من الرقم أو تواصل مع الإدارة.');
+        setResetMsg('❌ رقم الهاتف أو الحساب غير مسجل في النظام. يرجى التأكد من الرقم أو التواصل مع الإدارة.');
       } else {
-        setResetMsg('⛔ تعذر إرسال الكود حالياً. تأكد من اتصال الإنترنت وحاول مجدداً.');
+        setResetMsg('⛔ تعذر توليد الكود حالياً. تأكد من اتصال الإنترنت وحاول مجدداً.');
       }
     } finally {
       setResetBusy(false);
     }
   }
 
-  // 🔑 تأكيد الكود وحفظ الباسورد الجديد
+  // 🔑 تأكيد الكود وحفظ الباسورد الجديد والدخول فوراً
   async function handleReset(e: React.FormEvent) {
     e.preventDefault();
     setResetMsg('');
@@ -105,7 +93,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
     try {
       const r = await api.resetPassword(targetUser, resetCode.trim(), resetPass);
-      setResetMsg(`🎉 تم تغيير كلمة المرور بنجاح لـ ${r.name}! جاري تحويلك لتسجيل الدخول...`);
+      setResetMsg(`🎉 تم حفظ وتعيين كلمة المرور الجديدة بنجاح يا ${r.name}! جاري الدخول...`);
       setPassword(resetPass);
       setUsername(targetUser);
 
@@ -113,11 +101,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         setMode('login');
         setForgotStep('request');
         setResetMsg('');
-      }, 2500);
+      }, 1800);
     } catch (err: any) {
       const m = String(err?.serverMessage || err?.message || '');
       if (m.includes('خلاص وقته') || err?.message === 'expired') {
-        setResetMsg('⏰ الكود انتهت صلاحيته (15 دقيقة) — اطلب كود جديد عبر الواتساب.');
+        setResetMsg('⏰ الكود انتهت صلاحيته (15 دقيقة) — اطلب كود جديد.');
       } else if (m.includes('مش موجود') || m.includes('غلط') || err?.message === 'bad_code') {
         setResetMsg('⛔ الكود غير صحيح — يرجى التأكد من الأرقام الـ 6 المكتوبة.');
       } else if (m.includes('6 حروف') || err?.message === 'bad_request') {
@@ -130,7 +118,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     }
   }
 
-  // 💬 رابط واتساب الدعم الفني للمهندس أحمد سلامة
+  // 💬 رابط اختياري لمراسلة المهندس أحمد سلامة عبر الواتساب للمساعدة
   const adminWaUrl = `https://api.whatsapp.com/send?phone=201014696724&text=${encodeURIComponent(
     `مرحباً مهندس أحمد سلامة،\nأنا مساح/مهندس في قسم المساحة وأحتاج مساعدة في استعادة حسابي على نظام الإجازات (رقم هاتفي: ${phoneInput || '...'}).`
   )}`;
@@ -148,12 +136,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
 
           <h2 className="text-center text-3xl font-black text-slate-950">
-            {mode === 'login' ? 'تسجيل الدخول' : 'استعادة كلمة المرور عبر الواتساب'}
+            {mode === 'login' ? 'تسجيل الدخول' : 'استعادة كلمة المرور الفورية'}
           </h2>
           <p className="mt-2 text-center text-sm font-bold text-slate-500">
             {mode === 'login'
               ? 'نظام إدارة الإجازات والمعدات • قسم المساحة'
-              : 'أدخل رقم هاتفك المسجل ليصلك كود التحقق عبر الواتساب فوراً'}
+              : 'أدخل رقم هاتفك المسجل وسيتم تعيين الكود الجديد لك تلقائياً'}
           </p>
 
           {error && mode === 'login' && (
@@ -200,12 +188,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     title={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
                   >
                     {showPassword ? (
-                      /* Eye Off SVG */
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
                       </svg>
                     ) : (
-                      /* Eye Open SVG */
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -225,7 +211,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     setError('');
                     setResetMsg('');
                   }}
-                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-black"
                 >
                   نسيت كلمة المرور؟
                 </button>
@@ -241,16 +227,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </form>
           ) : (
             /* ========================================================= */
-            /* 2) شاشة نسيت كلمة المرور عبر الواتساب */
+            /* 2) شاشة نسيت كلمة المرور التلقائية برقم الهاتف */
             /* ========================================================= */
             <div className="mt-6 space-y-5">
               
-              {/* الخطوة 1: إدخال رقم الهاتف */}
+              {/* الخطوة 1: إدخال رقم الهاتف المسجل */}
               {forgotStep === 'request' && (
-                <form onSubmit={handleRequestWhatsAppCode} className="space-y-4">
+                <form onSubmit={handleRequestCode} className="space-y-4">
                   <div>
                     <label className="mb-2 block text-sm font-black text-slate-700">
-                      📱 رقم الهاتف المسجل بالحساب
+                      📱 رقم هاتفك المسجل بالنظام
                     </label>
                     <input
                       type="tel"
@@ -261,9 +247,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                       required
                       placeholder="010xxxxxxxx أو 011xxxxxxxx"
                       dir="ltr"
+                      autoFocus
                     />
-                    <p className="mt-1.5 text-xs text-slate-400 font-bold text-center">
-                      سيتم فتح الواتساب لإرسال كود التحقق المكون من 6 أرقام لهاتفك
+                    <p className="mt-2 text-xs text-slate-500 font-bold text-center">
+                      اكتب رقم موبايلك المسجل واضغط الزر بالأسفل للتحقق الفوري
                     </p>
                   </div>
 
@@ -272,32 +259,44 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     disabled={resetBusy}
                     className="w-full rounded-2xl bg-gradient-to-l from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 py-4 text-sm font-black text-white shadow-xl shadow-emerald-200 transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
                   >
-                    <span>💬</span>
-                    <span>{resetBusy ? 'جاري البحث وتجهيز الكود...' : 'إرسال كود الاستعادة عبر الواتساب 📲'}</span>
+                    <span>⚡</span>
+                    <span>{resetBusy ? 'جاري التحقق من الرقم...' : 'تحقق واستلم كود الدخول فوراً 📲'}</span>
                   </button>
                 </form>
               )}
 
-              {/* الخطوة 2: إدخال الكود والباسورد الجديد */}
+              {/* الخطوة 2: الكود تم توليده وتعبئته تلقائياً - فقط يكتب الباسورد الجديد */}
               {forgotStep === 'verify' && (
                 <form onSubmit={handleReset} className="space-y-4">
                   
+                  {/* كارت تأكيد الحساب والكود التلقائي */}
                   {retrievedEmployee && (
-                    <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl text-xs font-black text-emerald-900 text-center">
-                      👤 الموظف: <b>{retrievedEmployee.name}</b> ({retrievedEmployee.username})
+                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-300 p-4 rounded-2xl text-center space-y-1.5 shadow-sm">
+                      <div className="text-xs font-bold text-emerald-800">
+                        👤 مرحباً يا مهندس/ <b>{retrievedEmployee.name}</b> ({retrievedEmployee.phone})
+                      </div>
+                      <div className="text-sm font-black text-emerald-950 flex items-center justify-center gap-2 pt-1">
+                        <span>كود التحقق الخاص بك:</span>
+                        <span className="bg-white px-3 py-1 rounded-xl font-mono text-base tracking-widest text-emerald-700 border border-emerald-300 font-black">
+                          {retrievedEmployee.code}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-bold text-emerald-700">
+                        ✨ تم إدخال الكود تلقائياً — اكتب كلمة المرور الجديدة بالأسفل فقط
+                      </div>
                     </div>
                   )}
 
                   <div>
                     <label className="mb-1.5 block text-xs font-black text-slate-700">
-                      🔢 كود التحقق (المرسل على الواتساب)
+                      🔢 كود التحقق (تم تعبئته تلقائياً)
                     </label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={resetCode}
                       onChange={e => setResetCode(e.target.value)}
-                      className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3 text-xl font-black tracking-[0.3em] text-center outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 bg-slate-50"
+                      className="w-full rounded-2xl border-2 border-emerald-300 bg-emerald-50/40 px-5 py-3 text-xl font-black tracking-[0.3em] text-center outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 font-mono text-emerald-900"
                       required
                       placeholder="000000"
                       dir="ltr"
@@ -313,9 +312,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                         type={showResetPass ? 'text' : 'password'}
                         value={resetPass}
                         onChange={e => setResetPass(e.target.value)}
-                        className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3 pl-14 text-base font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                        className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3.5 pl-14 text-base font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                         required
                         placeholder="اكتب كلمة المرور الجديدة"
+                        autoFocus
                       />
                       <button
                         type="button"
@@ -343,7 +343,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     disabled={resetBusy}
                     className="w-full rounded-2xl bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 py-4 text-sm font-black text-white shadow-xl shadow-blue-200 transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
                   >
-                    {resetBusy ? 'جاري الحفظ...' : '🔑 حفظ كلمة المرور الجديدة والدخول'}
+                    {resetBusy ? 'جاري الحفظ والدخول...' : '🔑 حفظ كلمة المرور الجديدة والدخول الآن 🚀'}
                   </button>
 
                   <button
@@ -368,7 +368,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 </div>
               )}
 
-              {/* زر طلب المساعدة المباشرة عبر الواتساب من المهندس أحمد سلامة */}
+              {/* زر اختياري للتواصل مع المهندس أحمد سلامة */}
               <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
                 <a
                   href={adminWaUrl}

@@ -180,9 +180,13 @@ export default function VacationsTab({ user, onChanged, onUpdate }: Props) {
     try {
       for (const it of items) {
         const days = calculateDaysBetween(it.startDate, it.endDate);
+        const calculatedWorkDays = (it.vacationType === 'اعتيادية' || it.vacationType === 'نظامية')
+          ? (days <= 3 ? days * 4 : days === 4 ? 18 : days * 5)
+          : days;
+
         const created = addVacation({
           employeeId: empId,
-          workDays: days,
+          workDays: calculatedWorkDays,
           vacationDays: days,
           vacationType: it.vacationType,
           startDate: it.startDate,

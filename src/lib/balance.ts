@@ -1,5 +1,5 @@
 import type { AttendanceRecord, Vacation } from './types';
-import { computeGraduatedVacation } from './vacation';
+import { computeGraduatedVacation, earnedVacationDaysForWorkDays } from './vacation';
 
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
 
@@ -80,10 +80,6 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
  *
  * القاعدة: كل ليلة "سهر" تكتسب يوم بدل، وكل يوم "بدل سهرة" يخصم من هذا الرصيد فقط
  * (لا يُضاف إلى رصيد الإجازات ولا يخصم منه)
- *
- * 🐛 إصلاح الخصم المزدوج: أيام "بدل سهرة" المسجلة تلقائيًا من إجازة معتمدة
- * كانت تُحسب مرتين (مرة كحضور بحالة بدل سهرة + مرة كإجازة معتمدة) —
- * الآن تُحسب مرة واحدة من الإجازة نفسها، ويُحسب من الشيت الأيام اليدوية فقط
  */
 export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacation[]): number {
   const earned = attendance.filter(r => r.status === 'سهر').length;
@@ -100,40 +96,39 @@ export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacat
 }
 
 /**
- * 🎯 حساب رصيد الموظف
+ * 🎯 حساب رصيد الموظف وفق المعادلة القديمة المعتمدة الأصلية
  * 
- * القاعدة:
- * - الاعتيادية فقط تخصم من الرصيد والحضور
- * - العارضة والرسمية والمرضية والسنوية والبدون مرتب مبتخصمش
- * - بدل السهرة يخصم من رصيد السهر (منفصل)
+ * المعادلة القديمة:
+ * 1️⃣ المرحلة 1 (1 إلى 12 يوم عمل): كل 4 أيام عمل تُكسب 1 يوم إجازة (÷ 4).
+ * 2️⃣ المرحلة 2 (13 إلى 18 يوم عمل): كل 4.5 أيام عمل تُكسب 1 يوم إجازة (÷ 4.5).
+ * 3️⃣ المرحلة 3 (19 يوم عمل فأكثر): كل 5 أيام عمل تُكسب 1 يوم إجازة (÷ 5).
+ * 
+ * الخصم:
+ * - الاعتيادية فقط تخصم من الرصيد وأيام العمل بمضاعف المرحلة الأصلية.
+ * - العارضة والرسمية والمرضية والسنوية والبدون مرتب مبتخصمش.
+ * - بدل السهرة يخصم من رصيد السهر المستقل.
  */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // 1️⃣ إجمالي أيام الحضور
+  // 1️⃣ إجمالي أيام الحضور الفعلي
   const totalPresent = attendance.filter(r => 
     ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
   ).length;
   
-  // 2️⃣ إجمالي أيام العمل المستهلكة (من الاعتيادية فقط)
-  const totalWorkDaysConsumed = getTotalWorkDaysConsumed(vacations);
-  
-  // 3️⃣ الأيام الفعلية = الحضور - المستهلك
-  const effectivePresent = totalPresent - totalWorkDaysConsumed;
-  
-  // 4️⃣ إجمالي الإجازات المأخوذة (اعتيادية فقط)
+  // 2️⃣ إجمالي الإجازات الاعتيادية المأخوذة
   const taken = getVacationDaysTaken(attendance, vacations);
   
-  // 5️⃣ حساب المرحلة والرصيد من الأيام الفعلية
-  const result = computeGraduatedVacation(Math.max(0, effectivePresent), 0);
+  // 3️⃣ الحساب الدقيق بالمعادلة القديمة المتدرجة
+  const result = computeGraduatedVacation(totalPresent, taken);
   
-  // 6️⃣ حساب العجز
+  // 4️⃣ حساب العجز في حال استهلاك أيام أكثر من الحضور
   let deficitDays = 0;
   let netBalance = result.earned;
   
-  if (effectivePresent < 0) {
-    const absoluteDeficit = Math.abs(effectivePresent);
+  if (result.effectivePresent < 0) {
+    const absoluteDeficit = Math.abs(result.effectivePresent);
     let multiplier = 5;
-    if (absoluteDeficit <= 12) multiplier = 4;
-    else if (absoluteDeficit <= 18) multiplier = 4.5;
+    if (totalPresent <= 12) multiplier = 4;
+    else if (totalPresent <= 18) multiplier = 4.5;
     deficitDays = Math.ceil(absoluteDeficit / multiplier);
     netBalance = -deficitDays;
   }
@@ -142,8 +137,8 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
     totalPresent,
     taken,
     earned: result.earned,
-    effectivePresent,
-    consumedWorkDays: totalWorkDaysConsumed,
+    effectivePresent: result.effectivePresent,
+    consumedWorkDays: result.consumedWorkDays,
     stageLabel: result.stageLabel,
     netBalance,
     deficitDays,
@@ -154,9 +149,6 @@ export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacatio
 // ============================================================
 // ⚡ رصيد العارضة — رصيد سنوي مستقل (زي بدل السهرة)
 // القاعدة: 6 أيام في السنة، والسنة من 21 ديسمبر إلى 20 ديسمبر
-// الخصم: أي يوم "عارضة إجازة / إجازة عارضة" في شيت الحضور
-// (طلبات العارضة المعتمدة بتتحول تلقائيًا لصفوف عارضة إجازة
-//  في الشيت فتتحسب مرة واحدة من غير تكرار)
 // ============================================================
 
 export const DEFAULT_CASUAL_QUOTA = 6;

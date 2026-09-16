@@ -337,7 +337,7 @@ export default async function handler(req: Request) {
 
     // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login و إعادة تعيين الباسورد)
     const isLogin = path === 'login' && method === 'POST';
-    const isPublic = isLogin || (path === 'password/reset' && method === 'POST');
+    const isPublic = isLogin || (path === 'password/reset' && method === 'POST') || (path === 'password/whatsapp-request' && method === 'POST');
     let authUser: any = null;
     if (!isPublic) {
       authUser = await getSessionUser(sql, req);
@@ -404,6 +404,54 @@ export default async function handler(req: Request) {
       const s = String(p).replace(/\s|-/g, '');
       if (s.length < 6) return '***';
       return s.slice(0, 3) + '******' + s.slice(-2);
+    }
+
+    // 📲 طلب كود إعادة تعيين عبر الواتساب برقم الموبايل (متاح للجميع بدون جلسة)
+    if (path === 'password/whatsapp-request' && method === 'POST') {
+      const b = await readBody<any>(req);
+      const phoneInput = String(b?.phone || b?.username || '').trim();
+      if (!phoneInput) return json({ error: 'bad_request', message: 'اكتب رقم هاتفك المسجل أو اسم المستخدم' }, 400);
+
+      const normalizedPhone = phoneInput.replace(/[\s\-\+\(\)]/g, '').replace(/^0020|^20|^\+20/, '0');
+      const cleanRaw = phoneInput.replace(/[\s\-\+\(\)]/g, '');
+
+      const rows = await sql`
+        SELECT * FROM employees
+        WHERE active = true
+          AND (
+            username = ${phoneInput}
+            OR (phone IS NOT NULL AND (
+              REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') = ${cleanRaw}
+              OR REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') = ${normalizedPhone}
+              OR phone LIKE ${'%' + normalizedPhone.slice(-9)}
+            ))
+          )
+        LIMIT 1
+      `;
+      const emp = rows[0] as any;
+      if (!emp) return json({ error: 'not_found', message: 'رقم الهاتف أو الحساب غير مسجل في النظام' }, 404);
+
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const codeHash = 'sha256:' + await sha256(code);
+      const expires = new Date(Date.now() + 15 * 60 * 1000);
+
+      // إبطال أي أكواد سابقة
+      await sql`UPDATE password_reset_codes SET used = true WHERE employee_id = ${emp.id} AND used = false`;
+      await sql`INSERT INTO password_reset_codes (employee_id, code_hash, expires_at, created_by) VALUES (${emp.id}, ${codeHash}, ${expires.toISOString()}, ${emp.id})`;
+
+      let waPhone = String(emp.phone || phoneInput).replace(/[\s\-\+]/g, '');
+      if (waPhone.startsWith('0')) waPhone = '20' + waPhone.slice(1);
+      else if (!waPhone.startsWith('20') && waPhone.length === 10) waPhone = '20' + waPhone;
+
+      return json({
+        ok: true,
+        code,
+        name: emp.name,
+        username: emp.username,
+        phone: emp.phone,
+        waPhone,
+        expiresAt: expires.toISOString(),
+      });
     }
 
     if (path === 'password/reset-code' && method === 'POST') {

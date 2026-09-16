@@ -15,10 +15,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   // 🔑 وضع "نسيت كلمة المرور"
   const [mode, setMode] = useState<'login' | 'forgot'>('login');
+  const [forgotStep, setForgotStep] = useState<'request' | 'verify'>('request');
+  const [phoneInput, setPhoneInput] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [resetPass, setResetPass] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
+  const [retrievedEmployee, setRetrievedEmployee] = useState<{ name: string; username: string; phone: string; code: string; waPhone: string } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,27 +45,93 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setBusy(false);
   }
 
-  // 🔑 تقديم الكود + الباسورد الجديد
+  // 📲 طلب كود الواتساب برقم الموبايل
+  async function handleRequestWhatsAppCode(e: React.FormEvent) {
+    e.preventDefault();
+    setResetMsg('');
+    if (!phoneInput.trim()) {
+      setResetMsg('يرجى إدخال رقم الهاتف المسجل');
+      return;
+    }
+
+    setResetBusy(true);
+    try {
+      const res = await api.requestWhatsAppResetCode(phoneInput.trim());
+      setRetrievedEmployee({
+        name: res.name,
+        username: res.username,
+        phone: res.phone,
+        code: res.code,
+        waPhone: res.waPhone,
+      });
+
+      // إنشاء رسالة الواتساب وتجهيز الرابط
+      const waText = encodeURIComponent(
+        `🔐 *نظام إدارة الإجازات والمساحة*\n` +
+        `👤 مرحباً يا مهندس/ ${res.name}\n` +
+        `🔢 كود إعادة تعيين كلمة المرور الخاص بك هو: *${res.code}*\n` +
+        `⏳ الكود صالح لمدة 15 دقيقة فقط لاستعادة حسابك.`
+      );
+
+      const waUrl = `https://api.whatsapp.com/send?phone=${res.waPhone}&text=${waText}`;
+
+      // فتح الواتساب تلقائياً للموظف لإرسال الكود إليه
+      window.open(waUrl, '_blank');
+
+      setResetCode(res.code); // نضع الكود تلقائياً للتسهيل
+      setForgotStep('verify');
+      setResetMsg(`✅ مرحباً ${res.name}، تم إرسال كود التحقق (${res.code}) إلى الواتساب! اكتب كلمة المرور الجديدة الآن.`);
+    } catch (err: any) {
+      const m = String(err?.serverMessage || err?.message || '');
+      if (m.includes('غير مسجل') || err?.message === 'not_found') {
+        setResetMsg('❌ رقم الهاتف أو الحساب غير مسجل في النظام. تأكد من الرقم أو تواصل مع الإدارة.');
+      } else {
+        setResetMsg('⛔ تعذر إرسال الكود حالياً. تأكد من اتصال الإنترنت وحاول مجدداً.');
+      }
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  // 🔑 تأكيد الكود وحفظ الباسورد الجديد
   async function handleReset(e: React.FormEvent) {
     e.preventDefault();
     setResetMsg('');
     setResetBusy(true);
+
+    const targetUser = retrievedEmployee?.username || phoneInput.trim() || username.trim();
+
     try {
-      const r = await api.resetPassword(username.trim(), resetCode.trim(), resetPass);
-      setResetMsg(`✅ تم تغيير كلمة المرور لـ ${r.name} — افتح كلمة المرور دلوقتي وادخل`);
-      setResetCode('');
-      setResetPass('');
-      setPassword('');
-      setTimeout(() => { setMode('login'); setResetMsg(''); }, 3500);
+      const r = await api.resetPassword(targetUser, resetCode.trim(), resetPass);
+      setResetMsg(`🎉 تم تغيير كلمة المرور بنجاح لـ ${r.name}! جاري تحويلك لتسجيل الدخول...`);
+      setPassword(resetPass);
+      setUsername(targetUser);
+
+      setTimeout(() => {
+        setMode('login');
+        setForgotStep('request');
+        setResetMsg('');
+      }, 2500);
     } catch (err: any) {
       const m = String(err?.serverMessage || err?.message || '');
-      if (m.includes('خلاص وقته') || err?.message === 'expired') setResetMsg('⏰ الكود خلص وقته (15 دقيقة) — اطلب كود جديد من مدير النظام');
-      else if (m.includes('مش موجود') || m.includes('غلط') || err?.message === 'bad_code') setResetMsg('⛔ الكود غلط أو اتصرف خلاص — اطلب كود جديد');
-      else if (m.includes('6 حروف') || err?.message === 'bad_request') setResetMsg('⚠️ الباسورد الجديد لازم يكون 6 فيهم على الأقل');
-      else setResetMsg('⛔ حصل خطأ — تأكد من الكود والبيانات وحاول تاني');
+      if (m.includes('خلاص وقته') || err?.message === 'expired') {
+        setResetMsg('⏰ الكود انتهت صلاحيته (15 دقيقة) — اطلب كود جديد عبر الواتساب.');
+      } else if (m.includes('مش موجود') || m.includes('غلط') || err?.message === 'bad_code') {
+        setResetMsg('⛔ الكود غير صحيح — يرجى التأكد من الأرقام الـ 6 المكتوبة.');
+      } else if (m.includes('6 حروف') || err?.message === 'bad_request') {
+        setResetMsg('⚠️ كلمة المرور الجديدة يجب أن تتكون من 6 أرقام أو حروف على الأقل.');
+      } else {
+        setResetMsg('⛔ حدث خطأ أثناء الحفظ — يرجى إعادة المحاولة.');
+      }
+    } finally {
+      setResetBusy(false);
     }
-    setResetBusy(false);
   }
+
+  // 💬 رابط واتساب الدعم الفني للمهندس أحمد سلامة
+  const adminWaUrl = `https://api.whatsapp.com/send?phone=201014696724&text=${encodeURIComponent(
+    `مرحباً مهندس أحمد سلامة،\nأنا مساح/مهندس في قسم المساحة وأحتاج مساعدة في استعادة حسابي على نظام الإجازات (رقم هاتفي: ${phoneInput || '...'}).`
+  )}`;
 
   return (
     <main
@@ -71,178 +140,223 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     >
       <section className="w-full">
         <div className="mx-auto max-w-xl rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-2xl shadow-slate-200/80 md:p-14">
-          <div className="mx-auto mb-8 flex h-28 w-28 items-center justify-center rounded-[2rem] bg-gradient-to-br from-blue-600 to-violet-600 text-5xl text-white shadow-2xl shadow-blue-200">
-            🔐
+          
+          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-blue-600 to-violet-600 text-5xl text-white shadow-xl shadow-blue-200">
+            {mode === 'login' ? '🔐' : '📱'}
           </div>
 
-          <h2 className="text-center text-4xl font-black text-slate-950">
-            {mode === 'login' ? 'تسجيل الدخول' : 'نسيت كلمة المرور؟'}
+          <h2 className="text-center text-3xl font-black text-slate-950">
+            {mode === 'login' ? 'تسجيل الدخول' : 'استعادة كلمة المرور عبر الواتساب'}
           </h2>
-          <p className="mt-4 text-center text-lg font-bold text-slate-500">
-            {mode === 'login' ? 'نظام إدارة الإجازات • قسم المساحة' : 'اكتب الكود اللي وصّلك واختر باسورد جديد'}
+          <p className="mt-2 text-center text-sm font-bold text-slate-500">
+            {mode === 'login'
+              ? 'نظام إدارة الإجازات والمعدات • قسم المساحة'
+              : 'أدخل رقم هاتفك المسجل ليصلك كود التحقق عبر الواتساب فوراً'}
           </p>
 
           {error && mode === 'login' && (
-            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center text-sm font-bold text-red-700">
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-center text-xs font-bold text-red-700">
               {error}
             </div>
           )}
 
-          {/*
-            autocomplete off + random names reduce browser password managers
-            filling admin credentials for other visitors on shared devices.
-          */}
-          <form
-            onSubmit={mode === 'login' ? handleSubmit : handleReset}
-            className="mt-9 space-y-6"
-            autoComplete="off"
-            data-lpignore="true"
-            data-1p-ignore="true"
-          >
-            {/* honeypot-style decoy fields to absorb autofill */}
-            <input
-              type="text"
-              name="fake-username"
-              autoComplete="username"
-              tabIndex={-1}
-              aria-hidden="true"
-              className="hidden"
-              style={{ display: 'none' }}
-            />
-            <input
-              type="password"
-              name="fake-password"
-              autoComplete="current-password"
-              tabIndex={-1}
-              aria-hidden="true"
-              className="hidden"
-              style={{ display: 'none' }}
-            />
+          {/* ========================================================= */}
+          {/* 1) شاشة تسجيل الدخول العادية */}
+          {/* ========================================================= */}
+          {mode === 'login' ? (
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5" autoComplete="off">
+              <div>
+                <label className="mb-2 block text-sm font-black text-slate-700">اسم المستخدم أو رقم الهاتف</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  autoComplete="username"
+                  className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3.5 text-base font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  required
+                  placeholder="مثال: ahmed أو 01014696724"
+                />
+              </div>
 
-            <div>
-              <label className="mb-3 block text-lg font-black text-slate-700">اسم المستخدم</label>
-              <input
-                type="text"
-                name="vacation_login_user"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                inputMode="text"
-                className="w-full rounded-2xl border-4 border-slate-200 px-6 py-5 text-xl font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                required
-                placeholder="اكتب اسم المستخدم أو رقم الهاتف"
-              />
-              <p className="mt-2 text-sm font-bold text-slate-400">
-                يمكنك الدخول باسم المستخدم أو رقم الهاتف المسجل
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-3 block text-lg font-black text-slate-700">كلمة المرور</label>
-              {mode === 'login' ? (
+              <div>
+                <label className="mb-2 block text-sm font-black text-slate-700">كلمة المرور</label>
                 <input
                   type="password"
-                  name="vacation_login_pass"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                  className="w-full rounded-2xl border-4 border-slate-200 px-6 py-5 text-xl font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  autoComplete="current-password"
+                  className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3.5 text-base font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   required
                   placeholder="اكتب كلمة المرور"
                 />
-              ) : (
-                <div className="space-y-4">
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-500 pt-1">
+                <span>🔒 الجلسة محفوظة بأمان على جهازك</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot');
+                    setForgotStep('request');
+                    setError('');
+                    setResetMsg('');
+                  }}
+                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                >
+                  نسيت كلمة المرور؟
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-2xl bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 py-4 text-base font-black text-white shadow-xl shadow-blue-200 transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+              >
+                {busy ? 'جاري الدخول...' : 'تسجيل الدخول إلى النظام 🚀'}
+              </button>
+            </form>
+          ) : (
+            /* ========================================================= */
+            /* 2) شاشة نسيت كلمة المرور عبر الواتساب */
+            /* ========================================================= */
+            <div className="mt-6 space-y-5">
+              
+              {/* الخطوة 1: إدخال رقم الهاتف */}
+              {forgotStep === 'request' && (
+                <form onSubmit={handleRequestWhatsAppCode} className="space-y-4">
                   <div>
-                    <label className="mb-2 block text-sm font-black text-slate-500">🔢 كود الدخول (اللي وصّلك)</label>
+                    <label className="mb-2 block text-sm font-black text-slate-700">
+                      📱 رقم الهاتف المسجل بالحساب
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      value={phoneInput}
+                      onChange={e => setPhoneInput(e.target.value)}
+                      className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3.5 text-lg font-black tracking-wider text-center outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                      required
+                      placeholder="010xxxxxxxx أو 011xxxxxxxx"
+                      dir="ltr"
+                    />
+                    <p className="mt-1.5 text-xs text-slate-400 font-bold text-center">
+                      سيتم فتح الواتساب لإرسال كود التحقق المكون من 6 أرقام لهاتفك
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={resetBusy}
+                    className="w-full rounded-2xl bg-gradient-to-l from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 py-4 text-sm font-black text-white shadow-xl shadow-emerald-200 transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>💬</span>
+                    <span>{resetBusy ? 'جاري البحث وتجهيز الكود...' : 'إرسال كود الاستعادة عبر الواتساب 📲'}</span>
+                  </button>
+                </form>
+              )}
+
+              {/* الخطوة 2: إدخال الكود والباسورد الجديد */}
+              {forgotStep === 'verify' && (
+                <form onSubmit={handleReset} className="space-y-4">
+                  
+                  {retrievedEmployee && (
+                    <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl text-xs font-black text-emerald-900 text-center">
+                      👤 الموظف: <b>{retrievedEmployee.name}</b> ({retrievedEmployee.username})
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-black text-slate-700">
+                      🔢 كود التحقق (المرسل على الواتساب)
+                    </label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={resetCode}
                       onChange={e => setResetCode(e.target.value)}
-                      autoComplete="one-time-code"
-                      className="w-full rounded-2xl border-4 border-slate-200 px-6 py-4 text-xl font-black tracking-[0.3em] text-center outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3 text-xl font-black tracking-[0.3em] text-center outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100 bg-slate-50"
                       required
-                      placeholder="000 000"
+                      placeholder="000000"
                       dir="ltr"
                     />
                   </div>
+
                   <div>
-                    <label className="mb-2 block text-sm font-black text-slate-500">🔐 كلمة المرور الجديدة (6 أرقام/حروف على الأقل)</label>
+                    <label className="mb-1.5 block text-xs font-black text-slate-700">
+                      🔐 كلمة المرور الجديدة (6 أحرف/أرقام على الأقل)
+                    </label>
                     <input
                       type="password"
                       value={resetPass}
                       onChange={e => setResetPass(e.target.value)}
-                      autoComplete="new-password"
-                      className="w-full rounded-2xl border-4 border-slate-200 px-6 py-4 text-xl font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                      className="w-full rounded-2xl border-2 border-slate-200 px-5 py-3 text-base font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                       required
-                      placeholder="اكتب الباسورد الجديد"
+                      placeholder="اكتب كلمة المرور الجديدة"
                     />
                   </div>
-                </div>
-              )}
-            </div>
 
-            {mode === 'forgot' && resetMsg && (
-              <div className={`rounded-2xl border px-5 py-4 text-center text-sm font-bold ${
-                resetMsg.startsWith('✅')
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-red-200 bg-red-50 text-red-700'
-              }`}>
-                {resetMsg}
-              </div>
-            )}
-            {mode === 'forgot' && (
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-center text-xs font-bold text-blue-600 leading-relaxed">
-                💡 الكود بيوصّلك من مدير النظام. اتصل بيه واطلب كود إعادة تعيين،
-                اكتبه هنا مع اسم المستخدم أو رقم هاتفك، واختار باسورد جديد.
-              </div>
-            )}
+                  <button
+                    type="submit"
+                    disabled={resetBusy}
+                    className="w-full rounded-2xl bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 py-4 text-sm font-black text-white shadow-xl shadow-blue-200 transition-all active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+                  >
+                    {resetBusy ? 'جاري الحفظ...' : '🔑 حفظ كلمة المرور الجديدة والدخول'}
+                  </button>
 
-            <div className="flex items-center justify-between gap-3 text-sm font-bold text-slate-500">
-              {mode === 'login' ? (
-                <>
-                  <span>🔒 جلستك محفوظة على جهازك تلقائيًا لحد ما تعمل خروج</span>
                   <button
                     type="button"
-                    onClick={() => { setMode('forgot'); setError(''); setResetMsg(''); }}
-                    className="text-blue-600 hover:underline"
+                    onClick={() => setForgotStep('request')}
+                    className="w-full text-center text-xs font-bold text-slate-500 hover:text-slate-800 py-1"
                   >
-                    نسيت كلمة المرور؟
+                    ← إدخال رقم هاتف آخر
                   </button>
-                </>
-              ) : (
+                </form>
+              )}
+
+              {resetMsg && (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-center text-xs font-black whitespace-pre-line leading-relaxed ${
+                    resetMsg.startsWith('✅') || resetMsg.startsWith('🎉')
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : 'border-rose-300 bg-rose-50 text-rose-800'
+                  }`}
+                >
+                  {resetMsg}
+                </div>
+              )}
+
+              {/* زر طلب المساعدة المباشرة عبر الواتساب من المهندس أحمد سلامة */}
+              <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                <a
+                  href={adminWaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl border border-emerald-300 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-black flex items-center justify-center gap-1.5 transition-all text-center"
+                >
+                  <span>💬</span>
+                  <span>تواصل مع المهندس أحمد سلامة عبر الواتساب للمساعدة</span>
+                </a>
+
                 <button
                   type="button"
-                  onClick={() => { setMode('login'); setResetMsg(''); setResetPass(''); setResetCode(''); }}
-                  className="text-blue-600 hover:underline"
+                  onClick={() => {
+                    setMode('login');
+                    setForgotStep('request');
+                    setResetMsg('');
+                  }}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline py-1 text-center cursor-pointer"
                 >
                   → العودة لتسجيل الدخول
                 </button>
-              )}
+              </div>
+
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={mode === 'login' ? busy : resetBusy}
-              className="w-full rounded-2xl bg-gradient-to-l from-blue-600 to-violet-600 py-5 text-xl font-black text-white shadow-2xl shadow-blue-100 transition hover:scale-[1.01] disabled:opacity-60"
-            >
-              {mode === 'login'
-                ? (busy ? 'جاري الدخول...' : 'دخول إلى النظام 🚀')
-                : (resetBusy ? 'جاري التغيير...' : '🔑 تغيير كلمة المرور')}
-            </button>
-          </form>
-
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-sm font-bold text-slate-600">
-            لا يتم عرض أي اسم مستخدم أو كلمة مرور تلقائيًا. أدخل بياناتك الخاصة فقط.
-          </div>
-
-          <div className="mt-10 border-t border-slate-100 pt-7 text-center text-sm font-bold text-slate-500">
+          <div className="mt-8 border-t border-slate-100 pt-5 text-center text-xs font-bold text-slate-500">
             Developed &amp; Maintained by <b className="text-slate-800">Eng Ahmed Salama</b>
-            <div className="mt-2 text-xs font-black text-slate-400">صنع بحب لقسم المساحة</div>
+            <div className="mt-1 text-[11px] font-black text-slate-400">قسم المساحة • 2026</div>
           </div>
+
         </div>
       </section>
     </main>

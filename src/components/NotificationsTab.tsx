@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { getAttendance, getVacations, getNotificationsForUser } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
 import { computeGraduatedVacation } from '../lib/vacation';
-import { getVacationDaysTaken } from '../lib/balance';
+import { getVacationDaysTaken, calculateEmployeeBalance } from '../lib/balance';
 import type { Employee } from '../lib/types';
 
 interface Notification {
@@ -115,16 +115,10 @@ export default function NotificationsTab({ user }: Props) {
     emps.forEach(emp => {
       // للموظف فقط نفسه، للمدير موظفينه، للادمن الكل
       const empAtt = attendance.filter(a => a.employeeId === emp.id);
-      const countBy = (s: string) => empAtt.filter(r => r.status === s).length;
-      const present = countBy('حاضر') + countBy('سهر') + countBy('عارضة حضور');
-      const grad = computeGraduatedVacation(present);
       const empVacs = relevantVacations.filter(v => v.employeeId === emp.id);
-      const taken = getVacationDaysTaken(empAtt, empVacs);
-      const sahar = countBy('سهر');
-      const saharSpent = countBy('بدل سهرة');
-      const balance = grad.earned - taken + Math.max(0, sahar - saharSpent);
-      if (balance < 0) negativeEmps.push(emp.name);
-      else if (balance <= 1 && balance >= 0) lowBalanceEmps.push(emp.name);
+      const bal = calculateEmployeeBalance(empAtt, empVacs);
+      if (bal.netBalance < 0) negativeEmps.push(emp.name);
+      else if (bal.netBalance <= 1 && bal.netBalance >= 0) lowBalanceEmps.push(emp.name);
     });
 
     if (user.role !== 'employee') {

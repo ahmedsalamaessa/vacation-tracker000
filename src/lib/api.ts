@@ -62,6 +62,12 @@ export const api = {
     return res;
   },
   // 🔑 إعادة تعيين كلمة المرور
+  async directResetPassword(phone: string, newPassword: string) {
+    return request<{ ok: boolean; name: string; username: string; phone: string; message: string }>('/password/direct-reset', {
+      method: 'POST',
+      body: JSON.stringify({ phone, newPassword }),
+    });
+  },
   async requestWhatsAppResetCode(phone: string) {
     return request<{ ok: boolean; code: string; name: string; username: string; phone: string; waPhone: string; expiresAt: string }>('/password/whatsapp-request', {
       method: 'POST',

@@ -337,7 +337,10 @@ export default async function handler(req: Request) {
 
     // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login و إعادة تعيين الباسورد)
     const isLogin = path === 'login' && method === 'POST';
-    const isPublic = isLogin || (path === 'password/reset' && method === 'POST') || (path === 'password/whatsapp-request' && method === 'POST');
+    const isPublic = isLogin 
+      || (path === 'password/reset' && method === 'POST') 
+      || (path === 'password/whatsapp-request' && method === 'POST')
+      || (path === 'password/direct-reset' && method === 'POST');
     let authUser: any = null;
     if (!isPublic) {
       authUser = await getSessionUser(sql, req);
@@ -404,6 +407,50 @@ export default async function handler(req: Request) {
       const s = String(p).replace(/\s|-/g, '');
       if (s.length < 6) return '***';
       return s.slice(0, 3) + '******' + s.slice(-2);
+    }
+
+    // ⚡ إعادة تعيين كلمة المرور المباشرة برقم الهاتف المسجل
+    if (path === 'password/direct-reset' && method === 'POST') {
+      const b = await readBody<any>(req);
+      const phoneInput = String(b?.phone || b?.username || '').trim();
+      const newPassword = String(b?.newPassword || '').trim();
+
+      if (!phoneInput) return json({ error: 'bad_request', message: 'اكتب رقم هاتفك المسجل أو اسم المستخدم' }, 400);
+      if (newPassword.length < 6) return json({ error: 'bad_request', message: 'كلمة المرور الجديدة يجب أن تكون 6 أرقام أو حروف على الأقل' }, 400);
+
+      const normalizedPhone = phoneInput.replace(/[\s\-\+\(\)]/g, '').replace(/^0020|^20|^\+20/, '0');
+      const cleanRaw = phoneInput.replace(/[\s\-\+\(\)]/g, '');
+
+      const rows = await sql`
+        SELECT * FROM employees
+        WHERE active = true
+          AND (
+            username = ${phoneInput}
+            OR (phone IS NOT NULL AND (
+              REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') = ${cleanRaw}
+              OR REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') = ${normalizedPhone}
+              OR phone LIKE ${'%' + normalizedPhone.slice(-9)}
+            ))
+          )
+        LIMIT 1
+      `;
+      const emp = rows[0] as any;
+      if (!emp) return json({ error: 'not_found', message: 'رقم الهاتف أو الحساب غير مسجل في النظام' }, 404);
+
+      const passHash = await sha256(newPassword);
+      await sql`
+        UPDATE employees
+        SET password = ${passHash}, updated_at = NOW()
+        WHERE id = ${emp.id}
+      `;
+
+      return json({
+        ok: true,
+        name: emp.name,
+        username: emp.username,
+        phone: emp.phone,
+        message: 'تم تغيير كلمة المرور بنجاح',
+      });
     }
 
     // 📲 طلب كود إعادة تعيين عبر الواتساب برقم الموبايل (متاح للجميع بدون جلسة)

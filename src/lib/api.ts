@@ -80,6 +80,11 @@ export const api = {
       body: JSON.stringify({ username }),
     });
   },
+  async revokeOtherSessions() {
+    return request<{ ok: boolean; message: string }>('/sessions/revoke-others', {
+      method: 'POST',
+    });
+  },
   async resetPassword(username: string, code: string, newPassword: string) {
     return request('/password/reset', {
       method: 'POST',

@@ -576,6 +576,15 @@ export default async function handler(req: Request) {
       return json({ ok: true, name: emp.name });
     }
 
+    // 🔒 إلغاء كل الجلسات الأخرى للمستخدم الحالي (تسجيل خروج من جميع الأجهزة)
+    if (path === 'sessions/revoke-others' && method === 'POST') {
+      const currentSessionId = req.headers.get('X-Session-Id') || req.headers.get('x-session-id');
+      if (currentSessionId && authUser?.id) {
+        await sql`DELETE FROM sessions WHERE employee_id = ${authUser.id} AND id != ${currentSessionId}`;
+      }
+      return json({ ok: true, message: 'تم تسجيل الخروج من كافة الأجهزة الأخرى بنجاح' });
+    }
+
     if (path === 'backup' && method === 'POST') {
       // 🛡️ إنشاء نسخة احتياطية كاملة (أدمن) — واحدة في اليوم تلقائيًا
       if (!isOwner(authUser)) return forbidden('النسخ الاحتياطي من المالك بس');

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ATTENDANCE_STATUSES } from '../lib/constants';
-import { getAttendance, upsertAttendance, getLocations, addCheckInAttempt, addSystemNotification, getEmployees } from '../lib/db';
+import { getAttendance, upsertAttendance, getLocations, addCheckInAttempt, addSystemNotification, getEmployees, updateEmployee } from '../lib/db';
 import { getDistanceInMeters } from '../lib/location';
 import { isBiometricAvailable, verifyPhoneBiometric } from '../lib/biometrics';
+import { getOrCreateDeviceId, detectLocationSpoofing, verifyEmployeeDevice } from '../lib/security';
 import type { Employee, WorkLocation } from '../lib/types';
 
 const SELF_STATUSES = ATTENDANCE_STATUSES.filter((s) =>
@@ -31,11 +32,14 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const [todayTime, setTodayTime] = useState<string | null>(null);
   const [biometricSupported, setBiometricSupported] = useState<boolean>(true);
   const [biometricTesting, setBiometricTesting] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string }>({ deviceId: '', deviceName: '' });
   const date = todayIso();
 
   useEffect(() => {
     loadData();
     checkDeviceBiometrics();
+    const dev = getOrCreateDeviceId();
+    setDeviceInfo(dev);
   }, []);
 
   async function checkDeviceBiometrics() {
@@ -82,7 +86,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   }
 
   /**
-   * 🎯 دالة GPS محسّنة مع محاولتين
+   * 🎯 دالة GPS محسّنة مع محاولتين وفحص دقة
    */
   function getLocation(): Promise<{ lat: number; lng: number; accuracy: number; speed: number | null }> {
     return new Promise((resolve, reject) => {
@@ -91,7 +95,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      // محاولة أولى سريعة
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           resolve({
@@ -113,7 +116,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
             return;
           }
 
-          // محاولة تانية بدقة عالية
           setMsg('📡 جاري المحاولة مرة أخرى بدقة أعلى...');
           navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -128,17 +130,10 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
               if (err2.code === err2.TIMEOUT) {
                 reject(new Error(
                   '⏰ تعذر تحديد موقعك.\n\n' +
-                  '💡 جرب الآتي:\n' +
-                  '1. تأكد أن GPS مفتوح على الموبايل\n' +
-                  '2. اخرج للمكان المفتوح (بعيداً عن الأسقف)\n' +
-                  '3. تأكد من اتصال الإنترنت (WiFi + Data)\n' +
-                  '4. أعد المحاولة بعد 30 ثانية'
+                  '💡 تأكد أن GPS مفتوح واخرج لمكان مكشوف'
                 ));
               } else {
-                reject(new Error(
-                  '❌ فشل تحديد الموقع.\n\n' +
-                  '💡 تأكد من تفعيل GPS وحاول مجدداً'
-                ));
+                reject(new Error('❌ فشل تحديد الموقع. تأكد من تفعيل GPS وحاول مجدداً'));
               }
             },
             { 
@@ -167,7 +162,53 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
     setOk(null);
 
     try {
-      // 1️⃣ خطوة بصمة الإصبع الحيوية للهاتف (Phone Biometrics)
+      // 🛡️ 1) فحص أمان ربط الجهاز (Device Binding Guard)
+      const currentDev = getOrCreateDeviceId();
+      const devCheck = verifyEmployeeDevice(user, currentDev.deviceId);
+      
+      if (!devCheck.isAuthorized) {
+        addCheckInAttempt({
+          employeeId: user.id,
+          employeeName: user.name,
+          date,
+          status,
+          success: false,
+          reason: `مرفوض - جهاز غير مسجل (${currentDev.deviceName})`,
+          lat: null,
+          lng: null,
+          nearestLocationId: Number(selectedLocationId),
+          nearestLocationName: null,
+          acceptedLocationId: null,
+          acceptedLocationName: null,
+          distanceMeters: null,
+        });
+        addSystemNotification({
+          type: 'checkin_failed',
+          title: '🚨 محاولة بصمة من جهاز غريب',
+          body: `${user.name} حاول تسجيل البصمة من جهاز غير مصرح له به (${currentDev.deviceName})`,
+          employeeId: user.id,
+          targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
+          entityType: 'checkin_attempt',
+          entityId: null,
+          severity: 'danger',
+        });
+        setOk(false);
+        setMsg(devCheck.message);
+        setBusy(false);
+        return;
+      }
+
+      // إذا كانت أول مرة، يتم ربط الجهاز بحساب الموظف تلقائياً
+      if (devCheck.isFirstTime) {
+        try {
+          updateEmployee(user.id, {
+            registeredDeviceId: currentDev.deviceId,
+            registeredDeviceName: currentDev.deviceName,
+          } as any);
+        } catch {}
+      }
+
+      // 🔐 2) خطوة بصمة الإصبع الحيوية للهاتف (Phone Biometrics)
       setMsg('👆 يرجى وضع إصبعك على مستشعر بصمة الهاتف الآن للتأكيد...');
       
       const bioResult = await verifyPhoneBiometric(user.id, user.name);
@@ -178,9 +219,43 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      // 2️⃣ خطوة فحص وتحديد الموقع عبر الـ GPS
+      // 📡 3) خطوة فحص وتحديد الموقع عبر الـ GPS ومكافحة Fake GPS
       setMsg('📡 تم تأكيد بصمة الهاتف! جاري تحديد موقعك الجغرافي...');
       const location = await getLocation();
+
+      // 🛰️ فحص مكافحة الموقع الوهمي (Anti-Spoofing Check)
+      const spoofCheck = detectLocationSpoofing(location);
+      if (spoofCheck.isSpoofed) {
+        addCheckInAttempt({
+          employeeId: user.id,
+          employeeName: user.name,
+          date,
+          status,
+          success: false,
+          reason: `مرفوض - ${spoofCheck.reason}`,
+          lat: location.lat,
+          lng: location.lng,
+          nearestLocationId: Number(selectedLocationId),
+          nearestLocationName: null,
+          acceptedLocationId: null,
+          acceptedLocationName: null,
+          distanceMeters: null,
+        });
+        addSystemNotification({
+          type: 'checkin_failed',
+          title: '⚠️ كشف تلاعب بالموقع (Fake GPS)',
+          body: `${user.name} حاول البصمة بموقع وهمي (${spoofCheck.reason})`,
+          employeeId: user.id,
+          targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
+          entityType: 'checkin_attempt',
+          entityId: null,
+          severity: 'danger',
+        });
+        setOk(false);
+        setMsg(`❌ تم حظر البصمة: ${spoofCheck.reason}. يرجى إغلاق أي برامج لتزييف الموقع.`);
+        setBusy(false);
+        return;
+      }
       
       const selectedLocation = availableLocations.find(loc => loc.id === Number(selectedLocationId));
       if (!selectedLocation) {
@@ -230,7 +305,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           employeeId: user.id,
           date,
           status,
-          notes: '🔐 تم التحقق ببصمة الهاتف الحيوية',
+          notes: `🔐 بصمة هاتف موثقة (${currentDev.deviceName})`,
           checkInLat: location.lat,
           checkInLng: location.lng,
           workLocationId: selectedLocation.id,
@@ -243,7 +318,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           date,
           status,
           success: true,
-          reason: 'بصمة حيوية مؤكدة + موقع بدون إحداثيات',
+          reason: `بصمة موثقة (${currentDev.deviceName}) + موقع بدون إحداثيات`,
           lat: location.lat,
           lng: location.lng,
           nearestLocationId: null,
@@ -307,8 +382,8 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       if (isWithinRange) {
         const isSuspicious = location.accuracy > 200;
         const noteForAdmin = isSuspicious 
-          ? `⚠️ GPS ضعيف (${Math.round(location.accuracy)}م) - 🔐 بصمة هاتف مؤكدة` 
-          : '🔐 تم التحقق ببصمة الهاتف الحيوية';
+          ? `⚠️ GPS ضعيف (${Math.round(location.accuracy)}م) - 🔐 هاتف موثق (${currentDev.deviceName})` 
+          : `🔐 تم التحقق بالبصمة (${currentDev.deviceName})`;
 
         upsertAttendance({
           employeeId: user.id,
@@ -327,7 +402,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           date,
           status,
           success: true,
-          reason: `بصمة هاتف مؤكدة بنجاح (${Math.round(distance)}م من ${selectedLocation.name})`,
+          reason: `بصمة هاتف معتمدة (${currentDev.deviceName}) - مسافة ${Math.round(distance)}م من ${selectedLocation.name}`,
           lat: location.lat,
           lng: location.lng,
           nearestLocationId: selectedLocation.id,
@@ -411,9 +486,9 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
 
         <div className="relative">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5">
-              <span>🔐</span>
-              <span>بصمة الهاتف البيومترية + GPS</span>
+            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-blue-200">
+              <span>🛡️</span>
+              <span>جهازك: {deviceInfo.deviceName || 'هاتف موثق'}</span>
             </span>
 
             <button
@@ -528,7 +603,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
               {busy ? (
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  <span className="text-[11px] font-black tracking-wider">جاري المسح...</span>
+                  <span className="text-[11px] font-black tracking-wider">جاري المسح الأمني...</span>
                 </div>
               ) : (
                 <>
@@ -539,7 +614,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                     {todayStatus ? 'تم الحضور' : availableLocations.length === 0 ? 'غير متاح' : 'بصمة الهاتف'}
                   </span>
                   {!todayStatus && availableLocations.length > 0 && (
-                    <span className="text-[10px] text-blue-200 font-bold mt-0.5">مسح الإصبع + GPS</span>
+                    <span className="text-[10px] text-blue-200 font-bold mt-0.5">مسح الإصبع + حماية GPS</span>
                   )}
                 </>
               )}
@@ -560,13 +635,13 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
 
       <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-[2rem] p-6 text-xs text-slate-600 font-medium leading-relaxed shadow-sm space-y-2">
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-base">🔐</div>
-          <span className="font-black text-slate-800 text-sm">كيف تعمل بصمة الهاتف الحيوية؟</span>
+          <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-base">🛡️</div>
+          <span className="font-black text-slate-800 text-sm">حماية البصمة ومكافحة التلاعب (Anti-Spoofing)</span>
         </div>
         <ul className="space-y-1.5 list-disc list-inside text-slate-600">
-          <li>عند الضغط على <b>بصمة الهاتف</b>، تفتح لك نافذة مستشعر البصمة الأصلي لهاتفك (Fingerprint / Touch ID / Face ID).</li>
-          <li>ضع إصبعك على المستشعر للتأكد من هويتك وتأكيد حضورك بموقع المشروع.</li>
-          <li>تأكد من تفعيل <b>الموقع (GPS)</b> في هاتفك لضمان تواجدك داخل نطاق الموقع المعتمد.</li>
+          <li>حسابك مربوط <b>بهاتفك المعتمد فقط</b> لمنع أي شخص من تسجيل البصمة بدلاً عنك.</li>
+          <li>يتم فحص إشارات الـ GPS وكشف أي برامج لتزييف الموقع الجغرافي.</li>
+          <li>التحقق من بصمة الإصبع الحيوية للهاتف لضمان هوية صاحب البصمة.</li>
         </ul>
       </div>
 

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { getAttendance, getVacations, getLocations, getSettings, getOvertimeRequests, refreshOvertimeRequests, submitOvertimeRequest } from '../lib/db';
 import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
+import { getOrCreateDeviceId, detectDeviceName } from '../lib/security';
+import { api } from '../lib/api';
 import type { Employee, OvertimeRequest } from '../lib/types';
 
 function todayIsoLocal() {
@@ -47,6 +49,17 @@ export default function MyAccountTab({ user }: { user: Employee }) {
   const [otNotes, setOtNotes] = useState('');
   const [otBusy, setOtBusy] = useState(false);
   const [otMsg, setOtMsg] = useState('');
+  
+  // 🛡️ معلومات الأمان والجهاز الحالي
+  const [currentDeviceId, setCurrentDeviceId] = useState('');
+  const [currentDeviceName, setCurrentDeviceName] = useState('');
+  const [revokingSessions, setRevokingSessions] = useState(false);
+  const [sessionMsg, setSessionMsg] = useState('');
+
+  useEffect(() => {
+    setCurrentDeviceId(getOrCreateDeviceId());
+    setCurrentDeviceName(detectDeviceName());
+  }, []);
 
   useEffect(() => {
     const att = getAttendance().filter(a => a.employeeId === user.id);
@@ -309,6 +322,70 @@ export default function MyAccountTab({ user }: { user: Employee }) {
           </div>
         </div>
       )}
+
+      {/* 🛡️ كارت أمان الحساب والجهاز */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🛡️</span>
+            <div>
+              <h3 className="text-sm font-black text-slate-900">أمان الحساب والجهاز المسجل</h3>
+              <p className="text-[11px] text-slate-500 font-bold">بيانات جهاز البصمة والجلسات النشطة</p>
+            </div>
+          </div>
+          <span className="rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-[11px] font-black border border-emerald-200">
+            🔒 محمي وموثق
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <div className="text-[11px] font-bold text-slate-500">📱 جهازك الحالي</div>
+            <div className="font-black text-slate-800 mt-0.5">{currentDeviceName || 'جهاز تصفح'}</div>
+            <div className="text-[10px] font-mono text-slate-400 mt-1 truncate">ID: {currentDeviceId}</div>
+          </div>
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <div className="text-[11px] font-bold text-slate-500">🔐 هاتف البصمة المعتمد بالنظام</div>
+            <div className="font-black text-slate-800 mt-0.5">
+              {user.registeredDeviceName || (user.registeredDeviceId ? 'جهاز مسجل' : 'جهازك الحالي (سيرتبط بأول بصمة)')}
+            </div>
+            <div className="text-[10px] text-emerald-600 font-bold mt-1">
+              ✓ لا يُسمح بتسجيل الحضور إلا من هاتفك المعتمد
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100">
+          <div className="text-[11px] text-slate-500 font-bold text-center sm:text-right">
+            لو سجلت دخولك من أجهزة تانية أو مقهى إنترنت، تقدر تقفل كل الجلسات دي بضغطة واحدة:
+          </div>
+          <button
+            onClick={async () => {
+              if (revokingSessions) return;
+              setRevokingSessions(true);
+              setSessionMsg('');
+              try {
+                const res = await api.revokeOtherSessions();
+                setSessionMsg('✅ ' + (res?.message || 'تم تسجيل الخروج من كل الأجهزة الأخرى بنجاح'));
+              } catch (e: any) {
+                setSessionMsg('⚠️ تعذر إغلاق الجلسات الأخرى');
+              } finally {
+                setRevokingSessions(false);
+              }
+            }}
+            disabled={revokingSessions}
+            className="w-full sm:w-auto shrink-0 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black transition-colors disabled:opacity-50"
+          >
+            {revokingSessions ? '⏳ جاري الإغلاق...' : '🔒 تسجيل الخروج من كافة الأجهزة الأخرى'}
+          </button>
+        </div>
+
+        {sessionMsg && (
+          <div className={`text-xs font-black p-3 rounded-xl text-center ${sessionMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {sessionMsg}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

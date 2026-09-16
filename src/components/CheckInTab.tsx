@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ATTENDANCE_STATUSES } from '../lib/constants';
 import { getAttendance, upsertAttendance, getLocations, addCheckInAttempt, addSystemNotification, getEmployees } from '../lib/db';
 import { getDistanceInMeters } from '../lib/location';
+import { isBiometricAvailable, verifyPhoneBiometric } from '../lib/biometrics';
 import type { Employee, WorkLocation } from '../lib/types';
 
 const SELF_STATUSES = ATTENDANCE_STATUSES.filter((s) =>
@@ -28,11 +29,19 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
   const [todayLocation, setTodayLocation] = useState<string | null>(null);
   const [todayTime, setTodayTime] = useState<string | null>(null);
+  const [biometricSupported, setBiometricSupported] = useState<boolean>(true);
+  const [biometricTesting, setBiometricTesting] = useState(false);
   const date = todayIso();
 
   useEffect(() => {
     loadData();
+    checkDeviceBiometrics();
   }, []);
+
+  async function checkDeviceBiometrics() {
+    const supported = await isBiometricAvailable();
+    setBiometricSupported(supported);
+  }
 
   function loadData() {
     const attendance = getAttendance();
@@ -54,10 +63,26 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   }
 
   /**
-   * 🎯 دالة GPS محسّنة مع 2 محاولات:
-   * - محاولة أولى سريعة (10 ثواني، بدون دقة عالية)
-   * - لو فشلت، محاولة تانية بدقة عالية (20 ثانية)
-   * - رسائل خطأ واضحة تشرح للموظف يعمل إيه
+   * 🎯 اختبار مستشعر بصمة الهاتف
+   */
+  async function testBiometrics() {
+    setBiometricTesting(true);
+    setMsg('👆 جاري فتح مستشعر بصمة الهاتف... ضع إصبعك على المستشعر');
+    setOk(null);
+
+    const bioRes = await verifyPhoneBiometric(user.id, user.name);
+    setBiometricTesting(false);
+    if (bioRes.success) {
+      setOk(true);
+      setMsg(bioRes.message || '✅ تم التحقق من بصمة إصبعك بنجاح!');
+    } else {
+      setOk(false);
+      setMsg(bioRes.message || '❌ فشل التحقق من البصمة');
+    }
+  }
+
+  /**
+   * 🎯 دالة GPS محسّنة مع محاولتين
    */
   function getLocation(): Promise<{ lat: number; lng: number; accuracy: number; speed: number | null }> {
     return new Promise((resolve, reject) => {
@@ -118,15 +143,15 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
             },
             { 
               enableHighAccuracy: true,
-              timeout: 25000,  // 25 ثانية للمحاولة التانية
+              timeout: 25000,
               maximumAge: 0
             }
           );
         },
         { 
-          enableHighAccuracy: false,  // ⚡ سريع الأول
-          timeout: 10000,  // 10 ثواني
-          maximumAge: 60000  // ✅ يقبل قراءة عمرها دقيقة
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 60000
         }
       );
     });
@@ -139,10 +164,22 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       return;
     }
     setBusy(true);
-    setMsg('📡 جاري تحديد موقعك...');
     setOk(null);
-    
+
     try {
+      // 1️⃣ خطوة بصمة الإصبع الحيوية للهاتف (Phone Biometrics)
+      setMsg('👆 يرجى وضع إصبعك على مستشعر بصمة الهاتف الآن للتأكيد...');
+      
+      const bioResult = await verifyPhoneBiometric(user.id, user.name);
+      if (!bioResult.success) {
+        setOk(false);
+        setMsg(bioResult.message);
+        setBusy(false);
+        return;
+      }
+
+      // 2️⃣ خطوة فحص وتحديد الموقع عبر الـ GPS
+      setMsg('📡 تم تأكيد بصمة الهاتف! جاري تحديد موقعك الجغرافي...');
       const location = await getLocation();
       
       const selectedLocation = availableLocations.find(loc => loc.id === Number(selectedLocationId));
@@ -186,14 +223,14 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         return;
       }
 
-      setMsg('🎯 جاري التحقق من الموقع...');
+      setMsg('🎯 جاري مطابقة الموقع مع نطاق العمل...');
 
       if (selectedLocation.lat == null || selectedLocation.lng == null) {
         upsertAttendance({
           employeeId: user.id,
           date,
           status,
-          notes: null,
+          notes: '🔐 تم التحقق ببصمة الهاتف الحيوية',
           checkInLat: location.lat,
           checkInLng: location.lng,
           workLocationId: selectedLocation.id,
@@ -206,7 +243,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           date,
           status,
           success: true,
-          reason: 'موقع بدون إحداثيات',
+          reason: 'بصمة حيوية مؤكدة + موقع بدون إحداثيات',
           lat: location.lat,
           lng: location.lng,
           nearestLocationId: null,
@@ -216,7 +253,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           distanceMeters: null,
         });
         setOk(true);
-        setMsg(`✅ تم تسجيل بصمتك في ${selectedLocation.name}`);
+        setMsg(`🎉 تم تسجيل بصمتك البيومترية بنجاح في ${selectedLocation.name}`);
         loadData();
         onDataChange();
         setBusy(false);
@@ -259,7 +296,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           severity: 'danger',
         });
         setOk(false);
-        setMsg(`❌ أنت بعيد جداً (${Math.round(distance/1000)} كم).`);
+        setMsg(`❌ أنت بعيد جداً عن الموقع (${Math.round(distance/1000)} كم).`);
         setBusy(false);
         return;
       }
@@ -269,7 +306,9 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
 
       if (isWithinRange) {
         const isSuspicious = location.accuracy > 200;
-        const noteForAdmin = isSuspicious ? `⚠️ GPS ضعيف (${Math.round(location.accuracy)}م)` : null;
+        const noteForAdmin = isSuspicious 
+          ? `⚠️ GPS ضعيف (${Math.round(location.accuracy)}م) - 🔐 بصمة هاتف مؤكدة` 
+          : '🔐 تم التحقق ببصمة الهاتف الحيوية';
 
         upsertAttendance({
           employeeId: user.id,
@@ -288,33 +327,17 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           date,
           status,
           success: true,
-          reason: isSuspicious 
-            ? `تم القبول رغم ضعف GPS (${Math.round(location.accuracy)}م)`
-            : `دقة GPS: ${Math.round(location.accuracy)}م`,
+          reason: `بصمة هاتف مؤكدة بنجاح (${Math.round(distance)}م من ${selectedLocation.name})`,
           lat: location.lat,
           lng: location.lng,
-          nearestLocationId: null,
-          nearestLocationName: null,
+          nearestLocationId: selectedLocation.id,
+          nearestLocationName: selectedLocation.name,
           acceptedLocationId: selectedLocation.id,
           acceptedLocationName: selectedLocation.name,
           distanceMeters: Math.round(distance),
         });
-
-        if (isSuspicious) {
-          addSystemNotification({
-            type: 'checkin_failed',
-            title: '⚠️ بصمة بدقة GPS ضعيفة',
-            body: `${user.name} بصم في ${selectedLocation.name} - المسافة ${Math.round(distance)}م، دقة GPS ${Math.round(location.accuracy)}م`,
-            employeeId: user.id,
-            targetUserIds: getEmployees().filter(e => e.role === 'admin').map(e => e.id),
-            entityType: 'checkin_attempt',
-            entityId: null,
-            severity: 'warn',
-          });
-        }
-
         setOk(true);
-        setMsg(`✅ تم تسجيل بصمتك في ${selectedLocation.name}`);
+        setMsg(`🎉 تم تسجيل حضورك بنجاح عبر بصمة الهاتف في ${selectedLocation.name} (المسافة: ${Math.round(distance)}م)`);
         loadData();
         onDataChange();
       } else {
@@ -324,7 +347,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
           date,
           status,
           success: false,
-          reason: `خارج النطاق - ${Math.round(distance)}م`,
+          reason: `مرفوض - خارج النطاق (${Math.round(distance)}م > ${selectedLocation.radiusMeters}م)`,
           lat: location.lat,
           lng: location.lng,
           nearestLocationId: selectedLocation.id,
@@ -380,44 +403,62 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const hasMultipleLocations = availableLocations.length > 1;
 
   return (
-    <div className="max-w-2xl mx-auto w-full space-y-6 pt-4">
+    <div className="max-w-2xl mx-auto w-full space-y-6 pt-4" dir="rtl">
+      
       <div className="bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 p-8 text-center relative overflow-hidden">
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-blue-50 rounded-full blur-3xl opacity-50"></div>
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-50 rounded-full blur-3xl opacity-50"></div>
 
         <div className="relative">
-          <div className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-2">Smart Check-in System</div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5">
+              <span>🔐</span>
+              <span>بصمة الهاتف البيومترية + GPS</span>
+            </span>
+
+            <button
+              type="button"
+              onClick={testBiometrics}
+              disabled={biometricTesting}
+              className="text-[11px] font-black text-slate-600 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 px-3 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 border border-slate-200"
+            >
+              <span>👆</span>
+              <span>{biometricTesting ? 'جاري الفحص...' : 'تجربة مستشعر البصمة'}</span>
+            </button>
+          </div>
+
           <div className="text-3xl font-black text-slate-900 mb-1">{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
           <div className="text-xs font-bold text-slate-400 mb-6">{dateLabel}</div>
 
           {todayStatus ? (
             <div className="bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-[2rem] p-6 mb-6 shadow-lg shadow-green-100 transform hover:scale-[1.02] transition-transform">
-              <div className="text-2xl mb-1">✨</div>
-              <div className="text-lg font-black italic">تم تسجيل حضورك اليوم</div>
-              <div className="text-sm font-bold opacity-90 mt-2">الحالة: {todayStatus}</div>
+              <div className="text-3xl mb-1">✨</div>
+              <div className="text-lg font-black italic">تم تسجيل حضورك وبصمتك اليوم</div>
+              <div className="text-sm font-bold opacity-95 mt-2">الحالة: {todayStatus}</div>
               {todayLocation && (
-                <div className="text-xs font-bold opacity-80 mt-1">📍 {todayLocation}</div>
+                <div className="text-xs font-bold opacity-90 mt-1">📍 موقع العمل: {todayLocation}</div>
               )}
               {todayTime && (
-                <div className="text-xs font-bold opacity-80 mt-1">🕒 {todayTime}</div>
+                <div className="text-xs font-bold opacity-90 mt-1">🕒 توقيت البصمة: {todayTime}</div>
               )}
             </div>
           ) : (
-            <div className="bg-slate-50 border border-slate-100 text-slate-500 rounded-2xl py-4 px-6 mb-6 text-sm font-bold animate-pulse">
-              👋 بانتظار تسجيل بصمتك لليوم...
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 text-blue-900 rounded-2xl py-3.5 px-6 mb-6 text-xs font-bold flex items-center justify-center gap-2">
+              <span className="text-lg">👆</span>
+              <span>اضغط على زر البصمة بالأسفل، وسيفتح لك الهاتف مستشعر البصمة لتأكيد هويتك وموقعك</span>
             </div>
           )}
 
           <div className="mb-4 text-right bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-[1.5rem] border border-blue-100">
-            <label className="block text-[10px] font-black text-blue-600 mb-3 px-1 uppercase tracking-widest">
-              📍 موقع البصمة المخصص لك
+            <label className="block text-[11px] font-black text-blue-700 mb-2 px-1">
+              📍 موقع البصمة المخصص لك:
             </label>
             
             {availableLocations.length === 0 ? (
               <div className="bg-red-50 border-2 border-red-200 rounded-xl px-4 py-4 text-center">
                 <div className="text-2xl mb-2">🚫</div>
                 <p className="text-sm font-black text-red-700 mb-1">لم يتم تحديد موقع عمل لك</p>
-                <p className="text-xs font-bold text-red-600">تواصل مع المسؤول</p>
+                <p className="text-xs font-bold text-red-600">تواصل مع مسؤول النظام لإضافتك لموقع</p>
               </div>
             ) : hasMultipleLocations ? (
               <div className="relative">
@@ -425,7 +466,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                   value={selectedLocationId}
                   onChange={(e) => setSelectedLocationId(e.target.value)}
                   disabled={Boolean(todayStatus)}
-                  className="w-full bg-white border-2 border-blue-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-white border-2 border-blue-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {availableLocations.map((loc) => (
                     <option key={loc.id} value={loc.id}>
@@ -433,31 +474,30 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                     </option>
                   ))}
                 </select>
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">▼</div>
               </div>
             ) : (
-              <div className="bg-white border-2 border-blue-300 rounded-xl px-4 py-4 shadow-sm">
+              <div className="bg-white border-2 border-blue-300 rounded-xl px-4 py-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="text-right">
-                    <div className="text-lg font-black text-slate-900">{currentLocation?.name || '—'}</div>
-                    <div className="text-xs font-bold text-slate-500 mt-1">📡 نطاق: {currentLocation?.radiusMeters}م</div>
+                    <div className="text-base font-black text-slate-900">{currentLocation?.name || '—'}</div>
+                    <div className="text-xs font-bold text-slate-500 mt-0.5">📡 نطاق البصمة المسموح: {currentLocation?.radiusMeters}م</div>
                   </div>
-                  <div className="text-3xl">📍</div>
+                  <div className="text-2xl">📍</div>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="mb-8 text-right bg-slate-50/50 p-4 rounded-[1.5rem] border border-slate-100">
-            <label className="block text-[10px] font-black text-slate-400 mb-3 px-1 uppercase tracking-widest">
-              نوع الحضور
+          <div className="mb-8 text-right bg-slate-50 p-4 rounded-[1.5rem] border border-slate-100">
+            <label className="block text-[11px] font-black text-slate-700 mb-2 px-1">
+              حالة الحضور:
             </label>
             <div className="relative">
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 disabled={Boolean(todayStatus)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {SELF_STATUSES.map((s) => (
                   <option key={s.value} value={s.value}>
@@ -465,45 +505,52 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
                   </option>
                 ))}
               </select>
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
             </div>
           </div>
 
+          {/* Interactive Biometric Punch Button */}
           <div className="relative group flex justify-center">
             {!todayStatus && !busy && availableLocations.length > 0 && (
-              <div className="absolute inset-0 w-44 h-44 mx-auto rounded-full bg-blue-400 opacity-20 animate-ping"></div>
+              <div className="absolute inset-0 w-44 h-44 mx-auto rounded-full bg-blue-500 opacity-20 animate-ping pointer-events-none"></div>
             )}
             <button
+              type="button"
               onClick={checkIn}
               disabled={busy || Boolean(todayStatus) || !selectedLocationId || availableLocations.length === 0}
-              className={`relative w-44 h-44 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-500 active:scale-90 disabled:opacity-70 disabled:cursor-not-allowed
+              className={`relative w-44 h-44 rounded-full flex flex-col items-center justify-center shadow-2xl transition-all duration-300 active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer
                 ${todayStatus 
-                  ? 'bg-white border-4 border-green-500 text-green-600 shadow-green-100' 
+                  ? 'bg-white border-4 border-emerald-500 text-emerald-600 shadow-emerald-100' 
                   : availableLocations.length === 0
-                    ? 'bg-gradient-to-br from-slate-400 to-slate-500 text-white'
-                    : 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white hover:shadow-blue-200'
+                    ? 'bg-slate-400 text-white'
+                    : 'bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-800 text-white hover:shadow-blue-300 hover:scale-[1.03]'
                 }`}
             >
               {busy ? (
-                <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span className="text-[11px] font-black tracking-wider">جاري المسح...</span>
+                </div>
               ) : (
                 <>
                   <span className="text-5xl filter drop-shadow-md">
                     {todayStatus ? '✅' : availableLocations.length === 0 ? '🚫' : '👆'}
                   </span>
-                  <span className="mt-3 text-xs font-black uppercase tracking-[0.1em]">
-                    {todayStatus ? 'تم' : availableLocations.length === 0 ? 'غير متاح' : 'بصمة'}
+                  <span className="mt-2 text-xs font-black tracking-wider">
+                    {todayStatus ? 'تم الحضور' : availableLocations.length === 0 ? 'غير متاح' : 'بصمة الهاتف'}
                   </span>
+                  {!todayStatus && availableLocations.length > 0 && (
+                    <span className="text-[10px] text-blue-200 font-bold mt-0.5">مسح الإصبع + GPS</span>
+                  )}
                 </>
               )}
             </button>
           </div>
 
           {msg && (
-            <div className={`mt-8 text-[12px] font-black p-4 rounded-xl transition-all duration-300 whitespace-pre-line text-right ${
-              ok === true ? 'bg-green-50 text-green-700 border border-green-200' : 
-              ok === false ? 'bg-red-50 text-red-700 border border-red-200' : 
-              'bg-blue-50 text-blue-700 border border-blue-200'
+            <div className={`mt-8 text-xs font-black p-4 rounded-2xl transition-all duration-300 whitespace-pre-line text-right shadow-sm ${
+              ok === true ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' : 
+              ok === false ? 'bg-rose-50 text-rose-800 border border-rose-300' : 
+              'bg-blue-50 text-blue-900 border border-blue-300 animate-pulse'
             }`}>
               {msg}
             </div>
@@ -511,19 +558,18 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         </div>
       </div>
 
-      <div className="bg-white/50 backdrop-blur-sm border border-slate-200/50 rounded-[2rem] p-6 text-[11px] text-slate-500 font-medium leading-relaxed shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 text-sm">📍</div>
-          <span className="font-black text-slate-700 uppercase tracking-tighter">نصائح للبصمة الناجحة</span>
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-[2rem] p-6 text-xs text-slate-600 font-medium leading-relaxed shadow-sm space-y-2">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-base">🔐</div>
+          <span className="font-black text-slate-800 text-sm">كيف تعمل بصمة الهاتف الحيوية؟</span>
         </div>
-        <ol className="space-y-2 list-decimal list-inside text-slate-600">
-          <li><b>فعّل GPS</b> على موبايلك من الإعدادات</li>
-          <li><b>اسمح للمتصفح</b> بمعرفة موقعك عند سؤالك</li>
-          <li><b>كن في مكان مفتوح</b> لأفضل دقة</li>
-          <li><b>تأكد من الإنترنت</b> (WiFi + Data معاً)</li>
-          <li>إذا فشلت المحاولة، <b>انتظر 30 ثانية</b> ثم أعد المحاولة</li>
-        </ol>
+        <ul className="space-y-1.5 list-disc list-inside text-slate-600">
+          <li>عند الضغط على <b>بصمة الهاتف</b>، تفتح لك نافذة مستشعر البصمة الأصلي لهاتفك (Fingerprint / Touch ID / Face ID).</li>
+          <li>ضع إصبعك على المستشعر للتأكد من هويتك وتأكيد حضورك بموقع المشروع.</li>
+          <li>تأكد من تفعيل <b>الموقع (GPS)</b> في هاتفك لضمان تواجدك داخل نطاق الموقع المعتمد.</li>
+        </ul>
       </div>
+
     </div>
   );
 }

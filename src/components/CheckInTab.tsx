@@ -33,6 +33,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const [biometricSupported, setBiometricSupported] = useState<boolean>(true);
   const [biometricTesting, setBiometricTesting] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string }>({ deviceId: '', deviceName: '' });
+  const [showFallbackOption, setShowFallbackOption] = useState(false);
   const date = todayIso();
 
   useEffect(() => {
@@ -152,7 +153,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
     });
   }
 
-  async function checkIn() {
+  async function checkIn(skipBiometric: boolean = false) {
     if (!selectedLocationId) {
       setOk(false);
       setMsg('❌ لم يتم تحديد موقع عمل لك. تواصل مع المسؤول.');
@@ -209,18 +210,23 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       }
 
       // 🔐 2) خطوة بصمة الإصبع الحيوية للهاتف (Phone Biometrics)
-      setMsg('👆 يرجى وضع إصبعك على مستشعر بصمة الهاتف الآن للتأكيد...');
-      
-      const bioResult = await verifyPhoneBiometric(user.id, user.name);
-      if (!bioResult.success) {
-        setOk(false);
-        setMsg(bioResult.message);
-        setBusy(false);
-        return;
+      if (!skipBiometric) {
+        setMsg('👆 يرجى وضع إصبعك على مستشعر بصمة الهاتف للتأكيد...');
+        
+        const bioResult = await verifyPhoneBiometric(user.id, user.name);
+        if (!bioResult.success) {
+          setOk(false);
+          setMsg(bioResult.message);
+          setShowFallbackOption(true);
+          setBusy(false);
+          return;
+        }
       }
 
+      setShowFallbackOption(false);
+
       // 📡 3) خطوة فحص وتحديد الموقع عبر الـ GPS ومكافحة Fake GPS
-      setMsg('📡 تم تأكيد بصمة الهاتف! جاري تحديد موقعك الجغرافي...');
+      setMsg(skipBiometric ? '📡 جاري تحديد موقعك الجغرافي والتحقق من النطاق...' : '📡 تم تأكيد بصمة الهاتف! جاري تحديد موقعك الجغرافي...');
       const location = await getLocation();
 
       // 🛰️ فحص مكافحة الموقع الوهمي (Anti-Spoofing Check)
@@ -628,6 +634,27 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
               'bg-blue-50 text-blue-900 border border-blue-300 animate-pulse'
             }`}>
               {msg}
+            </div>
+          )}
+
+          {showFallbackOption && !todayStatus && (
+            <div className="mt-4 p-4 rounded-2xl bg-indigo-50 border-2 border-indigo-200 text-center space-y-2.5 animate-fadeIn">
+              <div className="text-xs font-black text-indigo-950 flex items-center justify-center gap-1.5">
+                <span>💡</span>
+                <span>تعذر استجابة مستشعر البصمة الحيوي للهاتف؟</span>
+              </div>
+              <p className="text-[11px] text-indigo-700 font-bold leading-relaxed">
+                تقدر تأكد حضورك فوراً بهاتفك المعتمد وموقعك الجغرافي الموثق (GPS) داخل نطاق الموقع:
+              </p>
+              <button
+                type="button"
+                onClick={() => checkIn(true)}
+                disabled={busy}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black shadow-md active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>📱</span>
+                <span>تأكيد الحضور بجهازي المعتمد + الـ GPS فوراً</span>
+              </button>
             </div>
           )}
         </div>

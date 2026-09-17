@@ -78,7 +78,7 @@ export async function verifyPhoneBiometric(
         ],
         authenticatorSelection: {
           authenticatorAttachment: 'platform', // مستشعر الهاتف نفسه (بصمة / Face)
-          userVerification: 'required',        // إجبار التحقق من البصمة
+          userVerification: 'preferred',       // يفضّل البصمة الحيوية ويتيح قفل الشاشة بدون تعليق
           requireResidentKey: false,
         },
         timeout: 45000,

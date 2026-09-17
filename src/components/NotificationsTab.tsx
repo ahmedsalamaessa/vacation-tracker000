@@ -3,6 +3,7 @@ import { getAttendance, getVacations, getNotificationsForUser } from '../lib/db'
 import { getManagedEmployees } from '../lib/permissions';
 import { computeGraduatedVacation } from '../lib/vacation';
 import { getVacationDaysTaken, calculateEmployeeBalance } from '../lib/balance';
+import { sendWhatsAppCheckInReminder } from '../lib/whatsapp';
 import type { Employee } from '../lib/types';
 
 interface Notification {
@@ -12,6 +13,7 @@ interface Notification {
   title: string;
   body: string;
   time: string;
+  missingEmployees?: Employee[];
 }
 
 function todayIso() {
@@ -99,13 +101,15 @@ export default function NotificationsTab({ user }: Props) {
       const presentIds = new Set(todayRecords.map(a => a.employeeId));
       const missing = emps.filter(e => !presentIds.has(e.id));
       if (missing.length > 0) {
+        const isAfterNoon = new Date().getHours() >= 12;
         notifs.push({
           id: 'missing-today',
-          type: 'info',
-          emoji: '📋',
-          title: `${missing.length} موظف لم يسجل حضور اليوم`,
-          body: missing.slice(0, 5).map(e => e.name).join('، ') + (missing.length > 5 ? ` و${missing.length - 5} آخرين` : ''),
+          type: isAfterNoon ? 'warn' : 'info',
+          emoji: isAfterNoon ? '⏰' : '📋',
+          title: isAfterNoon ? `⏰ تنبيه 12:00 ظهراً: ${missing.length} مساح لم يسجلوا بصمة اليوم!` : `${missing.length} موظف لم يسجل حضور اليوم`,
+          body: missing.slice(0, 6).map(e => e.name).join('، ') + (missing.length > 6 ? ` و${missing.length - 6} آخرين` : ''),
           time: new Date().toISOString(),
+          missingEmployees: missing,
         });
       }
     }
@@ -177,7 +181,7 @@ export default function NotificationsTab({ user }: Props) {
         ) : (
           <div className="space-y-3">
             {notifications.map(n => (
-              <div key={n.id} className={`rounded-2xl border p-4 ${colors[n.type]} transition-all hover:shadow-md`}>
+              <div key={n.id} className={`rounded-2xl border p-4 ${colors[n.type]} transition-all hover:shadow-md space-y-3`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <span className="text-2xl mt-0.5">{n.emoji}</span>
@@ -188,6 +192,30 @@ export default function NotificationsTab({ user }: Props) {
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{formatTime(n.time)}</span>
                 </div>
+
+                {n.missingEmployees && n.missingEmployees.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-600">
+                      إرسال تذكير البصمة المباشر عبر واتساب:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          n.missingEmployees?.forEach((emp, idx) => {
+                            setTimeout(() => {
+                              sendWhatsAppCheckInReminder(emp.name, emp.phone);
+                            }, idx * 600);
+                          });
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        <span>💬</span>
+                        <span>تذكير الكل بالواتساب ({n.missingEmployees.length})</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

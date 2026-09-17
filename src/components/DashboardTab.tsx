@@ -182,7 +182,7 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
           <div>
             <h2 className="text-2xl font-black text-slate-900 md:text-3xl">📊 لوحة التحكم الحية</h2>
             <p className="mt-2 text-sm font-bold text-slate-500">
-              إحصائيات فورية · تحديث تلقائي كل 5 ثوانية · المسؤول: {user.name}
+              إحصائيات فورية · تحديث تلقائي كل 5 ثوانٍ · المسؤول: {user.name}
             </p>
           </div>
           <button
@@ -192,6 +192,31 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
             🔄 تحديث
           </button>
         </div>
+
+        {/* ⏰ تنبيه الظهر: المساحين الذين لم يبصموا بعد 12:00 ظهراً */}
+        {stats.missingToday > 0 && new Date().getHours() >= 12 && (
+          <div className="mb-6 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3 text-right">
+              <span className="text-3xl">⏰</span>
+              <div>
+                <div className="text-sm font-black text-amber-950">
+                  تنبيه متابعة البصمة (الساعة تجاوزت 12:00 ظهراً)
+                </div>
+                <div className="text-xs font-bold text-amber-800 mt-0.5">
+                  يوجد <span className="font-black text-red-700">{stats.missingToday} مساح</span> لم يسجلوا بصمة حضور اليوم حتى الآن.
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate('daily')}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 shrink-0"
+            >
+              <span>💬</span>
+              <span>فتح شاشة التذكير بالواتساب</span>
+            </button>
+          </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-5">
           <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-lg shadow-slate-200">

@@ -17,6 +17,8 @@ import {
 import { getManagedEmployees } from '../lib/permissions';
 import type { AttendanceRecord, Employee, WorkLocation } from '../lib/types';
 
+const ARABIC_DAYS_NAMES = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
 function pad(n: number) {
   return String(n).padStart(2, '0');
 }
@@ -451,20 +453,27 @@ export default function AttendanceTab({
             <table className="border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="sticky right-0 bg-slate-100 border border-slate-200 p-2 text-right min-w-[140px] z-10">
-                    الموظف
+                  <th className="sticky right-0 bg-slate-100 border border-slate-200 p-2 text-right min-w-[140px] z-10 align-middle">
+                    <div className="font-black text-slate-800">الموظف</div>
+                    <div className="text-[10px] text-slate-400 font-bold">اليوم / التاريخ ⬇️</div>
                   </th>
                   {days.map(d => {
                     const wd = new Date(year, month, d).getDay();
+                    const dayName = ARABIC_DAYS_NAMES[wd];
                     const isFri = wd === 5;
                     return (
                       <th
                         key={d}
-                        className={`border border-slate-200 p-1 min-w-[64px] ${
-                          isFri ? 'bg-red-50 text-red-600' : 'bg-slate-100'
+                        className={`border border-slate-200 py-1.5 px-0.5 min-w-[68px] text-center select-none ${
+                          isFri ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-800'
                         }`}
                       >
-                        {d}
+                        <div className={`text-[10px] font-black tracking-tight ${isFri ? 'text-red-600' : 'text-slate-500'}`}>
+                          {dayName}
+                        </div>
+                        <div className="text-xs font-black mt-0.5">
+                          {d}
+                        </div>
                       </th>
                     );
                   })}

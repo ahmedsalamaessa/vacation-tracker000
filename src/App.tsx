@@ -25,7 +25,6 @@ import LoginPage from './components/LoginPage';
 import CheckInTab from './components/CheckInTab';
 import TrackerTab from './components/TrackerTab';
 import AttendanceTab from './components/AttendanceTab';
-import CalendarTab from './components/CalendarTab';
 import VacationsTab from './components/VacationsTab';
 import EmployeesTab from './components/EmployeesTab';
 import ReportsTab from './components/ReportsTab';
@@ -48,7 +47,6 @@ type TabKey =
   | 'checkin'
   | 'tracker'
   | 'attendance'
-  | 'calendar'
   | 'daily'
   | 'approvals'
   | 'vacations'
@@ -96,7 +94,6 @@ const TABS: TabDef[] = [
   { key: 'myaccount', emoji: '👤', permission: 'canViewMyAccount' },
   { key: 'tracker', emoji: '📋', permission: 'canViewAttendance' },
   { key: 'attendance', emoji: '📊', permission: 'canViewAttendance' },
-  { key: 'calendar', emoji: '📅', permission: 'canViewAttendance' },
   { key: 'daily', emoji: '📌', permission: 'canViewDailyReview' },
   { key: 'vacations', emoji: '🗓️', permission: 'canRequestVacations' },
   { key: 'approvals', emoji: '✅', permission: 'canApproveVacations' },
@@ -470,7 +467,6 @@ export default function App() {
       myaccount: 'حسابي',
       tracker: 'رصيد الإجازات',
       attendance: 'تتبع الحضور',
-      calendar: 'التقويم',
       daily: 'مراجعة اليوم',
       approvals: 'الاعتمادات',
       vacations: 'الإجازات',
@@ -713,10 +709,6 @@ export default function App() {
             onSaved={handleDataChange}
           />
         )}
-        {activeTab === 'calendar' &&
-          (user.role === 'admin' || user.canViewAttendance) && (
-            <CalendarTab user={user} />
-          )}
         {activeTab === 'daily' &&
           (user.role === 'admin' || user.role === 'manager' || user.canViewAttendance) && (
             <DailyReviewTab user={user} />

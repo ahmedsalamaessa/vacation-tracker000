@@ -85,6 +85,17 @@ export const api = {
       method: 'POST',
     });
   },
+  async triggerAutomatedReminders() {
+    return request<{ ok: boolean; date: string; totalMissing: number; processed: any[] }>('/reminders/send-automated-whatsapp', {
+      method: 'POST',
+    });
+  },
+  async testWhatsAppGateway(payload: { phone: string; provider?: string; instanceId?: string; token?: string; customWebhook?: string }) {
+    return request<{ ok: boolean; error?: string; response?: any }>('/reminders/test-whatsapp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
   async resetPassword(username: string, code: string, newPassword: string) {
     return request('/password/reset', {
       method: 'POST',

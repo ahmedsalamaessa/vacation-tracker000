@@ -53,7 +53,12 @@ export default function SettingsTab() {
   const [resetConfirm, setResetConfirm] = useState(false);
 
   // حالة النافذة
-  const [activeSection, setActiveSection] = useState<'general' | 'locations' | 'diagnostics' | 'backup' | 'usage' | 'reset'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'locations' | 'diagnostics' | 'backup' | 'usage' | 'reset' | 'whatsapp'>('general');
+
+  // 🤖 حالة تجربة الواتساب
+  const [waTestPhone, setWaTestPhone] = useState('');
+  const [waTesting, setWaTesting] = useState(false);
+  const [waTestRes, setWaTestRes] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // 🛡️ حالة مُراقب نيون
   const [usage, setUsage] = useState<{ storageMB: number; quotaMB: number; percent: number; counts: Record<string, number>; checkedAt: string } | null>(null);
@@ -95,6 +100,11 @@ export default function SettingsTab() {
       { key: 'casual_annual_quota', val: '6' },
       { key: 'footer_text', val: 'نظام إدارة الإجازات • قسم المساحة' },
       { key: 'settings_password', val: settings.settings_password || 'settings123' },
+      { key: 'whatsapp_auto_send', val: 'true' },
+      { key: 'whatsapp_gateway_type', val: 'ultramsg' },
+      { key: 'whatsapp_instance_id', val: '' },
+      { key: 'whatsapp_token', val: '' },
+      { key: 'whatsapp_custom_webhook', val: '' },
     ];
     for (const d of defaults) merged[d.key] = settings[d.key as keyof Settings] || d.val;
     setValues(merged);
@@ -468,6 +478,7 @@ export default function SettingsTab() {
   // ============ شاشة الإعدادات ============
   const sectionTabs = [
     { key: 'general' as const, label: '⚙️ عام', emoji: 'عام' },
+    { key: 'whatsapp' as const, label: '🤖 ربط الواتساب التلقائي', emoji: 'واتساب' },
     { key: 'locations' as const, label: '📍 المواقع', emoji: 'المواقع' },
     { key: 'diagnostics' as const, label: '🔍 تشخيص وحلول', emoji: 'تشخيص' },
     { key: 'usage' as const, label: '🛡️ مُراقب نيون', emoji: 'نيون' },
@@ -516,6 +527,172 @@ export default function SettingsTab() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ============ 🤖 ربط الواتساب التلقائي ============ */}
+      {activeSection === 'whatsapp' && (
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-xl font-black text-slate-950 flex items-center gap-2">
+                <span>🤖</span>
+                <span>بوابة إرسال رسائل الواتساب التلقائية (WhatsApp Gateway)</span>
+              </h2>
+              <p className="mt-1 text-xs font-bold text-slate-500">
+                إرسال تذكيرات البصمة اليومية الساعة 12:00 ظهراً تلقائياً من السيرفر مباشرة دون الحاجة لضغط أي زر
+              </p>
+            </div>
+            <span className="rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 text-xs font-black border border-emerald-200">
+              ⚡ سحابي وتلقائي (Vercel Cron)
+            </span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">نوع المزود / Gateway Provider</label>
+              <select
+                value={values['whatsapp_gateway_type'] || 'ultramsg'}
+                onChange={(e) => {
+                  setValues(prev => ({ ...prev, whatsapp_gateway_type: e.target.value }));
+                  updateSettings({ whatsapp_gateway_type: e.target.value } as any);
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold outline-none"
+              >
+                <option value="ultramsg">UltraMsg (أسهل وأشهر بوابة واتساب)</option>
+                <option value="greenapi">Green-API (واتساب سحابي)</option>
+                <option value="custom_webhook">Custom Webhook / WhatsApp Bot خاص</option>
+              </select>
+              <p className="text-[11px] font-bold text-slate-400 mt-2">اختر الخدمة التي تستخدمها لإرسال رسائل الواتساب البرمجية</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="block text-sm font-black text-slate-700 mb-2">Instance ID (معرّف الجلسة)</label>
+              <input
+                type="text"
+                value={values['whatsapp_instance_id'] || ''}
+                placeholder="مثال: instance98765"
+                onChange={(e) => setValues(prev => ({ ...prev, whatsapp_instance_id: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-mono font-bold outline-none"
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => saveField('whatsapp_instance_id')}
+                  className="rounded-lg px-4 py-1.5 bg-slate-900 text-white text-xs font-black"
+                >
+                  حفظ
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+              <label className="block text-sm font-black text-slate-700 mb-2">API Token / مفتاح المصادقة</label>
+              <input
+                type="password"
+                value={values['whatsapp_token'] || ''}
+                placeholder="أدخل رمز الـ Token السري الخاص بالواتساب"
+                onChange={(e) => setValues(prev => ({ ...prev, whatsapp_token: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-mono font-bold outline-none"
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => saveField('whatsapp_token')}
+                  className="rounded-lg px-4 py-1.5 bg-slate-900 text-white text-xs font-black"
+                >
+                  حفظ
+                </button>
+              </div>
+            </div>
+
+            {values['whatsapp_gateway_type'] === 'custom_webhook' && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                <label className="block text-sm font-black text-slate-700 mb-2">Custom Webhook URL</label>
+                <input
+                  type="url"
+                  value={values['whatsapp_custom_webhook'] || ''}
+                  placeholder="https://your-bot-domain.com/send"
+                  onChange={(e) => setValues(prev => ({ ...prev, whatsapp_custom_webhook: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-mono font-bold outline-none"
+                />
+                <div className="mt-2 flex justify-end">
+                  <button
+                    onClick={() => saveField('whatsapp_custom_webhook')}
+                    className="rounded-lg px-4 py-1.5 bg-slate-900 text-white text-xs font-black"
+                  >
+                    حفظ
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 🧪 تجربة إرسال رسالة اختبارية */}
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 space-y-3">
+            <h3 className="text-sm font-black text-indigo-950 flex items-center gap-2">
+              <span>🧪</span>
+              <span>تجربة الإرسال التلقائي الآن</span>
+            </h3>
+            <p className="text-xs text-indigo-800 font-bold">
+              اكتب رقم هاتفك واضغط إرسال للتأكد من وصول رسالة الواتساب إلى جوالك مباشرة:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="text"
+                value={waTestPhone}
+                onChange={(e) => setWaTestPhone(e.target.value)}
+                placeholder="أدخل رقم الهاتف (مثال: 01014696724)"
+                className="flex-1 min-w-[200px] rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold outline-none"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!waTestPhone.trim()) {
+                    setWaTestRes({ ok: false, msg: '⚠️ اكتب رقم الهاتف أولاً' });
+                    return;
+                  }
+                  setWaTesting(true);
+                  setWaTestRes(null);
+                  try {
+                    const res = await api.testWhatsAppGateway({
+                      phone: waTestPhone.trim(),
+                      provider: values['whatsapp_gateway_type'] || 'ultramsg',
+                      instanceId: values['whatsapp_instance_id'] || '',
+                      token: values['whatsapp_token'] || '',
+                      customWebhook: values['whatsapp_custom_webhook'] || '',
+                    });
+                    if (res?.ok) {
+                      setWaTestRes({ ok: true, msg: '✅ تم إرسال رسالة الواتساب بنجاح إلى جوالك!' });
+                    } else {
+                      setWaTestRes({ ok: false, msg: `⚠️ خطأ في الإرسال: ${res?.error || 'تأكد من صحة الـ Token و Instance ID'}` });
+                    }
+                  } catch (e: any) {
+                    setWaTestRes({ ok: false, msg: '⚠️ تعذر الاتصال بالسيرفر' });
+                  } finally {
+                    setWaTesting(false);
+                  }
+                }}
+                disabled={waTesting}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-black shadow-md transition-all disabled:opacity-50"
+              >
+                {waTesting ? '⏳ جاري الإرسال...' : '📨 إرسال رسالة اختبارية'}
+              </button>
+            </div>
+
+            {waTestRes && (
+              <div className={`p-3 rounded-xl text-xs font-black text-center ${waTestRes.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                {waTestRes.msg}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-xs font-bold text-slate-700 leading-relaxed space-y-2">
+            <div className="font-black text-slate-900">💡 كيف يعمل الإرسال التلقائي 100%؟</div>
+            <ul className="list-disc list-inside space-y-1 text-slate-600">
+              <li>السيرفر السحابي (Vercel Cron) مبرمج ليعمل يومياً الساعة <b>12:00 ظهراً بتوقيت القاهرة</b>.</li>
+              <li>يقوم بالبحث عن أي مساح لم يبصم بعد، ويرسل له رسالة الواتساب الرسمية مباشرة لرقم هاتفه.</li>
+              <li>يتم تسجيل كل رسالة أُرسلت في سجل الحركات (Audit Log) حتى تتأكد من وصولها.</li>
+            </ul>
           </div>
         </div>
       )}

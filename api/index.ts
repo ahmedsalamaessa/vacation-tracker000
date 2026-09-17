@@ -323,6 +323,70 @@ async function ensureEquipmentTables(sql: any) {
   equipmentTablesReady = true;
 }
 
+/**
+ * إرسال رسالة واتساب تلقائية عبر الـ API Gateway
+ */
+async function sendGatewayWhatsApp(
+  provider: string,
+  instanceId: string,
+  token: string,
+  customWebhookUrl: string,
+  phone: string,
+  message: string
+): Promise<{ ok: boolean; error?: string; response?: any }> {
+  let cleanPhone = phone.replace(/[\s\-\+\(\)]/g, '');
+  if (cleanPhone.startsWith('01')) cleanPhone = '20' + cleanPhone.slice(1);
+  else if (cleanPhone.startsWith('0020')) cleanPhone = '20' + cleanPhone.slice(4);
+  else if (cleanPhone.startsWith('+20')) cleanPhone = '20' + cleanPhone.slice(3);
+
+  try {
+    if (provider === 'ultramsg' && instanceId && token) {
+      const res = await fetch(`https://api.ultramsg.com/${instanceId}/messages/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          to: cleanPhone,
+          body: message,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, response: data };
+    }
+
+    if (provider === 'greenapi' && instanceId && token) {
+      const res = await fetch(`https://api.green-api.com/waInstance${instanceId}/sendMessage/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: `${cleanPhone}@c.us`,
+          message,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, response: data };
+    }
+
+    if (customWebhookUrl) {
+      const res = await fetch(customWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone,
+          message,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, response: data };
+    }
+
+    return { ok: false, error: 'NO_GATEWAY_CONFIGURED' };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return options();
   const sql = getSql();
@@ -335,12 +399,13 @@ export default async function handler(req: Request) {
       return json({ ok: true, service: 'vacation-api', time: new Date().toISOString() });
     }
 
-    // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login و إعادة تعيين الباسورد)
+    // 🛡️ البوابة العامة: كل النقاط محتاجة جلسة صالحة (عدا health و login و إعادة تعيين الباسورد والكرون)
     const isLogin = path === 'login' && method === 'POST';
     const isPublic = isLogin 
       || (path === 'password/reset' && method === 'POST') 
       || (path === 'password/whatsapp-request' && method === 'POST')
-      || (path === 'password/direct-reset' && method === 'POST');
+      || (path === 'password/direct-reset' && method === 'POST')
+      || path === 'cron/remind-missing-attendance';
     let authUser: any = null;
     if (!isPublic) {
       authUser = await getSessionUser(sql, req);
@@ -583,6 +648,118 @@ export default async function handler(req: Request) {
         await sql`DELETE FROM sessions WHERE employee_id = ${authUser.id} AND id != ${currentSessionId}`;
       }
       return json({ ok: true, message: 'تم تسجيل الخروج من كافة الأجهزة الأخرى بنجاح' });
+    }
+
+    // ============ 🤖 تذكير الواتساب التلقائي الساعة 12 ظهراً للمساحين ============
+    if ((path === 'cron/remind-missing-attendance' || path === 'reminders/send-automated-whatsapp') && (method === 'GET' || method === 'POST')) {
+      // 1) قراءة إعدادات بوابة الواتساب
+      const settingsRows = await sql`SELECT key, value FROM settings`;
+      const settingsMap: Record<string, string> = {};
+      for (const r of settingsRows as any[]) settingsMap[r.key] = r.value;
+
+      const provider = settingsMap['whatsapp_gateway_type'] || 'ultramsg';
+      const instanceId = settingsMap['whatsapp_instance_id'] || process.env.WHATSAPP_INSTANCE_ID || '';
+      const token = settingsMap['whatsapp_token'] || process.env.WHATSAPP_TOKEN || '';
+      const customWebhook = settingsMap['whatsapp_custom_webhook'] || process.env.WHATSAPP_WEBHOOK_URL || '';
+
+      // 2) حساب تاريخ اليوم بتوقيت القاهرة
+      const cairoNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' }));
+      const today = `${cairoNow.getFullYear()}-${String(cairoNow.getMonth() + 1).padStart(2, '0')}-${String(cairoNow.getDate()).padStart(2, '0')}`;
+
+      // 3) جلب الموظفين النشطين
+      const employees = await sql`SELECT * FROM employees WHERE active = true`;
+      const attendance = await sql`SELECT * FROM attendance WHERE date = ${today}`;
+      const vacations = await sql`
+        SELECT * FROM vacations 
+        WHERE status = 'مقبولة' 
+          AND vacation_start_date <= ${today}::date 
+          AND vacation_end_date >= ${today}::date
+      `;
+
+      const presentEmpIds = new Set((attendance as any[]).map((a: any) => a.employee_id));
+      const vacationEmpIds = new Set((vacations as any[]).map((v: any) => v.employee_id));
+
+      const missingEmployees = (employees as any[]).filter((e: any) => 
+        !presentEmpIds.has(e.id) && !vacationEmpIds.has(e.id) && Boolean(e.phone)
+      );
+
+      const results: any[] = [];
+
+      for (const emp of missingEmployees) {
+        // فحص هل تم إرسال تذكير له اليوم مسبقاً لمنع التكرار المزعج
+        const alreadyNotified = await sql`
+          SELECT id FROM audit_logs 
+          WHERE action = 'تذكير واتساب تلقائي' 
+            AND employee_id = ${emp.id} 
+            AND date = ${today} 
+          LIMIT 1
+        `;
+        if ((alreadyNotified as any[]).length > 0) {
+          results.push({ id: emp.id, name: emp.name, status: 'already_reminded_today' });
+          continue;
+        }
+
+        const msgText = `السلام عليكم ورحمة الله يا بشمهندس ${emp.name} 👷‍♂️
+
+⏰ *تذكير من إدارة قسم المساحة*
+الساعة تجاوزت 12:00 ظهراً ولم يتم تسجيل بصمة حضورك لليوم (${today}) على النظام حتى الآن.
+
+📍 *فضلاً افتح الرابط وسجل بصمتك في موقع العمل المعتمد لتفادي احتساب اليوم غياباً:*
+🔗 https://vacation-tracker000.vercel.app
+
+شكراً لتعاونكم 🤝`;
+
+        const sendRes = await sendGatewayWhatsApp(provider, instanceId, token, customWebhook, emp.phone, msgText);
+
+        // تسجيل في سجل الحركات
+        await sql`
+          INSERT INTO audit_logs (
+            action, entity_type, employee_id, employee_name, date, notes, created_at
+          ) VALUES (
+            'تذكير واتساب تلقائي', 'reminder', ${emp.id}, ${emp.name}, ${today}, 
+            ${sendRes.ok ? 'تم الإرسال تلقائياً بنجاح إلى ' + emp.phone : 'محاولة إرسال: ' + (sendRes.error || 'تم تجهيز التذكير')},
+            NOW()
+          )
+        `;
+
+        results.push({
+          id: emp.id,
+          name: emp.name,
+          phone: emp.phone,
+          sent: sendRes.ok,
+          error: sendRes.error,
+        });
+      }
+
+      return json({
+        ok: true,
+        date: today,
+        totalMissing: missingEmployees.length,
+        processed: results,
+      });
+    }
+
+    // 🧪 تجربة إرسال رسالة واتساب اختبارية
+    if (path === 'reminders/test-whatsapp' && method === 'POST') {
+      const b = await readBody<any>(req);
+      const phone = String(b.phone || authUser?.phone || '').trim();
+      const settingsRows = await sql`SELECT key, value FROM settings`;
+      const settingsMap: Record<string, string> = {};
+      for (const r of settingsRows as any[]) settingsMap[r.key] = r.value;
+
+      const provider = b.provider || settingsMap['whatsapp_gateway_type'] || 'ultramsg';
+      const instanceId = b.instanceId || settingsMap['whatsapp_instance_id'] || '';
+      const token = b.token || settingsMap['whatsapp_token'] || '';
+      const customWebhook = b.customWebhook || settingsMap['whatsapp_custom_webhook'] || '';
+
+      if (!phone) {
+        return json({ error: 'bad_request', message: 'اكتب رقم الهاتف للاختبار' }, 400);
+      }
+
+      const testMsg = `🧪 *رسالة اختبارية من نظام قسم المساحة*\nتم ربط وتفعيل خدمة إرسال الواتساب التلقائي بنجاح! 🚀\nالوقت: ${new Date().toLocaleTimeString('ar-EG')}`;
+
+      const res = await sendGatewayWhatsApp(provider, instanceId, token, customWebhook, phone, testMsg);
+      return json({ ok: res.ok, error: res.error, response: res.response });
     }
 
     if (path === 'backup' && method === 'POST') {

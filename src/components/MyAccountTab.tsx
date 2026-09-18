@@ -57,8 +57,9 @@ export default function MyAccountTab({ user }: { user: Employee }) {
   const [sessionMsg, setSessionMsg] = useState('');
 
   useEffect(() => {
-    setCurrentDeviceId(getOrCreateDeviceId());
-    setCurrentDeviceName(detectDeviceName());
+    const dev = getOrCreateDeviceId();
+    setCurrentDeviceId(dev.deviceId);
+    setCurrentDeviceName(dev.deviceName);
   }, []);
 
   useEffect(() => {

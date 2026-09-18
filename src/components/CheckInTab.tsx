@@ -209,24 +209,22 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         } catch {}
       }
 
-      // 🔐 2) خطوة بصمة الإصبع الحيوية للهاتف (Phone Biometrics)
+      // 🔐 2) خطوة البصمة الحيوية للهاتف (Phone Biometrics)
+      setMsg('👆 جاري فحص بصمة الهاتف وموقعك الجغرافي...');
+      let isBioVerified = false;
       if (!skipBiometric) {
-        setMsg('👆 يرجى وضع إصبعك على مستشعر بصمة الهاتف للتأكيد...');
-        
-        const bioResult = await verifyPhoneBiometric(user.id, user.name);
-        if (!bioResult.success) {
-          setOk(false);
-          setMsg(bioResult.message);
-          setShowFallbackOption(true);
-          setBusy(false);
-          return;
+        try {
+          const bioResult = await verifyPhoneBiometric(user.id, user.name);
+          isBioVerified = bioResult.success;
+        } catch {
+          isBioVerified = false;
         }
       }
 
       setShowFallbackOption(false);
 
       // 📡 3) خطوة فحص وتحديد الموقع عبر الـ GPS ومكافحة Fake GPS
-      setMsg(skipBiometric ? '📡 جاري تحديد موقعك الجغرافي والتحقق من النطاق...' : '📡 تم تأكيد بصمة الهاتف! جاري تحديد موقعك الجغرافي...');
+      setMsg('📡 جاري تحديد موقعك الجغرافي والتحقق من التواجد في الموقع...');
       const location = await getLocation();
 
       // 🛰️ فحص مكافحة الموقع الوهمي (Anti-Spoofing Check)

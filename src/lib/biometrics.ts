@@ -65,7 +65,6 @@ export async function verifyPhoneBiometric(
         challenge,
         rp: {
           name: 'نظام بصمة الحضور - قسم المساحة',
-          id: window.location.hostname || undefined,
         },
         user: {
           id: userIdBytes,
@@ -81,7 +80,7 @@ export async function verifyPhoneBiometric(
           userVerification: 'preferred',       // يفضّل البصمة الحيوية ويتيح قفل الشاشة بدون تعليق
           requireResidentKey: false,
         },
-        timeout: 45000,
+        timeout: 20000,
         attestation: 'none',
       },
     });

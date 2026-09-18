@@ -424,6 +424,23 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
     setResetModal(null);
   }
 
+  // 📱 فك ربط هاتف البصمة عند تغيير الهاتف أو الشكوى
+  async function resetDeviceBinding(emp: Employee) {
+    if (!window.confirm(`هل تريد فك ربط الهاتف المسجل للموظف (${emp.name})؟\n\n💡 سيتمكن الموظف من تسجيل البصمة من هاتفه الجديد واعتماده تلقائياً.`)) {
+      return;
+    }
+    try {
+      await updateEmployee(emp.id, {
+        registeredDeviceId: '',
+        registeredDeviceName: '',
+      } as any);
+      load();
+      alert(`✅ تم فك ربط الهاتف للموظف (${emp.name}) بنجاح.`);
+    } catch {
+      alert('حدث خطأ أثناء فك ربط الجهاز');
+    }
+  }
+
   // 🖨️ فتح مودال الطباعة
   function openPrintModal() {
     setSelectedForPrint([]);
@@ -1024,9 +1041,14 @@ export default function EmployeesTab({ onOpenProfile, user }: Props) {
                       {!showArchived && (
                         <>
                           {isAdmin && (
-                            <button onClick={() => generateReset(emp)} className="text-emerald-600 hover:text-emerald-800 text-lg" title="إعادة تعيين كلمة المرور">
-                              🔑
-                            </button>
+                            <>
+                              <button onClick={() => generateReset(emp)} className="text-emerald-600 hover:text-emerald-800 text-lg" title="إعادة تعيين كلمة المرور">
+                                🔑
+                              </button>
+                              <button onClick={() => resetDeviceBinding(emp)} className="text-purple-600 hover:text-purple-800 text-lg" title={emp.registeredDeviceId ? `هاتف معتمد: ${emp.registeredDeviceName || 'جهاز'} (اضغط لفك الربط عند تغيير الهاتف)` : 'فك ربط هاتف البصمة'}>
+                                📱
+                              </button>
+                            </>
                           )}
                           <button onClick={() => startEdit(emp)} className="text-blue-500 hover:text-blue-700 text-lg" title="تعديل">
                             ✏️

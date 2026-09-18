@@ -202,7 +202,7 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
       // إذا كانت أول مرة، يتم ربط الجهاز بحساب الموظف تلقائياً
       if (devCheck.isFirstTime) {
         try {
-          updateEmployee(user.id, {
+          await updateEmployee(user.id, {
             registeredDeviceId: currentDev.deviceId,
             registeredDeviceName: currentDev.deviceName,
           } as any);

@@ -493,12 +493,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
             </div>
           ) : (
             <>
-              {new Date().getHours() >= 12 && (
-                <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl p-3.5 mb-3 text-xs font-black flex items-center justify-center gap-2">
-                  <span>⏰</span>
-                  <span>تنبيه: الساعة تجاوزت 12:00 ظهراً — فضلاً سجل بصمتك في موقعك الآن لتفادي الغياب</span>
-                </div>
-              )}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 text-blue-900 rounded-2xl py-3.5 px-6 mb-6 text-xs font-bold flex items-center justify-center gap-2">
                 <span className="text-lg">👆</span>
                 <span>اضغط على زر البصمة بالأسفل، وسيفتح لك الهاتف مستشعر البصمة لتأكيد هويتك وموقعك</span>

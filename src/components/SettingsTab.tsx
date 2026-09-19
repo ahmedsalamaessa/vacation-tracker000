@@ -916,21 +916,23 @@ export default function SettingsTab() {
 
               {/* عدد السجلات */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div className="mb-3 font-black text-slate-800">📊 عدد السجلات الحالية</div>
+                <div className="mb-3 font-black text-slate-800">📊 تفاصيل السجلات الفعلية بالداتابيز</div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {([
-                    ['employees', '👥 الموظفين'],
-                    ['attendance', '📅 الحضور'],
-                    ['vacations', '🏖️ الإجازات'],
-                    ['check_in_attempts', '📍 بصمات'],
-                    ['audit_logs', '📋 سجل الحركات'],
-                    ['machinery_hours', '🚜 ساعات المعدات'],
-                    ['equipment', '🧰 العدة'],
-                    ['backups', '💾 النسخ الاحتياطية'],
-                  ] as [string, string][]).map(([k, label]) => (
+                    ['employees', '👥 الموظفين', usage.counts?.employees_active !== undefined ? `${usage.counts.employees_active} نشط (${usage.counts.employees_archived || 0} مؤرشف)` : undefined],
+                    ['attendance', '📅 سجل الحضور اليومي'],
+                    ['vacations', '🏖️ طلبات الإجازات'],
+                    ['check_in_attempts', '📍 حركات البصمة الجغرافية'],
+                    ['audit_logs', '📋 سجل حركات وتعديلات النظام'],
+                    ['machinery_hours', '🚜 ساعات ونقلات المعدات'],
+                    ['equipment', '🧰 أجهزة ومعدات المساحة'],
+                    ['backups', '💾 النسخ الاحتياطية المحفوظة'],
+                  ] as [string, string, string?][]).map(([k, label, customValue]) => (
                     <div key={k} className="rounded-xl bg-white border border-slate-200 p-3 text-center">
-                      <div className="text-2xl font-black text-slate-900">{usage.counts?.[k] ?? '—'}</div>
-                      <div className="mt-1 text-[11px] font-bold text-slate-400">{label}</div>
+                      <div className="text-xl sm:text-2xl font-black text-slate-900">
+                        {customValue || (usage.counts?.[k] ?? '—')}
+                      </div>
+                      <div className="mt-1 text-[11px] font-bold text-slate-500">{label}</div>
                     </div>
                   ))}
                 </div>

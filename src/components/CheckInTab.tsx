@@ -31,7 +31,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
   const [todayLocation, setTodayLocation] = useState<string | null>(null);
   const [todayTime, setTodayTime] = useState<string | null>(null);
   const [biometricSupported, setBiometricSupported] = useState<boolean>(true);
-  const [biometricTesting, setBiometricTesting] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState<{ deviceId: string; deviceName: string }>({ deviceId: '', deviceName: '' });
   const [showFallbackOption, setShowFallbackOption] = useState(false);
   const date = todayIso();
@@ -64,25 +63,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
     
     if (employeeLocations.length > 0 && !selectedLocationId) {
       setSelectedLocationId(String(employeeLocations[0].id));
-    }
-  }
-
-  /**
-   * 🎯 اختبار مستشعر بصمة الهاتف
-   */
-  async function testBiometrics() {
-    setBiometricTesting(true);
-    setMsg('👆 جاري فتح مستشعر بصمة الهاتف... ضع إصبعك على المستشعر');
-    setOk(null);
-
-    const bioRes = await verifyPhoneBiometric(user.id, user.name);
-    setBiometricTesting(false);
-    if (bioRes.success) {
-      setOk(true);
-      setMsg(bioRes.message || '✅ تم التحقق من بصمة إصبعك بنجاح!');
-    } else {
-      setOk(false);
-      setMsg(bioRes.message || '❌ فشل التحقق من البصمة');
     }
   }
 
@@ -489,21 +469,11 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-50 rounded-full blur-3xl opacity-50"></div>
 
         <div className="relative">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-blue-200">
+          <div className="flex items-center justify-center mb-4">
+            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-3.5 py-1.5 rounded-full uppercase tracking-wider flex items-center gap-1.5 border border-blue-200 shadow-sm">
               <span>🛡️</span>
-              <span>جهازك: {deviceInfo.deviceName || 'هاتف موثق'}</span>
+              <span>هاتف البصمة المعتمد: {deviceInfo.deviceName || 'جهاز موثق'}</span>
             </span>
-
-            <button
-              type="button"
-              onClick={testBiometrics}
-              disabled={biometricTesting}
-              className="text-[11px] font-black text-slate-600 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 px-3 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 border border-slate-200"
-            >
-              <span>👆</span>
-              <span>{biometricTesting ? 'جاري الفحص...' : 'تجربة مستشعر البصمة'}</span>
-            </button>
           </div>
 
           <div className="text-3xl font-black text-slate-900 mb-1">{new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>

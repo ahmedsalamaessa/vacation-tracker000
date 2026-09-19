@@ -485,7 +485,7 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen transition-colors duration-300 bg-slate-100 dark:bg-slate-900"
+      className="min-h-screen w-full max-w-full overflow-x-hidden transition-colors duration-300 bg-slate-100 dark:bg-slate-900"
       dir="rtl"
     >
       {showWelcome && (
@@ -496,11 +496,11 @@ export default function App() {
           </div>
         </div>
       )}
-      <header className="sticky top-0 z-50 shadow-sm border-b px-4 md:px-6 py-3 flex items-center justify-between bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 shadow-sm border-b px-2 sm:px-4 md:px-6 py-2.5 sm:py-3 flex items-center justify-between bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 w-full max-w-full overflow-hidden">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setMenuOpen(true)}
-            className="rounded-xl border px-3 py-2 text-xl font-black hover:opacity-80 bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 relative"
+            className="rounded-xl border p-2 sm:px-3 sm:py-2 text-lg sm:text-xl font-black hover:opacity-80 bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 relative shrink-0"
           >
             ☰
             {pendingCount > 0 && (
@@ -509,16 +509,16 @@ export default function App() {
               </span>
             )}
           </button>
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md text-white font-black text-xl">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-md text-white font-black text-base sm:text-xl shrink-0">
             📋
           </div>
-          <div>
-            <h1 className="font-black text-lg leading-tight text-slate-900 dark:text-white">
+          <div className="min-w-0">
+            <h1 className="font-black text-sm sm:text-lg leading-tight text-slate-900 dark:text-white truncate">
               نظام إدارة الإجازات
             </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <p className="text-[12px] font-bold text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1.5 mt-0.5 truncate">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0" />
+              <p className="text-[11px] sm:text-[12px] font-bold text-slate-500 dark:text-slate-400 truncate">
                 {(user as any).isOwner ? '👑 ' : ''}{user.name}
                 <span className="mx-1">•</span>
                 {roleLabel(user.role)}
@@ -526,7 +526,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
             onClick={() => setSearchOpen(true)}
             className="hidden md:flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
@@ -535,30 +535,31 @@ export default function App() {
           </button>
           <button
             onClick={toggleFullscreen}
-            className="rounded-xl px-3 py-2 text-lg transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+            className="hidden sm:flex rounded-xl p-2 sm:px-3 sm:py-2 text-base sm:text-lg transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
             title={isFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة'}
           >
             {isFullscreen ? '🔳' : '🖥️'}
           </button>
           <button
             onClick={() => setDarkMode(d => !d)}
-            className="rounded-xl px-3 py-2 text-lg transition bg-slate-100 dark:bg-yellow-500/20 text-slate-600 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-yellow-500/30"
+            className="rounded-xl p-2 sm:px-3 sm:py-2 text-base sm:text-lg transition bg-slate-100 dark:bg-yellow-500/20 text-slate-600 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-yellow-500/30"
             title={darkMode ? 'وضع نهاري' : 'وضع ليلي'}
           >
             {darkMode ? '☀️' : '🌙'}
           </button>
           <button
             onClick={() => setTab('myaccount')}
-            className="rounded-xl px-3 py-2 text-lg transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+            className="rounded-xl p-2 sm:px-3 sm:py-2 text-base sm:text-lg transition bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
             title="حسابي"
           >
             👤
           </button>
           <button
             onClick={handleLogout}
-            className="group flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl transition-all duration-300 border border-transparent text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:border-red-100 dark:hover:border-red-800"
+            className="group flex items-center gap-1 text-xs sm:text-sm font-bold p-2 sm:px-3 sm:py-2 rounded-xl transition-all duration-300 border border-transparent text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:border-red-100 dark:hover:border-red-800"
+            title="تسجيل الخروج"
           >
-            <span>خروج</span>
+            <span className="hidden sm:inline">خروج</span>
             <span className="transition-transform group-hover:translate-x-1">←</span>
           </button>
         </div>
@@ -691,7 +692,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <main className="p-3 md:p-5 w-full">
+      <main className="p-2 sm:p-4 md:p-5 w-full max-w-full overflow-x-hidden">
         {activeTab === 'dashboard' && hasAnyPerm && user.role !== 'employee' && (
           <DashboardTab user={user} onNavigate={t => setTab(t as TabKey)} />
         )}

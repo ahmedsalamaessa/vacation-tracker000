@@ -176,8 +176,8 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
   }
 
   return (
-    <div className="w-full space-y-6">
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+    <div className="w-full max-w-full space-y-4 sm:space-y-6">
+      <section className="rounded-2xl sm:rounded-[2rem] border border-slate-200 bg-white p-4 sm:p-6 shadow-sm md:p-8">
         <div className="mb-8 flex flex-wrap items-start justify-between gap-3 text-right">
           <div>
             <h2 className="text-2xl font-black text-slate-900 md:text-3xl">📊 لوحة التحكم الحية</h2>

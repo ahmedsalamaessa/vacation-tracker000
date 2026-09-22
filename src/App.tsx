@@ -9,6 +9,7 @@ import {
   getEmployees,
   refreshFromRemote,
   getEquipmentCheckouts,
+  getOvertimeRequests,
 } from './lib/db';
 import { getManagedEmployees } from './lib/permissions';
 import { api } from './lib/api';
@@ -184,32 +185,26 @@ export default function App() {
 
   const updatePendingCount = useCallback(() => {
     const vacs = getVacations();
+    const ots = getOvertimeRequests().filter(o => o.status === 'pending');
+    const eqs = getEquipmentCheckouts().filter(c => !c.returnDate && c.returnReqDate);
+
     if (!user) {
-      setPendingCount(vacs.filter(v => v.status === 'بانتظار الموافقة').length);
+      setPendingCount(vacs.filter(v => v.status === 'بانتظار الموافقة').length + ots.length + eqs.length);
       return;
     }
     if (user.role === 'admin') {
       setPendingCount(
         vacs.filter(v => v.status === 'بانتظار الموافقة').length +
-        getEquipmentCheckouts().filter(c => !c.returnDate && c.returnReqDate).length,
+        eqs.length +
+        ots.length,
       );
     } else if (user.role === 'manager') {
-      const managedIds = new Set(
-        (user.locationIds || []).length === 0
-          ? getEmployees().map(e => e.id)
-          : getEmployees()
-              .filter(
-                e =>
-                  e.active &&
-                  e.role !== 'admin' &&
-                  (e.id === user.id ||
-                    e.locationIds.some(id => user.locationIds.includes(id))),
-              )
-              .map(e => e.id),
-      );
+      const managed = getManagedEmployees(user);
+      const managedIds = new Set(managed.map(e => e.id));
       setPendingCount(
-        vacs.filter(v => v.status === 'بانتظار الموافقة' && managedIds.has(v.employeeId))
-          .length,
+        vacs.filter(v => v.status === 'بانتظار الموافقة' && managedIds.has(v.employeeId)).length +
+        eqs.filter(c => managedIds.has(c.employeeId)).length +
+        ots.filter(o => managedIds.has(o.employeeId)).length,
       );
     } else {
       setPendingCount(0);

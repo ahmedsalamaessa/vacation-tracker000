@@ -893,7 +893,8 @@ export default async function handler(req: Request) {
     if (path === 'bootstrap' && method === 'GET') {
       const user = await getSessionUser(sql, req);
       if (!user) return json({ error: 'unauthorized' }, 401);
-      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows, equipmentRows, checkoutRows, machineryRows, machineryHoursRows] =
+      await ensureEquipmentTables(sql);
+      const [employees, locations, attendance, vacations, auditLogs, monthLocks, attempts, notifications, settingsRows, equipmentRows, checkoutRows, machineryRows, machineryHoursRows, overtimeRows] =
         await Promise.all([
           sql`SELECT * FROM employees ORDER BY id`,
           sql`SELECT * FROM work_locations ORDER BY id`,
@@ -908,6 +909,7 @@ export default async function handler(req: Request) {
           sql`SELECT * FROM equipment_checkouts ORDER BY created_at DESC LIMIT 1000`,
           sql`SELECT * FROM machinery ORDER BY id`,
           sql`SELECT * FROM machinery_hours WHERE date >= CURRENT_DATE - INTERVAL '400 days' ORDER BY date DESC, id DESC`,
+          sql`SELECT * FROM overtime_requests ORDER BY created_at DESC LIMIT 500`,
         ]);
 
       let filteredEmployees: any[] = (employees as any[]).map(mapEmployee).filter(Boolean);
@@ -971,6 +973,9 @@ export default async function handler(req: Request) {
               const cut = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
               return (machineryHoursRows as any[]).map(mapMachineryHours).filter(Boolean).filter((h: any) => String(h.date) >= cut);
             })(),
+        overtimeRequests: (user.role === 'admin' || user.role === 'manager')
+          ? (overtimeRows as any[]).map(mapOvertimeRequest).filter(Boolean)
+          : (overtimeRows as any[]).map(mapOvertimeRequest).filter(Boolean).filter((o: any) => o.employeeId === user.id),
         directory,
         settings,
       });

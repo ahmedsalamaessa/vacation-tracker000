@@ -83,9 +83,19 @@ export async function pollManagerAlerts(user: Employee): Promise<ManagerPollResu
       }
     }
   }
-  const pending = (data.vacations || []).filter(
+  const pendingVacations = (data.vacations || []).filter(
     (v: any) => v.status === 'بانتظار الموافقة' && managedIds.has(v.employeeId),
   ).length;
+
+  const pendingOvertime = (data.overtimeRequests || []).filter(
+    (o: any) => o.status === 'pending' && managedIds.has(o.employeeId),
+  ).length;
+
+  const pendingEquipment = (data.equipmentCheckouts || []).filter(
+    (c: any) => !c.returnDate && c.returnReqDate && (user.role === 'admin' || managedIds.has(c.employeeId)),
+  ).length;
+
+  const pending = pendingVacations + pendingOvertime + pendingEquipment;
 
   // ⚠️ اللي تجاوزوا رصيد العارضة
   const quota = Number(data.settings?.casual_annual_quota) || DEFAULT_CASUAL_QUOTA;

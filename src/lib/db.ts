@@ -89,6 +89,7 @@ export async function refreshFromRemote(): Promise<any> {
     if (d.equipmentCheckouts) setItem(STORAGE_KEYS.equipmentCheckouts, d.equipmentCheckouts);
     if (d.machinery) setItem(STORAGE_KEYS.machinery, d.machinery);
     if (d.machineryHours) setItem(STORAGE_KEYS.machineryHours, d.machineryHours);
+    if (d.overtimeRequests) setItem(STORAGE_KEYS.overtimeRequests, d.overtimeRequests);
     if (d.directory) setItem(STORAGE_KEYS.directory, d.directory);
     return data;
   } catch (e) {

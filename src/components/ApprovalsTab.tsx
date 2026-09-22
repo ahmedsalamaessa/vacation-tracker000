@@ -14,6 +14,7 @@ import {
   getOvertimeRequests,
   refreshOvertimeRequests,
   decideOvertimeRequest,
+  upsertAttendance,
 } from '../lib/db';
 import { getManagedEmployees } from '../lib/permissions';
 import type { Employee, Vacation, EquipmentCheckout, OvertimeRequest } from '../lib/types';
@@ -381,6 +382,82 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
     }
   }
 
+  // 🌙 قرار اعتماد أو رفض السهر الإضافي
+  async function decideOt(ot: OvertimeRequest & { employeeName: string }, approve: boolean) {
+    if (otBusy) return;
+    setOtBusy(ot.id);
+    setMsg(approve ? '⏳ جاري اعتماد السهر وتنزيله في شيت الحضور...' : '⏳ جاري رفض طلب السهر...');
+    try {
+      await decideOvertimeRequest(ot.id, approve);
+      if (approve) {
+        // تنزيل السهر فوراً في سجل الحضور المحلي
+        upsertAttendance({
+          employeeId: ot.employeeId,
+          date: String(ot.date).slice(0, 10),
+          status: 'سهر',
+          notes: `سهر إضافي معتمد: ${ot.hours || 0} ساعة`,
+        });
+        addAuditLog({
+          actorId: user.id,
+          actorName: user.name,
+          action: 'اعتماد سهر إضافي',
+          entityType: 'attendance',
+          employeeId: ot.employeeId,
+          employeeName: ot.employeeName,
+          date: ot.date,
+          newStatus: 'سهر',
+          notes: `تم اعتماد سهر ${ot.hours || 0} ساعة ليوم ${ot.date}`,
+        });
+        addSystemNotification({
+          type: 'overtime_approved',
+          title: '🎉 تم اعتماد سهرتك الإضافية!',
+          body: `تمت الموافقة على سهر يوم ${ot.date} ونزوله في شيت الحضور ورصيد السهر.`,
+          employeeId: ot.employeeId,
+          targetUserIds: [ot.employeeId],
+          severity: 'info',
+        });
+        setMsg(`✅ تم اعتماد سهر المهندس (${ot.employeeName}) ليوم ${ot.date} بنجاح وتنزيله في جدول الحضور!`);
+      } else {
+        addAuditLog({
+          actorId: user.id,
+          actorName: user.name,
+          action: 'رفض سهر إضافي',
+          entityType: 'overtime_request',
+          employeeId: ot.employeeId,
+          employeeName: ot.employeeName,
+          date: ot.date,
+          notes: `تم رفض طلب سهر يوم ${ot.date}`,
+        });
+        setMsg(`⛔ تم رفض طلب السهر ليوم (${ot.date}).`);
+      }
+      await refreshFromRemote();
+      load();
+      onChanged?.();
+      setTimeout(() => setMsg(''), 5000);
+    } catch (e: any) {
+      setMsg('❌ حدث خطأ أثناء اعتماد السهر: ' + (e?.serverMessage || e?.message || 'تعذر الاتصال بالسيرفر'));
+    } finally {
+      setOtBusy(null);
+    }
+  }
+
+  // 📥 قرار استلام أو رفض رجوع الأجهزة والعدة
+  async function decideEq(co: EquipmentCheckout & { eqName: string; eqSerial: string; eqKind: string }, approve: boolean, condition = 'سليم ✅') {
+    setMsg(approve ? '⏳ جاري تأكيد استلام الجهاز...' : '⏳ جاري رفض الطلب...');
+    try {
+      await decideEquipmentReturnRequest(co.id, approve, condition);
+      setMsg(approve ? `✅ تم استلام الجهاز (${co.eqName}) وإرجاعه للعهدة المتاحة بنجاح!` : `⛔ تم رفض طلب استلام الجهاز.`);
+      await refreshFromRemote();
+      load();
+      onChanged?.();
+      setTimeout(() => setMsg(''), 5000);
+    } catch (e: any) {
+      setMsg('❌ حدث خطأ أثناء استلام الجهاز: ' + (e?.serverMessage || e?.message || ''));
+    }
+  }
+
+  const totalPendingCount = pending.length + eqPending.length + otPending.length;
+
   return (
     <div className="space-y-5" dir="rtl">
       
@@ -398,15 +475,15 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
             </h2>
             <p className="mt-1 text-xs font-bold text-slate-500">
               {user.role === 'manager'
-                ? `طلبات موظفي مواقعك فقط (${pending.length} معلق)`
-                : `كل الطلبات المعلقة (${pending.length} طلب معلق)`} · اعتماد فوري بضغطة زر واحدة وتنزيل مباشر في شيت الحضور
+                ? `طلبات موظفي مواقعك فقط (${totalPendingCount} معلق)`
+                : `كل الطلبات المعلقة (${totalPendingCount} طلب معلق)`} · اعتماد فوري بضغطة زر واحدة وتنزيل مباشر في شيت الحضور
             </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {pending.length > 0 && (
+            {totalPendingCount > 0 && (
               <span className="rounded-xl bg-red-100 px-3.5 py-1.5 text-xs font-black text-red-700 animate-pulse">
-                🔴 {pending.length} طلب معلق
+                🔴 {totalPendingCount} طلب معلق
               </span>
             )}
 
@@ -682,15 +759,17 @@ export default function ApprovalsTab({ user, onChanged }: Props) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => decideOt(ot, true)}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                    disabled={otBusy === ot.id}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm disabled:opacity-50 cursor-pointer active:scale-95 transition-all flex items-center gap-1"
                   >
-                    اعتماد السهر ✅
+                    <span>{otBusy === ot.id ? '⏳ جاري الاعتماد...' : 'اعتماد السهر ✅'}</span>
                   </button>
                   <button
                     onClick={() => decideOt(ot, false)}
-                    className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold"
+                    disabled={otBusy === ot.id}
+                    className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-sm disabled:opacity-50 cursor-pointer active:scale-95 transition-all flex items-center gap-1"
                   >
-                    رفض
+                    <span>رفض</span>
                   </button>
                 </div>
               </div>

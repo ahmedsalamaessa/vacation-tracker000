@@ -863,8 +863,8 @@ export default async function handler(req: Request) {
       try {
         const size = (await sql`SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty, pg_database_size(current_database()) AS bytes`)[0];
         const counts = (await sql`SELECT
-          (SELECT count(*)::int FROM employees WHERE archived IS NOT TRUE) employees_active,
-          (SELECT count(*)::int FROM employees WHERE archived IS TRUE) employees_archived,
+          (SELECT count(*)::int FROM employees WHERE COALESCE(active, true) = TRUE) employees_active,
+          (SELECT count(*)::int FROM employees WHERE active = FALSE) employees_archived,
           (SELECT count(*)::int FROM employees) employees,
           (SELECT count(*)::int FROM attendance) attendance,
           (SELECT count(*)::int FROM vacations) vacations,

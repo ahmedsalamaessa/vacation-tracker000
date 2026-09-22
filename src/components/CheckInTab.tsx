@@ -630,18 +630,6 @@ export default function CheckInTab({ user, onDataChange }: CheckInTabProps) {
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-[2rem] p-6 text-xs text-slate-600 font-medium leading-relaxed shadow-sm space-y-2">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-7 h-7 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 text-base">🛡️</div>
-          <span className="font-black text-slate-800 text-sm">حماية البصمة ومكافحة التلاعب (Anti-Spoofing)</span>
-        </div>
-        <ul className="space-y-1.5 list-disc list-inside text-slate-600">
-          <li>حسابك مربوط <b>بهاتفك المعتمد فقط</b> لمنع أي شخص من تسجيل البصمة بدلاً عنك.</li>
-          <li>يتم فحص إشارات الـ GPS وكشف أي برامج لتزييف الموقع الجغرافي.</li>
-          <li>التحقق من بصمة الإصبع الحيوية للهاتف لضمان هوية صاحب البصمة.</li>
-        </ul>
-      </div>
-
     </div>
   );
 }

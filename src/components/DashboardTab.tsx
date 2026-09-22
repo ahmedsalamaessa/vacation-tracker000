@@ -237,10 +237,10 @@ export default function DashboardTab({ user, onNavigate, refreshKey }: Dashboard
           <div className="rounded-2xl sm:rounded-3xl bg-indigo-600 p-4 sm:p-6 text-white shadow-md shadow-indigo-100">
             <div className="mb-4 sm:mb-6 flex items-center justify-between">
               <span className="text-2xl sm:text-3xl">🌙</span>
-              <span className="text-xs sm:text-sm font-black text-white/90">ليالي السهر</span>
+              <span className="text-xs sm:text-sm font-black text-white/90">رصيد بدل السهر</span>
             </div>
-            <div className="text-3xl sm:text-5xl font-black">{stats.totalSaharEarned}</div>
-            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-indigo-100">ليلة سهر معتمدة</div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.totalSaharBalance}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-indigo-100">يوم متاح ({stats.totalSaharEarned} ليلة معتمدة)</div>
           </div>
 
           <div className="rounded-2xl sm:rounded-3xl bg-slate-100 p-4 sm:p-6 text-slate-700 shadow-inner">

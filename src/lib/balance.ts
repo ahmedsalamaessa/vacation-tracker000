@@ -98,9 +98,9 @@ export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacat
  * 🎯 حساب رصيد الموظف بالنسخة الأصلية المعتمدة
  */
 export function calculateEmployeeBalance(attendance: AttendanceRecord[], vacations: Vacation[]) {
-  // 1️⃣ إجمالي أيام الحضور
+  // 1️⃣ إجمالي أيام الحضور العادية (حاضر + عارضة حضور) — السهر يذهب حصراً وبشكل مستقل إلى رصيد بدل السهر
   const totalPresent = attendance.filter(r => 
-    ['حاضر', 'سهر', 'عارضة حضور'].includes(r.status)
+    ['حاضر', 'عارضة حضور'].includes(r.status)
   ).length;
   
   // 2️⃣ إجمالي أيام العمل المستهلكة من work_days المخزنة

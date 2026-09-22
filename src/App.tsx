@@ -689,7 +689,7 @@ export default function App() {
       )}
       <main className="p-2 sm:p-4 md:p-5 w-full max-w-full overflow-x-hidden">
         {activeTab === 'dashboard' && hasAnyPerm && user.role !== 'employee' && (
-          <DashboardTab user={user} onNavigate={t => setTab(t as TabKey)} />
+          <DashboardTab user={user} onNavigate={t => setTab(t as TabKey)} refreshKey={refreshKey} />
         )}
         {activeTab === 'notifications' && <NotificationsTab user={user} />}
         {activeTab === 'checkin' && (

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getEmployees, getAttendance, getVacations, getAuditLogs } from '../lib/db';
-import { calculateEmployeeBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
-import { getSettings } from '../lib/db';
+import { getEmployees, getAttendance, getVacations, getAuditLogs, getOvertimeRequests, getSettings } from '../lib/db';
+import { calculateEmployeeBalance, getCasualBalance, getSaharBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import type { Employee, AuditLog } from '../lib/types';
 
 type DashboardTabKey =
@@ -22,6 +21,8 @@ interface DashboardStats {
   zeroBalance: number;
   positiveBalance: number;
   casualOut: number;
+  totalSaharEarned: number;
+  totalSaharBalance: number;
   totalVacationBalance: number;
   totalPresentDays: number;
   totalEarnedVacations: number;
@@ -54,9 +55,10 @@ function todayIso() {
 interface DashboardTabProps {
   user: Employee;
   onNavigate: (tab: DashboardTabKey) => void;
+  refreshKey?: number;
 }
 
-export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
+export default function DashboardTab({ user, onNavigate, refreshKey }: DashboardTabProps) {
   const [stats, setStats] = useState<DashboardStats>({
     emps: 0,
     presentToday: 0,
@@ -65,6 +67,8 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
     zeroBalance: 0,
     positiveBalance: 0,
     casualOut: 0,
+    totalSaharEarned: 0,
+    totalSaharBalance: 0,
     totalVacationBalance: 0,
     totalPresentDays: 0,
     totalEarnedVacations: 0,
@@ -75,15 +79,16 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 5000);
+    const timer = setInterval(loadData, 3000);
     return () => clearInterval(timer);
-  }, []);
+  }, [refreshKey]);
 
   function loadData() {
     const employees = getEmployees().filter(e => e.active);
     const attendance = getAttendance();
     const vacations = getVacations();
     const auditLogs = getAuditLogs();
+    const overtimeRequests = getOvertimeRequests();
 
     const today = todayIso();
     const todayAttendance = attendance.filter(a => a.date === today);
@@ -91,22 +96,29 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
       ['حاضر', 'سهر', 'عارضة حضور'].includes(a.status)
     ).length;
 
-    const pendingVacs = vacations.filter(v => v.status === 'بانتظار الموافقة').length;
+    const pendingVacsCount = vacations.filter(v => v.status === 'بانتظار الموافقة').length;
+    const pendingOtsCount = overtimeRequests.filter(o => o.status === 'pending').length;
+    const totalPendingCount = pendingVacsCount + pendingOtsCount;
 
     // Calculate balances
     let negativeBalance = 0;
     let zeroBalance = 0;
     let positiveBalance = 0;
     let casualOut = 0;
+    let totalSaharEarned = attendance.filter(a => a.status === 'سهر').length;
+    let totalSaharBalance = 0;
     
     for (const emp of employees) {
       const empAttendance = attendance.filter(a => a.employeeId === emp.id);
       const empVacations = vacations.filter(v => v.employeeId === emp.id);
 
       // 🎯 توحيد المعادلة: نفس حساب تبويب "رصيد الإجازات" بالظبط
-      // (كانت اللوحة بتستخدم معادلة مختلفة بتطلع ناس سالب وهي مش مخصومة)
       const balanceData = calculateEmployeeBalance(empAttendance, empVacations);
       const vacationBalance = balanceData.netBalance;
+
+      // 🌙 حساب رصيد السهر
+      const saharBal = getSaharBalance(empAttendance, empVacations);
+      totalSaharBalance += saharBal;
 
       // ⚡ رصيد العارضة المستقل
       const casual = getCasualBalance(
@@ -123,11 +135,13 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
     setStats({
       emps: employees.length,
       presentToday,
-      pendingVacs,
+      pendingVacs: totalPendingCount,
       negativeBalance,
       zeroBalance,
       positiveBalance,
       casualOut,
+      totalSaharEarned,
+      totalSaharBalance,
       totalVacationBalance: 0,
       totalPresentDays: 0,
       totalEarnedVacations: 0,
@@ -136,11 +150,19 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
 
     // Build notifications
     const notifs: NotificationItem[] = [];
-    if (pendingVacs > 0) {
+    if (pendingVacsCount > 0) {
       notifs.push({
         type: 'pending_vacations',
         title: 'طلبات إجازة جديدة',
-        body: `${pendingVacs} طلب في انتظار موافقة المدير`,
+        body: `${pendingVacsCount} طلب إجازة في انتظار موافقة المدير`,
+        severity: 'warn',
+      });
+    }
+    if (pendingOtsCount > 0) {
+      notifs.push({
+        type: 'pending_overtime',
+        title: 'طلبات سهر إضافي جديدة',
+        body: `${pendingOtsCount} طلب سهر إضافي بانتظار الاعتماد`,
         severity: 'warn',
       });
     }
@@ -193,49 +215,59 @@ export default function DashboardTab({ user, onNavigate }: DashboardTabProps) {
           </button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-5">
-          <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-lg shadow-slate-200">
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-3xl">👥</span>
-              <span className="text-sm font-black text-white/90">إجمالي الموظفين</span>
+        <div className="grid gap-3.5 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-2xl sm:rounded-3xl bg-slate-900 p-4 sm:p-6 text-white shadow-lg shadow-slate-200">
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">👥</span>
+              <span className="text-xs sm:text-sm font-black text-white/90">إجمالي الموظفين</span>
             </div>
-            <div className="text-5xl font-black">{stats.emps}</div>
-            <div className="mt-2 text-sm font-bold text-white/70">مسجّل في النظام</div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.emps}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-white/70">مسجّل في النظام</div>
           </div>
 
-          <div className="rounded-3xl bg-emerald-600 p-6 text-white shadow-md shadow-emerald-100">
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-3xl">✅</span>
-              <span className="text-sm font-black text-white/90">حضور اليوم</span>
+          <div className="rounded-2xl sm:rounded-3xl bg-emerald-600 p-4 sm:p-6 text-white shadow-md shadow-emerald-100">
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">✅</span>
+              <span className="text-xs sm:text-sm font-black text-white/90">حضور اليوم</span>
             </div>
-            <div className="text-5xl font-black">{stats.presentToday}</div>
-            <div className="mt-2 text-sm font-bold text-white/80">من أصل {stats.emps}</div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.presentToday}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-white/80">من أصل {stats.emps}</div>
           </div>
 
-          <div className="rounded-3xl bg-slate-100 p-6 text-slate-700 shadow-inner">
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-3xl">⏳</span>
-              <span className="text-sm font-black">طلبات معلقة</span>
+          <div className="rounded-2xl sm:rounded-3xl bg-indigo-600 p-4 sm:p-6 text-white shadow-md shadow-indigo-100">
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">🌙</span>
+              <span className="text-xs sm:text-sm font-black text-white/90">ليالي السهر</span>
             </div>
-            <div className="text-5xl font-black text-slate-800">{stats.pendingVacs}</div>
-            <div className="mt-2 text-sm font-bold text-slate-500">بانتظار الموافقة</div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.totalSaharEarned}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-indigo-100">ليلة سهر معتمدة</div>
           </div>
 
-          <div className="rounded-3xl bg-red-50 p-6 text-red-800 shadow-sm ring-1 ring-red-100">
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-3xl">⚠️</span>
-              <span className="text-sm font-black">عجز رصيد</span>
+          <div className="rounded-2xl sm:rounded-3xl bg-slate-100 p-4 sm:p-6 text-slate-700 shadow-inner">
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">⏳</span>
+              <span className="text-xs sm:text-sm font-black">طلبات معلقة</span>
             </div>
-            <div className="text-5xl font-black">{stats.negativeBalance}</div>
-            <div className="mt-2 text-sm font-bold text-red-700">موظف لديه رصيد سالب</div>
+            <div className="text-3xl sm:text-5xl font-black text-slate-800">{stats.pendingVacs}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-slate-500">إجازات وسهر</div>
           </div>
-          <div className={`rounded-3xl p-6 shadow-sm ring-1 ${stats.casualOut > 0 ? 'bg-orange-50 ring-orange-100 text-orange-800 animate-pulse' : 'bg-slate-50 ring-slate-100 text-slate-700'}`}>
-            <div className="mb-8 flex items-center justify-between">
-              <span className="text-3xl">⚡</span>
-              <span className="text-sm font-black">العارضة المستنفدة</span>
+
+          <div className="rounded-2xl sm:rounded-3xl bg-red-50 p-4 sm:p-6 text-red-800 shadow-sm ring-1 ring-red-100">
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">⚠️</span>
+              <span className="text-xs sm:text-sm font-black">عجز رصيد</span>
             </div>
-            <div className="text-5xl font-black">{stats.casualOut}</div>
-            <div className="mt-2 text-sm font-bold text-orange-700">موظف خلص رصيد عارضته</div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.negativeBalance}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-red-700">موظف لديه رصيد سالب</div>
+          </div>
+
+          <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm ring-1 ${stats.casualOut > 0 ? 'bg-orange-50 ring-orange-100 text-orange-800 animate-pulse' : 'bg-slate-50 ring-slate-100 text-slate-700'}`}>
+            <div className="mb-4 sm:mb-6 flex items-center justify-between">
+              <span className="text-2xl sm:text-3xl">⚡</span>
+              <span className="text-xs sm:text-sm font-black">العارضة المستنفدة</span>
+            </div>
+            <div className="text-3xl sm:text-5xl font-black">{stats.casualOut}</div>
+            <div className="mt-1 sm:mt-2 text-[11px] sm:text-xs font-bold text-orange-700">موظف خلص رصيد عارضته</div>
           </div>
         </div>
 

@@ -65,7 +65,7 @@ export default function EmployeeProfileTab({ employeeId, onBack }: { employeeId:
   const balanceData = calculateEmployeeBalance(att, vac);
 
   // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
-  const saharBal = getSaharBalance(att, vac);
+  const saharBal = getSaharBalance(att, vac, employeeId);
 
   // ⚡ رصيد العارضة: سنوي مستقل (21-12 → 20-12)
   const casualQuota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;

@@ -73,7 +73,7 @@ export default function MyAccountTab({ user }: { user: Employee }) {
     const bd = calculateEmployeeBalance(att, vacs);
 
     // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
-    const saharBal = getSaharBalance(att, vacs);
+    const saharBal = getSaharBalance(att, vacs, user.id);
 
     // ⚡ رصيد العارضة: 6 أيام سنويًا (21-12 → 20-12) — رصيد مستقل
     const quota = Number(getSettings().casual_annual_quota) || DEFAULT_CASUAL_QUOTA;

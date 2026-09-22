@@ -65,7 +65,7 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
       const empAtt = attendance.filter(a => a.employeeId === emp.id);
       const empVac = vacations.filter(v => v.employeeId === emp.id);
       const bd = calculateEmployeeBalance(empAtt, empVac);
-      const saharBal = getSaharBalance(empAtt, empVac);
+      const saharBal = getSaharBalance(empAtt, empVac, emp.id);
       const casual = getCasualBalance(empAtt, casualQuota);
       const locNames = (emp.locationIds || [])
         .map(id => locations.find(l => l.id === id)?.name)
@@ -347,7 +347,7 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
             const empVac = vacations.filter(v => v.employeeId === emp.id);
             const balanceData = calculateEmployeeBalance(empAtt, empVac);
             // 🌙 بدل السهرة: رصيد منفصل لوحدة (لا يُضاف لرصيد الإجازات)
-            const saharBal = getSaharBalance(empAtt, empVac);
+            const saharBal = getSaharBalance(empAtt, empVac, emp.id);
             // ⚡ رصيد العارضة: سنوي مستقل (21-12 → 20-12)
             const casual = getCasualBalance(empAtt, casualQuota);
             const finalBalance = balanceData.netBalance;

@@ -1,5 +1,6 @@
 import type { AttendanceRecord, Vacation } from './types';
 import { computeGraduatedVacation } from './vacation';
+import { getOvertimeRequests } from './db';
 
 const APPROVED = new Set(['مقبولة', 'مجدولة', 'جارية', 'منتهية']);
 
@@ -80,16 +81,38 @@ export function sumApprovedByTypes(vacations: Vacation[], types: string[]) {
  * القاعدة: كل ليلة "سهر" تكتسب يوم بدل، وكل يوم "بدل سهرة" يخصم من هذا الرصيد فقط
  * (لا يُضاف إلى رصيد الإجازات ولا يخصم منه)
  */
-export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacation[]): number {
-  const earned = attendance.filter(r => r.status === 'سهر').length;
+export function getSaharBalance(attendance: AttendanceRecord[], vacations: Vacation[], employeeId?: number): number {
+  const saharDates = new Set<string>();
+
+  // 1) أيام السهر المسجلة في شيت الحضور
+  for (const r of attendance) {
+    if (r.status === 'سهر' && r.date) {
+      saharDates.add(String(r.date).slice(0, 10));
+    }
+  }
+
+  // 2) طلبات السهر المعتمدة في النظام
+  try {
+    const ots = getOvertimeRequests();
+    const targetEmpId = employeeId || (attendance[0] ? attendance[0].employeeId : undefined);
+    for (const ot of ots) {
+      if (ot.status === 'approved' && ot.date) {
+        if (!targetEmpId || ot.employeeId === targetEmpId) {
+          saharDates.add(String(ot.date).slice(0, 10));
+        }
+      }
+    }
+  } catch {}
+
+  const earned = saharDates.size;
 
   // أيام بدل سهرة يدوية من الشيت (غير المرتبطة بإجازة معتمدة)
   const manualSpent = attendance.filter(r =>
-    r.status === 'بدل سهرة' && !isAutoVacationAttendance(r)
+    (r.status === 'بدل سهرة' || r.status === 'بدل سهر') && !isAutoVacationAttendance(r)
   ).length;
 
   // أيام بدل سهرة من الإجازات المعتمدة (تُحسب مرة واحدة فقط)
-  const vacationSpent = sumApprovedByTypes(vacations, ['سهرة']);
+  const vacationSpent = sumApprovedByTypes(vacations, ['سهرة', 'بدل سهرة', 'بدل سهر']);
 
   return Math.max(0, earned - manualSpent - vacationSpent);
 }

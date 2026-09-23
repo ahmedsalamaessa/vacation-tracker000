@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { getEmployees, getAttendance, getVacations, getLocations, getSettings } from '../lib/db';
+import { useState, useMemo, useEffect } from 'react';
+import { getEmployees, getAttendance, getVacations, getLocations, getSettings, refreshFromRemote, getOvertimeRequests } from '../lib/db';
 import { calculateEmployeeBalance, getSaharBalance, getCasualBalance, DEFAULT_CASUAL_QUOTA } from '../lib/balance';
 import { printAllBalancesTable, printIndividualBalances } from '../lib/printBalance';
 import { exportToExcelHTML } from '../lib/export';
@@ -33,6 +33,10 @@ export default function TrackerTab({ user, refreshKey }: { user: Employee; refre
   const [selectedForPrint, setSelectedForPrint] = useState<number[]>([]);
 
   const locations = useMemo(() => getLocations(), []);
+
+  useEffect(() => {
+    refreshFromRemote();
+  }, []);
 
   const jobs = useMemo(() => {
     const allEmployees = getEmployees().filter(e => e.active);

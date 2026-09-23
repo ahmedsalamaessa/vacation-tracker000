@@ -1271,9 +1271,10 @@ export default async function handler(req: Request) {
       // ✅ الموافقة = تسجيل حضور بحالة "سهر" في صفحة البصمة
       if (approve) {
         const marker = `OVERTIME_REQ:${id}`;
+        const dateStr = toDateOnly(reqRow.date);
         await sql`
           INSERT INTO attendance (employee_id, date, status, notes)
-          VALUES (${reqRow.employee_id}, ${reqRow.date}, 'سهر', ${marker})
+          VALUES (${reqRow.employee_id}, ${dateStr}::date, 'سهر', ${marker})
           ON CONFLICT (employee_id, date) DO UPDATE SET
             status = 'سهر',
             notes = CASE WHEN attendance.notes IS NULL OR attendance.notes = '' THEN ${marker} ELSE attendance.notes END

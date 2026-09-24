@@ -90,9 +90,9 @@ interface Props {
 }
 
 export default function MachineryTab({ user }: Props) {
+  const isOwnerUser = Boolean((user as any).isOwner || user.role === 'admin');
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
-  const isOwnerUser = Boolean((user as any).isOwner);
-  const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
+  const canAddMach = isOwnerUser || user.role === 'manager';
   const canEditLockedDays = isOwnerUser || user.role === 'manager' || Boolean((user as any).canEditPastMachinery);
   
   const today = formatYMD(new Date());
@@ -526,23 +526,27 @@ export default function MachineryTab({ user }: Props) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setShowWeeklyModal(true)}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-xs md:text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition-all hover:scale-105 hover:from-emerald-600 hover:to-teal-700 active:scale-95 cursor-pointer"
-          >
-            <span>📊</span>
-            <span>التقرير الأسبوعي للأكسيل والطباعة (السبت - الجمعة)</span>
-            <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] font-black tracking-wide">جديد</span>
-          </button>
+          {isOwnerUser && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowWeeklyModal(true)}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-xs md:text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition-all hover:scale-105 hover:from-emerald-600 hover:to-teal-700 active:scale-95 cursor-pointer"
+              >
+                <span>📊</span>
+                <span>التقرير الأسبوعي للأكسيل والطباعة (السبت - الجمعة)</span>
+                <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] font-black tracking-wide">جديد</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={exportMonth}
-            className="rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-black text-white hover:bg-white/20 transition-all"
-          >
-            📤 كشف الشهر Excel
-          </button>
+              <button
+                type="button"
+                onClick={exportMonth}
+                className="rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-black text-white hover:bg-white/20 transition-all"
+              >
+                📤 كشف الشهر Excel
+              </button>
+            </>
+          )}
 
           <button
             type="button"
@@ -668,9 +672,13 @@ export default function MachineryTab({ user }: Props) {
             {dayDate !== today && (
               <button type="button" onClick={() => setDayDate(today)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">النهارده</button>
             )}
-            <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow-sm hover:bg-emerald-700">📊 التقرير الأسبوعي</button>
+            {isOwnerUser && (
+              <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow-sm hover:bg-emerald-700">📊 التقرير الأسبوعي</button>
+            )}
             <button type="button" onClick={manualRefresh} title="تحديث فوري من السيرفر" className="rounded-xl border-2 border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">🔄 تحديث</button>
-            <button type="button" onClick={exportDay} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel يوم</button>
+            {isOwnerUser && (
+              <button type="button" onClick={exportDay} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel يوم</button>
+            )}
           </div>
         </div>
 
@@ -861,9 +869,13 @@ export default function MachineryTab({ user }: Props) {
             <div className="flex flex-wrap items-center gap-2">
               <input type="month" value={month} onChange={e => setMonth(e.target.value)}
                 className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
-              <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl border-2 border-teal-500 bg-white px-3 py-1.5 text-xs font-black text-teal-700 hover:bg-teal-50">📊 التقرير الأسبوعي</button>
-              <button type="button" onClick={exportMonth} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 كشف الشهر Excel</button>
-              <button type="button" onClick={() => setPrintGrid(true)} className="rounded-xl border-2 border-blue-500 bg-white px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-50">🖨️ طباعة الشيت (رأسي)</button>
+              {isOwnerUser && (
+                <>
+                  <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl border-2 border-teal-500 bg-white px-3 py-1.5 text-xs font-black text-teal-700 hover:bg-teal-50">📊 التقرير الأسبوعي</button>
+                  <button type="button" onClick={exportMonth} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 كشف الشهر Excel</button>
+                  <button type="button" onClick={() => setPrintGrid(true)} className="rounded-xl border-2 border-blue-500 bg-white px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-50">🖨️ طباعة الشيت (رأسي)</button>
+                </>
+              )}
             </div>
           </div>
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
@@ -967,9 +979,11 @@ export default function MachineryTab({ user }: Props) {
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">👤 كشف الملاك — شهر {month}</h3>
-            <div className="flex gap-2">
-              <button type="button" onClick={exportOwners} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
-            </div>
+            {isOwnerUser && (
+              <div className="flex gap-2">
+                <button type="button" onClick={exportOwners} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel</button>
+              </div>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-right text-sm">
@@ -994,7 +1008,9 @@ export default function MachineryTab({ user }: Props) {
                     <td className="p-3 font-bold">{o.total ? `${o.total} س` : '—'}</td>
                     <td className="p-3 font-bold text-amber-800">{o.totalTrips ? `${o.totalTrips} نقلة` : '—'}</td>
                     <td className="p-3">
-                      <button type="button" onClick={() => setPrintOwner(o.owner)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">🖨️ كشف للتوقيع</button>
+                      {isOwnerUser && (
+                        <button type="button" onClick={() => setPrintOwner(o.owner)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">🖨️ كشف للتوقيع</button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1133,7 +1149,7 @@ export default function MachineryTab({ user }: Props) {
       </div>
 
       {/* ===== 📅 المودال التفاعلي للتقرير الأسبوعي الشامل (من السبت إلى الجمعة) ===== */}
-      {showWeeklyModal && (
+      {showWeeklyModal && isOwnerUser && (
         <div className="fixed inset-0 z-[450] overflow-y-auto bg-slate-950/80 p-2 md:p-6 backdrop-blur-xs print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setShowWeeklyModal(false)}>
           <div className="print-sheet mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:max-w-none print:w-full" onClick={e => e.stopPropagation()} dir="rtl">
             
@@ -1641,7 +1657,7 @@ export default function MachineryTab({ user }: Props) {
       )}
 
       {/* ===== 🖨️ طباعة الشيت الشهري الرأسي ===== */}
-      {printGrid && (
+      {printGrid && isOwnerUser && (
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4 print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setPrintGrid(false)}>
           <div className="mx-auto max-w-4xl print:max-w-none print:m-0" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">
@@ -1733,7 +1749,7 @@ export default function MachineryTab({ user }: Props) {
       )}
 
       {/* ===== 🖨️ كشف مالك للتوقيع ===== */}
-      {printOwner && (
+      {printOwner && isOwnerUser && (
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4 print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setPrintOwner(null)}>
           <div className="mx-auto max-w-2xl print:max-w-none print:m-0" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">

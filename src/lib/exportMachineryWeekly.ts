@@ -1,44 +1,75 @@
 import type { Employee, Machinery, MachineryHours } from './types';
 
-const ARABIC_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+export const ARABIC_DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+export function formatYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function parseYMD(str: string): Date {
+  const clean = String(str || '').slice(0, 10);
+  const parts = clean.split('-').map(Number);
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0); // ساعة 12 ظهراً لتجنب أي فرق توقيت أو تغيير توقيت صيفي
+  }
+  const fallback = new Date();
+  fallback.setHours(12, 0, 0, 0);
+  return fallback;
+}
 
 export function getArabicDayName(dateStr: string): string {
   try {
-    const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00');
+    const d = parseYMD(dateStr);
     return ARABIC_DAYS[d.getDay()] || '';
   } catch {
     return '';
   }
 }
 
+/**
+ * يرجع تاريخ يوم السبت الخاص بالأسبوع الذي يحتوي على هذا التاريخ (الأسبوع من السبت إلى الجمعة)
+ */
 export function getSaturdayOfWeek(dStr: string): string {
   try {
-    const d = new Date(String(dStr).slice(0, 10) + 'T00:00:00');
-    const day = d.getDay(); // 0: Sun, ..., 6: Sat
-    const diff = (day + 1) % 7;
+    const d = parseYMD(dStr);
+    const day = d.getDay(); // 0: Sun, 1: Mon, ..., 6: Sat
+    const diff = (day + 1) % 7; // Sat -> 0, Sun -> 1, Mon -> 2, ..., Fri -> 6
     d.setDate(d.getDate() - diff);
-    return d.toISOString().slice(0, 10);
+    return formatYMD(d);
   } catch {
-    return dStr;
+    return String(dStr).slice(0, 10);
   }
 }
 
+/**
+ * يرجع مصفوفة 7 أيام تبدأ بالسبت وتنتهي بالجمعة: [السبت, الأحد, الاثنين, الثلاثاء, الأربعاء, الخميس, الجمعة]
+ */
 export function getWeekDays(startDate: string, count = 7): string[] {
+  const satStart = getSaturdayOfWeek(startDate);
   const days: string[] = [];
-  const start = new Date(String(startDate).slice(0, 10) + 'T00:00:00');
+  const start = parseYMD(satStart);
   for (let i = 0; i < count; i++) {
     const cur = new Date(start);
     cur.setDate(start.getDate() + i);
-    days.push(cur.toISOString().slice(0, 10));
+    days.push(formatYMD(cur));
   }
   return days;
 }
 
+export function shiftDateDays(dStr: string, delta: number): string {
+  const d = parseYMD(dStr);
+  d.setDate(d.getDate() + delta);
+  return formatYMD(d);
+}
+
 /**
- * 📊 تصدير تقرير تشغيل المعدات الأسبوعي الشامل بصيغة Excel منسقة بالكامل بالألوان
+ * 📊 تصدير تقرير تشغيل المعدات الأسبوعي الشامل بصيغة Excel منسقة بالكامل بالألوان (من السبت إلى الجمعة)
  */
 export function exportWeeklyMachineryExcel(
-  weekDays: string[],
+  weekDaysInput: string[],
   machineryList: Machinery[],
   allHours: MachineryHours[],
   title = 'تقرير تشغيل وتتبع المعدات الأسبوعي',
@@ -50,8 +81,11 @@ export function exportWeeklyMachineryExcel(
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-  const startDate = weekDays[0] || '';
-  const endDate = weekDays[weekDays.length - 1] || '';
+  // التأكد من أن الأيام تبدأ من السبت إلى الجمعة دائماً
+  const rawStart = weekDaysInput && weekDaysInput.length > 0 ? weekDaysInput[0] : formatYMD(new Date());
+  const weekDays = getWeekDays(rawStart, 7);
+  const startDate = weekDays[0]; // السبت
+  const endDate = weekDays[6]; // الجمعة
 
   // خريطة الموظفين بالـ ID
   const empMap = new Map<number, string>();
@@ -69,7 +103,7 @@ export function exportWeeklyMachineryExcel(
     }
   }
 
-  // حساب إجماليات كل يوم
+  // حساب إجماليات كل يوم من السبت إلى الجمعة
   const dayTotals = weekDays.map((d) => {
     let hours = 0;
     let trips = 0;
@@ -96,6 +130,7 @@ export function exportWeeklyMachineryExcel(
 
   let subHeaderCells = '';
 
+  // التكرار بالترتيب الصارم: السبت ← الأحد ← الاثنين ← الثلاثاء ← الأربعاء ← الخميس ← الجمعة
   weekDays.forEach((d) => {
     const dayName = getArabicDayName(d);
     topHeaderCells += `
@@ -306,12 +341,12 @@ export function exportWeeklyMachineryExcel(
 
 <div class="title-box">
   <h2 class="title">🚜 ${esc(title)}</h2>
-  <p class="subtitle">الفترة من: <b>${startDate} (${getArabicDayName(startDate)})</b> إلى <b>${endDate} (${getArabicDayName(endDate)})</b></p>
+  <p class="subtitle">الفترة من: <b>السبت ${startDate}</b> إلى <b>الجمعة ${endDate}</b> (أسبوع عمل كامل 7 أيام)</p>
   <p class="subtitle">إجمالي المعدات: <b>${machineryList.length}</b> • إجمالي الساعات: <b style="color:#1e40af;">${totalWeekHours} ساعة</b> • إجمالي النقلات: <b style="color:#b45309;">${totalWeekTrips} نقلة</b></p>
 </div>
 
-<!-- 1️⃣ شيت التقرير الأسبوعي المجمع -->
-<h3 style="color:#0f172a;margin-bottom:8px;font-size:15px;font-weight:bold;">📋 شيت تشغيل المعدات الأسبوعي الشامل (مصفوفة الأيام والساعات والنقلات والتقارير)</h3>
+<!-- 1️⃣ شيت التقرير الأسبوعي المجمع: من السبت إلى الجمعة -->
+<h3 style="color:#0f172a;margin-bottom:8px;font-size:15px;font-weight:bold;">📋 شيت تشغيل المعدات الأسبوعي الشامل (من السبت إلى الجمعة)</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
     <tr>${topHeaderCells}</tr>
@@ -323,7 +358,7 @@ export function exportWeeklyMachineryExcel(
   </tbody>
 </table>
 
-<!-- 2️⃣ كشف الحركات اليومية المفصلة -->
+<!-- 2️⃣ كشف الحركات والتقارير اليومية المفصلة -->
 <h3 style="color:#0f172a;margin-top:30px;margin-bottom:8px;font-size:15px;font-weight:bold;">📝 سجل الحركات والتقارير اليومية بالتفصيل (${logCounter} حركة)</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
@@ -348,7 +383,7 @@ export function exportWeeklyMachineryExcel(
 </body>
 </html>`;
 
-  const filename = `تقرير_المعدات_الأسبوعي_${startDate}_إلى_${endDate}`;
+  const filename = `تقرير_المعدات_الأسبوعي_من_السبت_${startDate}_إلى_الجمعة_${endDate}`;
   const blob = new Blob(['\uFEFF' + fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -20,6 +20,9 @@ import {
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
+  formatYMD,
+  parseYMD,
+  shiftDateDays,
 } from '../lib/exportMachineryWeekly';
 
 const KINDS = ['لودر', 'عربية قلاب', 'عربية مية', 'حفار', 'أخرى'];
@@ -76,13 +79,6 @@ function MName({ m }: { m: Machinery }) {
   );
 }
 
-/** يحرّك التاريخ كام يوم */
-function shiftDate(d: string, delta: number): string {
-  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
-  dt.setDate(dt.getDate() + delta);
-  return dt.toISOString().slice(0, 10);
-}
-
 interface Props {
   user: Employee;
 }
@@ -92,7 +88,8 @@ export default function MachineryTab({ user }: Props) {
   const isOwnerUser = Boolean((user as any).isOwner);
   const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
   const canEditLockedDays = isOwnerUser || user.role === 'manager' || Boolean((user as any).canEditPastMachinery);
-  const today = new Date().toISOString().slice(0, 10);
+  
+  const today = formatYMD(new Date());
   const monthNow = today.slice(0, 7);
 
   const [machinery, setMachinery] = useState<Machinery[]>([]);
@@ -123,14 +120,9 @@ export default function MachineryTab({ user }: Props) {
   const currentSaturday = useMemo(() => getSaturdayOfWeek(today), [today]);
   const recentWeeksList = useMemo(() => {
     const list: { sat: string; fri: string; label: string }[] = [];
-    const base = new Date(currentSaturday + 'T00:00:00');
-    for (let i = 0; i < 20; i++) {
-      const satD = new Date(base);
-      satD.setDate(base.getDate() - i * 7);
-      const satStr = satD.toISOString().slice(0, 10);
-      const friD = new Date(satD);
-      friD.setDate(satD.getDate() + 6);
-      const friStr = friD.toISOString().slice(0, 10);
+    for (let i = 0; i < 24; i++) {
+      const satStr = shiftDateDays(currentSaturday, -i * 7);
+      const friStr = shiftDateDays(satStr, 6);
       const isCurrent = i === 0;
       list.push({
         sat: satStr,
@@ -433,7 +425,7 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 
-  // 📅 بيانات التقرير الأسبوعي: أسبوع كامل يبدأ دائماً من السبت وينتهي الجمعة
+  // 📅 بيانات التقرير الأسبوعي: أسبوع كامل يبدأ دائماً من السبت وينتهي بالجمعة
   const satWeekStart = useMemo(() => getSaturdayOfWeek(weekStartDate), [weekStartDate]);
   const weekDays = useMemo(() => getWeekDays(satWeekStart, 7), [satWeekStart]);
   const weekEndDate = weekDays[6] || satWeekStart;
@@ -639,11 +631,11 @@ export default function MachineryTab({ user }: Props) {
             <p className="mt-1 text-xs font-bold text-slate-500">اكتب ساعات شغل كل معدة وسيب الفاضي لو مش شغالة — وحفظ مرة واحدة · المعدة المسجلة بتفضل موجودة: أي يوم شغل جديد اختار اليوم واكتب ساعاته — وساعات باقي الأيام محفوظة زي ما هي</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => setDayDate(shiftDate(dayDate, -1))} title="اليوم اللي قبله"
+            <button type="button" onClick={() => setDayDate(shiftDateDays(dayDate, -1))} title="اليوم اللي قبله"
               className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">◀</button>
             <input type="date" value={dayDate} onChange={e => setDayDate(e.target.value)}
               className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
-            <button type="button" onClick={() => setDayDate(shiftDate(dayDate, 1))} title="اليوم اللي بعده"
+            <button type="button" onClick={() => setDayDate(shiftDateDays(dayDate, 1))} title="اليوم اللي بعده"
               className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-100">▶</button>
             {dayDate !== today && (
               <button type="button" onClick={() => setDayDate(today)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">النهارده</button>
@@ -1136,7 +1128,7 @@ export default function MachineryTab({ user }: Props) {
                 <div>
                   <h3 className="text-lg md:text-xl font-black text-white">تقرير تشغيل المعدات الأسبوعي الشامل</h3>
                   <p className="text-xs font-bold text-slate-300 mt-0.5">
-                    الأسبوع: من <b>السبت {weekDays[0]}</b> إلى <b>الجمعة {weekEndDate}</b> (أسبوع كامل 7 أيام)
+                    الأسبوع: من <b>السبت {weekDays[0]}</b> إلى <b>الجمعة {weekEndDate}</b> (أسبوع عمل كامل 7 أيام)
                   </p>
                 </div>
               </div>
@@ -1188,7 +1180,7 @@ export default function MachineryTab({ user }: Props) {
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setWeekStartDate(shiftDate(satWeekStart, -7))}
+                      onClick={() => setWeekStartDate(shiftDateDays(satWeekStart, -7))}
                       title="الأسبوع السابق (7 أيام للخلف)"
                       className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
                     >
@@ -1196,7 +1188,7 @@ export default function MachineryTab({ user }: Props) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setWeekStartDate(shiftDate(satWeekStart, 7))}
+                      onClick={() => setWeekStartDate(shiftDateDays(satWeekStart, 7))}
                       title="الأسبوع التالي (7 أيام للأمام)"
                       className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
                     >

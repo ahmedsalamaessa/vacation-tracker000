@@ -1603,22 +1603,6 @@ export default function MachineryTab({ user }: Props) {
                 </div>
               )}
 
-              {/* توقيعات الطباعة الرسمية أسفل الصفحة عند الطباعة */}
-              <div className="hidden print:grid grid-cols-3 gap-6 text-center text-xs font-black mt-8 pt-4 border-t-2 border-slate-900">
-                <div>
-                  <div className="text-slate-600">مسؤول الحركة والمعدات</div>
-                  <div className="mt-8 font-bold">..................................</div>
-                </div>
-                <div>
-                  <div className="text-slate-600">مهندس / مدير الموقع</div>
-                  <div className="mt-8 font-bold">..................................</div>
-                </div>
-                <div>
-                  <div className="text-slate-600">المالك / المقاول</div>
-                  <div className="mt-8 font-bold">..................................</div>
-                </div>
-              </div>
-
               {/* أزرار أسفل المودال على الشاشة */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 print:hidden">
                 <div className="text-xs font-bold text-slate-500">

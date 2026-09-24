@@ -579,21 +579,6 @@ export function printMachineryWeeklyReport(
     </div>
 
     ${bodyContent}
-
-    <div class="signatures-block">
-      <div class="sig-box">
-        <div class="sig-title">مسؤول الحركة والمعدات</div>
-        <div class="sig-dots">...........................................</div>
-      </div>
-      <div class="sig-box">
-        <div class="sig-title">مهندس / مدير الموقع</div>
-        <div class="sig-dots">...........................................</div>
-      </div>
-      <div class="sig-box">
-        <div class="sig-title">المالك / المقاول</div>
-        <div class="sig-dots">...........................................</div>
-      </div>
-    </div>
   </div>
 
   <script>

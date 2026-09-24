@@ -137,10 +137,12 @@
     border: none !important;
   }
 
-  /* عند وجود شيت طباعة، يتم إخفاء كل المحتوى الخلفي في الصفحة */
-  body:has(.print-sheet) #root > div > *:not(main),
-  body:has(.print-sheet) main > *:not(:has(.print-sheet)):not(.print-sheet) {
-    display: none !important;
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   .print-sheet {

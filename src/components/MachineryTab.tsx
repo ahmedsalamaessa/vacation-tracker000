@@ -504,15 +504,17 @@ export default function MachineryTab({ user }: Props) {
   }
 
   return (
-    <div className={`space-y-5 ${showWeeklyModal || printGrid || printOwner ? 'print:hidden' : ''}`}>
+    <div className="space-y-5">
       {msg && (
         <div className="fixed bottom-4 left-1/2 z-[500] -translate-x-1/2 rounded-2xl bg-slate-900 px-6 py-3 text-sm font-black text-white shadow-2xl">
           {msg}
         </div>
       )}
 
-      {/* ===== 🌟 شريط العمليات والتقرير الأسبوعي السريع ===== */}
-      <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
+      {/* محتوى الشاشة الرئيسي (يختفي عند الطباعة إذا كان هناك أي مودال طباعة مفتوح) */}
+      <div className={`space-y-5 ${showWeeklyModal || printGrid || printOwner ? 'print:hidden' : ''}`}>
+        {/* ===== 🌟 شريط العمليات والتقرير الأسبوعي السريع ===== */}
+        <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-2xl shadow-inner backdrop-blur-xs">
             🚜
@@ -1128,17 +1130,18 @@ export default function MachineryTab({ user }: Props) {
           )}
         </section>
       )}
+      </div>
 
       {/* ===== 📅 المودال التفاعلي للتقرير الأسبوعي الشامل (من السبت إلى الجمعة) ===== */}
       {showWeeklyModal && (
-        <div className="fixed inset-0 z-[450] overflow-y-auto bg-slate-950/80 p-2 md:p-6 backdrop-blur-xs" onClick={() => setShowWeeklyModal(false)}>
-          <div className="print-sheet mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()} dir="rtl">
+        <div className="fixed inset-0 z-[450] overflow-y-auto bg-slate-950/80 p-2 md:p-6 backdrop-blur-xs print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setShowWeeklyModal(false)}>
+          <div className="print-sheet mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:max-w-none print:w-full" onClick={e => e.stopPropagation()} dir="rtl">
             
             {/* ترويسة خاصة بالطباعة الرسمية الورقية و PDF */}
-            <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-center">
-              <div className="text-sm font-black text-slate-700">{deptName}</div>
-              <h2 className="text-xl font-black text-slate-900 mt-0.5">🚜 تقرير تشغيل وتتبع المعدات</h2>
-              <div className="mt-2 flex justify-between text-xs font-black text-slate-700 border-t border-slate-200 pt-1.5">
+            <div className="hidden print:block border-b-2 border-slate-900 pb-2 mb-3 text-center">
+              <div className="text-xs font-black text-slate-700">{deptName}</div>
+              <h2 className="text-base font-black text-slate-900 mt-0.5">🚜 تقرير تشغيل وتتبع المعدات</h2>
+              <div className="mt-1 flex justify-between text-[10px] font-black text-slate-700 border-t border-slate-300 pt-1">
                 <span>الفترة: من <b>{startDayName} ({weekStartDate})</b> إلى <b>{endDayName} ({weekEndDate})</b> [{weekDays.length} يوم]</span>
                 <span>إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours} س</b> | إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips} ن</b></span>
                 <span>تاريخ التقرير: {today}</span>

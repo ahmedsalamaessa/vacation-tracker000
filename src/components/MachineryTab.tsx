@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import type { Employee, Machinery } from '../lib/types';
+import React, { useEffect, useState, useMemo } from 'react';
+import type { Employee, Machinery, MachineryHours } from '../lib/types';
 import {
   getMachinery,
   getMachineryHours,
@@ -15,6 +15,12 @@ import {
   getSettings,
 } from '../lib/db';
 import { downloadCsv } from '../lib/exportCsv';
+import {
+  exportWeeklyMachineryExcel,
+  getArabicDayName,
+  getSaturdayOfWeek,
+  getWeekDays,
+} from '../lib/exportMachineryWeekly';
 
 const KINDS = ['لودر', 'عربية قلاب', 'عربية مية', 'حفار', 'أخرى'];
 
@@ -49,22 +55,24 @@ function isTruck(m: Machinery): boolean {
     k === 'عربية مية' ||
     k.includes('عربية') ||
     k.includes('قلاب') ||
-    k.includes('مية') ||
-    k.includes('تريلا') ||
-    k.includes('جامبو') ||
-    k.includes('سيارة') ||
     k.includes('نقل') ||
-    k.includes('فنطاس')
+    k.includes('تريلا') ||
+    k.includes('مياه') ||
+    k.includes('مية')
   );
 }
 
-/** الاسم في الشاشة: عريض (النوع + المقاس + السواق) وتحته المالك */
 function MName({ m }: { m: Machinery }) {
-  const bold = [m.kind, m.size, m.driver].filter(Boolean).join(' ');
   return (
-    <div>
-      <div className="font-black text-slate-900">{bold}</div>
-      <div className="text-[11px] font-bold text-slate-500">👤 {m.owner}</div>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1.5 font-black text-slate-900">
+        <span className="text-base">{m.kind === 'لودر' ? '🚜' : m.kind === 'حفار' ? '⛏️' : isTruck(m) ? '🚚' : '⚙️'}</span>
+        <span>{[m.kind, m.size].filter(Boolean).join(' ')}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+        <span>👤 {m.owner}</span>
+        {m.driver && <span className="text-blue-700">🚛 {m.driver}</span>}
+      </div>
     </div>
   );
 }
@@ -106,6 +114,14 @@ export default function MachineryTab({ user }: Props) {
   const [deptName, setDeptName] = useState('قسم المساحة');
   const [printOwner, setPrintOwner] = useState<string | null>(null);
   const [printGrid, setPrintGrid] = useState(false);
+
+  // 📅 التقرير الأسبوعي الشامل
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
+  const [weekStartDate, setWeekStartDate] = useState(() => getSaturdayOfWeek(today));
+  const [weeklyKindFilter, setWeeklyKindFilter] = useState('all');
+  const [weeklyOwnerFilter, setWeeklyOwnerFilter] = useState('all');
+  const [weeklySearch, setWeeklySearch] = useState('');
+  const [weeklyTab, setWeeklyTab] = useState<'matrix' | 'logs'>('matrix');
 
   function flash(text: string) {
     setMsg(text);
@@ -249,24 +265,42 @@ export default function MachineryTab({ user }: Props) {
         trips: parseFloat(draftTrips[m.id] || '') || 0,
         notes: (draftNotes[m.id] || '').trim(),
       }));
-      const filled = entries.filter(e => e.hours > 0 || e.trips > 0 || e.notes).length;
-      const r = await saveMachineryHours(dayDate, entries);
-      flash(`💾 اتحفظت على السيرفر بيانات ${r.saved > 0 ? r.saved : filled} معدة بتاريخ ${dayDate}`);
+      await saveMachineryHours(dayDate, entries);
+      flash(`💾 اتحفظت ساعات ونقلات يوم ${dayDate} على السيرفر`);
       load();
     } catch (err: any) {
-      flash('⛔ ماتحفظتش على السيرفر: ' + (err?.message || 'حصل خطأ'));
+      flash('⛔ ما اتحفظتش على السيرفر: ' + (err?.message || 'حصل خطأ'));
     }
+  }
+
+  function startEdit(m: Machinery) {
+    setForm({
+      id: m.id,
+      kind: KINDS.includes(m.kind) ? m.kind : 'أخرى',
+      custom: KINDS.includes(m.kind) ? '' : m.kind,
+      owner: m.owner,
+      size: m.size || '',
+      driver: m.driver || '',
+      notes: m.notes || '',
+    });
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 
   async function submitMachinery(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.owner.trim()) { flash('⚠️ اكتب اسم المالك (زي: زياد، سلومة)'); return; }
-    if (form.kind === 'أخرى' && !form.custom.trim()) { flash('⚠️ اكتب اسم المعدة (مثال: عربية مية، جرار)'); return; }
-    const kind = form.kind === 'أخرى' ? form.custom.trim() : form.kind;
+    const kind = (form.kind === 'أخرى' ? form.custom : form.kind).trim();
+    if (!kind) { flash('اكتب نوع المعدة'); return; }
+    if (!form.owner.trim()) { flash('اكتب اسم المالك'); return; }
+    setBusy(true);
     try {
-      setBusy(true);
       if (form.id) {
-        await updateMachinery(form.id, { kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null });
+        await updateMachinery(form.id, {
+          kind,
+          owner: form.owner.trim(),
+          size: form.size.trim(),
+          driver: form.driver.trim(),
+          notes: form.notes || null,
+        });
         flash('✏️ اتعدلت المعدة واتحفظت على السيرفر');
       } else {
         await addMachinery({ kind, owner: form.owner.trim(), size: form.size.trim(), driver: form.driver.trim(), notes: form.notes || null, active: true });
@@ -318,6 +352,13 @@ export default function MachineryTab({ user }: Props) {
     g.set(h.date, h.notes || '');
   }
   const notesOf = (mid: number, d: string) => notesGrid.get(mid)?.get(d) || '';
+
+  // 🔍 دوال عامة لأي تاريخ (بما فيها تقرير الأسبوع العابر للشهور)
+  const allHoursData = getMachineryHours();
+  const getEntryAny = (mid: number, d: string) => allHoursData.find(h => h.machineryId === mid && h.date === d);
+  const hoursAny = (mid: number, d: string) => getEntryAny(mid, d)?.hours || 0;
+  const tripsAny = (mid: number, d: string) => getEntryAny(mid, d)?.trips || 0;
+  const notesAny = (mid: number, d: string) => (getEntryAny(mid, d)?.notes || '').trim();
 
   /** التراكمي لكل معدة */
   function totalsFor(m: Machinery) {
@@ -382,6 +423,57 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 
+  // 📅 بيانات التقرير الأسبوعي
+  const weekDays = useMemo(() => getWeekDays(weekStartDate, 7), [weekStartDate]);
+  const weekEndDate = weekDays[6] || weekStartDate;
+
+  const weeklyMachineryList = useMemo(() => {
+    return histList.filter(m => {
+      const matchKind = weeklyKindFilter === 'all' || m.kind === weeklyKindFilter;
+      const matchOwner = weeklyOwnerFilter === 'all' || m.owner.trim() === weeklyOwnerFilter;
+      const q = weeklySearch.trim().toLowerCase();
+      const matchSearch =
+        !q ||
+        [m.kind, m.size, m.owner, m.driver].filter(Boolean).some(s => s!.toLowerCase().includes(q)) ||
+        weekDays.some(d => (notesAny(m.id, d) || '').toLowerCase().includes(q));
+      return matchKind && matchOwner && matchSearch;
+    });
+  }, [histList, weeklyKindFilter, weeklyOwnerFilter, weeklySearch, weekDays, allHoursData]);
+
+  const weeklyStats = useMemo(() => {
+    let totalHours = 0;
+    let totalTrips = 0;
+    let activeMachines = 0;
+    let totalLogs = 0;
+
+    weeklyMachineryList.forEach(m => {
+      let machActive = false;
+      weekDays.forEach(d => {
+        const h = hoursAny(m.id, d);
+        const t = tripsAny(m.id, d);
+        const n = notesAny(m.id, d);
+        totalHours += h;
+        totalTrips += t;
+        if (h > 0 || t > 0) machActive = true;
+        if (h > 0 || t > 0 || n) totalLogs++;
+      });
+      if (machActive) activeMachines++;
+    });
+
+    return { totalHours, totalTrips, activeMachines, totalLogs };
+  }, [weeklyMachineryList, weekDays, allHoursData]);
+
+  function exportWeeklyExcelAction() {
+    exportWeeklyMachineryExcel(
+      weekDays,
+      weeklyMachineryList,
+      getMachineryHours(),
+      `تقرير تشغيل وتتبع المعدات الأسبوعي (${deptName})`,
+      getEmployees()
+    );
+    flash('📥 تم تصدير تقرير المعدات الأسبوعي بصيغة Excel بنجاح!');
+  }
+
   return (
     <div className="space-y-5">
       {msg && (
@@ -389,6 +481,48 @@ export default function MachineryTab({ user }: Props) {
           {msg}
         </div>
       )}
+
+      {/* ===== 🌟 شريط العمليات والتقرير الأسبوعي السريع ===== */}
+      <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-2xl shadow-inner backdrop-blur-xs">
+            🚜
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-white">تتبع وتشغيل المعدات الثقيلة</h2>
+            <p className="text-xs font-bold text-slate-300 mt-0.5">تسجيل يومي · تقارير أسبوعية وشهرية شاملة · كشوفات تفصيلية وإكسيل</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setShowWeeklyModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-xs md:text-sm font-black text-white shadow-lg shadow-emerald-950/40 transition-all hover:scale-105 hover:from-emerald-600 hover:to-teal-700 active:scale-95 cursor-pointer"
+          >
+            <span>📊</span>
+            <span>التقرير الأسبوعي للأكسيل والطباعة</span>
+            <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] font-black tracking-wide">جديد</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={exportMonth}
+            className="rounded-xl border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-black text-white hover:bg-white/20 transition-all"
+          >
+            📤 كشف الشهر Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={manualRefresh}
+            title="تحديث فوري من السيرفر"
+            className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/20 transition-all"
+          >
+            🔄 تحديث
+          </button>
+        </div>
+      </div>
 
       {/* ===== 👑 تحكم المالك في فتح/قفل التعديل للمساحين ===== */}
       {isOwnerUser && (
@@ -505,6 +639,7 @@ export default function MachineryTab({ user }: Props) {
             {dayDate !== today && (
               <button type="button" onClick={() => setDayDate(today)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white hover:bg-slate-700">النهارده</button>
             )}
+            <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-black text-white shadow-sm hover:bg-emerald-700">📊 التقرير الأسبوعي</button>
             <button type="button" onClick={manualRefresh} title="تحديث فوري من السيرفر" className="rounded-xl border-2 border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50">🔄 تحديث</button>
             <button type="button" onClick={exportDay} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 Excel يوم</button>
           </div>
@@ -681,7 +816,7 @@ export default function MachineryTab({ user }: Props) {
             </div>
 
             <button type="button" onClick={saveDay} disabled={dayLocked || dayFuture}
-              className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900">
+              className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900 cursor-pointer">
               {dayLocked ? `🔒 يوم ${dayDate} مقفول — للإدارة بس` : dayFuture ? '⏳ استنى اليوم ييجي' : `💾 حفظ ساعات اليوم (${dayDate})`}
             </button>
           </>
@@ -699,6 +834,7 @@ export default function MachineryTab({ user }: Props) {
             <div className="flex flex-wrap items-center gap-2">
               <input type="month" value={month} onChange={e => setMonth(e.target.value)}
                 className="rounded-xl border-2 border-slate-300 px-3 py-2 text-sm font-black outline-none focus:border-slate-900" />
+              <button type="button" onClick={() => setShowWeeklyModal(true)} className="rounded-xl border-2 border-teal-500 bg-white px-3 py-1.5 text-xs font-black text-teal-700 hover:bg-teal-50">📊 التقرير الأسبوعي</button>
               <button type="button" onClick={exportMonth} className="rounded-xl border-2 border-emerald-500 bg-white px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-50">📤 كشف الشهر Excel</button>
               <button type="button" onClick={() => setPrintGrid(true)} className="rounded-xl border-2 border-blue-500 bg-white px-3 py-1.5 text-xs font-black text-blue-700 hover:bg-blue-50">🖨️ طباعة الشيت (رأسي)</button>
             </div>
@@ -799,7 +935,6 @@ export default function MachineryTab({ user }: Props) {
         </section>
       )}
 
-
       {/* ===== 👤 كشف الملاك ===== */}
       {histList.length > 0 && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -854,7 +989,7 @@ export default function MachineryTab({ user }: Props) {
       )}
 
       {/* ===== إدارة المعدات ===== */}
-      {(
+      {canManage && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xl font-black text-slate-900">⚙️ المعدات ({machinery.filter(m => m.active).length})</h3>
@@ -910,7 +1045,7 @@ export default function MachineryTab({ user }: Props) {
               <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="اختياري"
                 className="mt-1 w-full rounded-xl border-2 border-blue-400 px-3 py-3 text-sm font-bold outline-none focus:border-blue-600" />
             </label>
-            <button type="submit" disabled={busy} className="mt-6 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+            <button type="submit" disabled={busy} className="mt-6 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer">
               {busy ? '⏳ جاري الحفظ على السيرفر...' : form.id ? '✏️ حفظ التعديل' : '➕ إضافة معدة'}
             </button>
           </form>
@@ -919,34 +1054,475 @@ export default function MachineryTab({ user }: Props) {
           {machinery.length === 0 ? (
             <div className="rounded-2xl bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">مفيش معدات — ضيف أول معدة من الفورم فوق 👇</div>
           ) : (
-            <div className="grid gap-2 md:grid-cols-2">
-              {machinery.filter(m => !m.deleted).map(m => (
-                <div key={m.id} className={`flex items-center justify-between gap-2 rounded-xl border-2 p-3 ${m.active ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
-                  <div>
-                    <div className="text-sm font-black text-slate-800">{mLabel(m)} {!m.active && <span className="text-[10px] text-slate-400">(متوقفة)</span>}</div>
-                    {(m.driver || m.owner) && <div className="text-[11px] font-bold text-slate-400">👤 مالك: {m.owner}{m.driver ? ` · 🚛 سواق: ${m.driver}` : ''}</div>}
-                    {m.notes && <div className="text-[11px] font-bold text-slate-400">{m.notes}</div>}
-                  </div>
-                  {m.active && isOwnerUser && (
-                    <div className="flex gap-1">
-                      <button type="button" onClick={() => setForm({ id: m.id, kind: KINDS.includes(m.kind) ? m.kind : 'أخرى', custom: KINDS.includes(m.kind) ? '' : m.kind, owner: m.owner, size: m.size, driver: m.driver || '', notes: m.notes || '' })}
-                        className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200" title="تعديل">✏️</button>
-                      <button type="button" onClick={async () => { if (!window.confirm(`إيقاف ${mLabel(m)} مؤقت؟ هتشال من ورقة اليوم بس — وساعاتها وتراكميها بيفضلوا`)) return; try { await deactivateMachinery(m.id); flash('⛔ اتوقفت مؤقت على السيرفر — تقدر ترجعها بالتعديل'); load(); } catch (err: any) { flash('⛔ ماتحفظش: ' + (err?.message || 'حصل خطأ')); } }}
-                        className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 hover:bg-amber-100" title="إيقاف مؤقت">⛔</button>
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 text-xs font-black text-slate-500">
+                    <th className="p-2">المعدة</th>
+                    <th className="p-2">النوع</th>
+                    <th className="p-2">المقاس</th>
+                    <th className="p-2">المالك</th>
+                    <th className="p-2">السواق</th>
+                    <th className="p-2">ملاحظات</th>
+                    <th className="p-2">الحالة</th>
+                    {isOwnerUser && <th className="p-2">تحكم</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {machinery.map(m => (
+                    <tr key={m.id} className={`border-b border-slate-100 font-bold ${m.active ? 'text-slate-800' : 'text-slate-400 bg-slate-50'}`}>
+                      <td className="p-2"><MName m={m} /></td>
+                      <td className="p-2">{m.kind}</td>
+                      <td className="p-2">{m.size || '—'}</td>
+                      <td className="p-2">{m.owner}</td>
+                      <td className="p-2">{m.driver || '—'}</td>
+                      <td className="p-2 text-xs text-slate-500">{m.notes || '—'}</td>
+                      <td className="p-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-black ${m.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
+                          {m.active ? 'شغالة' : 'موقوفة'}
+                        </span>
+                      </td>
                       {isOwnerUser && (
-                        <button type="button" onClick={async () => { if (!window.confirm(`مسح ${mLabel(m)} خالص؟ هتشال من كل القوائم — بس ساعاتها القديمة هتفضل محفوظة في السجلات`)) return; try { await deleteMachineryHard(m.id); flash('🗑️ اتمسحت من السيرفر — شغلها القديم محفوظ'); load(); } catch (err: any) { flash('⛔ ماتمسحتش: ' + (err?.message || 'حصل خطأ')); } }}
-                          className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100" title="مسح خالص (أدمن بس)">🗑️</button>
+                        <td className="p-2">
+                          <div className="flex gap-1">
+                            <button type="button" onClick={() => startEdit(m)} className="rounded-lg bg-blue-100 px-2 py-1 text-xs font-black text-blue-800 hover:bg-blue-200">تعديل</button>
+                            <button type="button" onClick={async () => { await deactivateMachinery(m.id, !m.active); flash(m.active ? '⏸️ اتوقفت المعدة' : '▶️ اشتغلت المعدة'); load(); }}
+                              className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-black text-amber-800 hover:bg-amber-200">
+                              {m.active ? 'إيقاف' : 'تشغيل'}
+                            </button>
+                            <button type="button" onClick={async () => { if (!window.confirm(`مسح ${mLabel(m)} نهائي؟ (ساعات الشغل القديمة هتفضل محفوظة في التراكمي)`)) return; await deleteMachineryHard(m.id); flash('🗑️ اتمسحت المعدة من السيرفر'); load(); }}
+                              className="rounded-lg bg-red-100 px-2 py-1 text-xs font-black text-red-800 hover:bg-red-200">مسح</button>
+                          </div>
+                        </td>
                       )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
       )}
 
-      {/* ===== 🖨️ طباعة الشيت التراكمي — رأسي: الأيام تحت بعضها والمعدات أعمدة ويجمع رأسي ===== */}
+      {/* ===== 📅 المودال التفاعلي للتقرير الأسبوعي الشامل ===== */}
+      {showWeeklyModal && (
+        <div className="fixed inset-0 z-[450] overflow-y-auto bg-slate-950/80 p-2 md:p-6 backdrop-blur-xs" onClick={() => setShowWeeklyModal(false)}>
+          <div className="mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()} dir="rtl">
+            {/* رأس المودال */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-2xl shadow-lg">
+                  📊
+                </div>
+                <div>
+                  <h3 className="text-lg md:text-xl font-black text-white">تقرير تشغيل المعدات الأسبوعي الشامل</h3>
+                  <p className="text-xs font-bold text-slate-300 mt-0.5">
+                    الفترة: من <b>{weekDays[0]} ({getArabicDayName(weekDays[0])})</b> إلى <b>{weekEndDate} ({getArabicDayName(weekEndDate)})</b>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={exportWeeklyExcelAction}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs md:text-sm font-black text-white shadow-md hover:from-emerald-600 hover:to-teal-700 active:scale-95 cursor-pointer"
+                >
+                  <span>📥</span>
+                  <span>تحميل شيت إكسيل الأسبوع (.xls)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer"
+                >
+                  🖨️ طباعة / PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowWeeklyModal(false)}
+                  className="rounded-xl bg-white/20 px-3.5 py-2 text-xs md:text-sm font-black text-white hover:bg-white/30 cursor-pointer"
+                >
+                  ✕ إغلاق
+                </button>
+              </div>
+            </div>
+
+            {/* شريط التحكم بالفترة والفلاتر (مخفي عند الطباعة) */}
+            <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 print:hidden space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                {/* محدد الأسبوع */}
+                <div className="md:col-span-5 flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-slate-700">📅 بداية الأسبوع:</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setWeekStartDate(shiftDate(weekStartDate, -7))}
+                      title="الأسبوع السابق (7 أيام للخلف)"
+                      className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    >
+                      ◀ 7 أيام
+                    </button>
+                    <input
+                      type="date"
+                      value={weekStartDate}
+                      onChange={e => setWeekStartDate(e.target.value)}
+                      className="rounded-xl border-2 border-slate-300 bg-white px-3 py-1.5 text-xs font-black outline-none focus:border-indigo-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setWeekStartDate(shiftDate(weekStartDate, 7))}
+                      title="الأسبوع التالي (7 أيام للأمام)"
+                      className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    >
+                      7 أيام ▶
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setWeekStartDate(getSaturdayOfWeek(today))}
+                    className="rounded-xl bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 text-xs font-black text-indigo-900 hover:bg-indigo-100 cursor-pointer"
+                  >
+                    الأسبوع الحالي
+                  </button>
+                </div>
+
+                {/* فلتر النوع والمالك والبحث */}
+                <div className="md:col-span-7 flex flex-wrap items-center gap-2 justify-start md:justify-end">
+                  <select
+                    value={weeklyKindFilter}
+                    onChange={e => setWeeklyKindFilter(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-800 outline-none focus:border-indigo-600"
+                  >
+                    <option value="all">🚜 كل أنواع المعدات</option>
+                    {KINDS.map(k => (
+                      <option key={k} value={k}>{k}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={weeklyOwnerFilter}
+                    onChange={e => setWeeklyOwnerFilter(e.target.value)}
+                    className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-800 outline-none focus:border-indigo-600"
+                  >
+                    <option value="all">👤 كل الملاك</option>
+                    {ownersList.map(o => (
+                      <option key={o.owner} value={o.owner}>{o.owner}</option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    value={weeklySearch}
+                    onChange={e => setWeeklySearch(e.target.value)}
+                    placeholder="🔍 بحث سريع بالمعدة، السواق، الملاحظات..."
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold outline-none focus:border-indigo-600 w-44 md:w-56"
+                  />
+                </div>
+              </div>
+
+              {/* أزرار التبديل بين شيت المصفوفة وسجل تقارير الشغل */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyTab('matrix')}
+                    className={`rounded-xl px-4 py-1.5 text-xs font-black transition-all cursor-pointer ${
+                      weeklyTab === 'matrix'
+                        ? 'bg-slate-900 text-white shadow-md'
+                        : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    📊 شيت مصفوفة الأسبوع (الجدول المجمع)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyTab('logs')}
+                    className={`rounded-xl px-4 py-1.5 text-xs font-black transition-all cursor-pointer ${
+                      weeklyTab === 'logs'
+                        ? 'bg-slate-900 text-white shadow-md'
+                        : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    📝 سجل تقارير الشغل التفصيلية ({weeklyStats.totalLogs})
+                  </button>
+                </div>
+
+                <div className="text-xs font-bold text-slate-500 hidden sm:block">
+                  يتم تصدير كلا الجدولين معاً في شيت الأكسيل تلقائياً 📊
+                </div>
+              </div>
+            </div>
+
+            {/* كروت الإحصائيات السريعة للأسبوع */}
+            <div className="p-4 md:p-6 space-y-5">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:mb-4">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-3.5 text-center shadow-xs">
+                  <div className="text-xs font-bold text-blue-700">⏱️ إجمالي ساعات الأسبوع</div>
+                  <div className="mt-1 text-2xl font-black text-blue-950">{weeklyStats.totalHours} <span className="text-xs font-bold">ساعة</span></div>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-center shadow-xs">
+                  <div className="text-xs font-bold text-amber-700">🚛 إجمالي نقلات الأسبوع</div>
+                  <div className="mt-1 text-2xl font-black text-amber-950">{weeklyStats.totalTrips} <span className="text-xs font-bold">نقلة</span></div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-center shadow-xs">
+                  <div className="text-xs font-bold text-emerald-700">🚜 المعدات العاملة بالأسبوع</div>
+                  <div className="mt-1 text-2xl font-black text-emerald-950">{weeklyStats.activeMachines} <span className="text-xs font-bold">من {weeklyMachineryList.length}</span></div>
+                </div>
+
+                <div className="rounded-2xl border border-purple-200 bg-purple-50/80 p-3.5 text-center shadow-xs">
+                  <div className="text-xs font-bold text-purple-700">📝 تقارير الشغل المسجلة</div>
+                  <div className="mt-1 text-2xl font-black text-purple-950">{weeklyStats.totalLogs} <span className="text-xs font-bold">تقرير</span></div>
+                </div>
+              </div>
+
+              {/* 1️⃣ عرض شيت مصفوفة الأسبوع */}
+              {weeklyTab === 'matrix' && (
+                <div className="overflow-x-auto rounded-2xl border border-slate-300 shadow-sm">
+                  <table className="w-full border-collapse text-right text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white">
+                        <th rowSpan={2} className="border border-slate-700 p-2 text-center w-10">م</th>
+                        <th rowSpan={2} className="border border-slate-700 p-2 min-w-[130px]">المعدة والمقاس</th>
+                        <th rowSpan={2} className="border border-slate-700 p-2 min-w-[100px]">المالك</th>
+                        <th rowSpan={2} className="border border-slate-700 p-2 min-w-[90px]">السائق</th>
+                        {weekDays.map(d => {
+                          const dayName = getArabicDayName(d);
+                          return (
+                            <th key={d} colSpan={3} className="border border-slate-700 p-1.5 text-center bg-blue-900 min-w-[170px]">
+                              <div className="font-black text-white">{dayName}</div>
+                              <div className="text-[10px] font-bold text-blue-200">{d}</div>
+                            </th>
+                          );
+                        })}
+                        <th colSpan={2} className="border border-slate-700 p-2 text-center bg-emerald-900 min-w-[120px]">
+                          إجمالي الأسبوع
+                        </th>
+                      </tr>
+                      <tr className="bg-slate-800 text-white text-[10px]">
+                        {weekDays.flatMap(d => [
+                          <th key={`${d}-h`} className="border border-slate-700 p-1 text-center bg-blue-800 text-blue-100 w-12">ساعة</th>,
+                          <th key={`${d}-t`} className="border border-slate-700 p-1 text-center bg-sky-800 text-sky-100 w-12">نقلة</th>,
+                          <th key={`${d}-n`} className="border border-slate-700 p-1 text-right bg-teal-800 text-teal-100 min-w-[90px]">تقرير الشغل</th>,
+                        ])}
+                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16">ساعات</th>
+                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16">نقلات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeklyMachineryList.length === 0 ? (
+                        <tr>
+                          <td colSpan={4 + weekDays.length * 3 + 2} className="p-8 text-center text-sm font-bold text-slate-400">
+                            لا توجد معدات مطابقة للفلتر المختار في هذه الفترة
+                          </td>
+                        </tr>
+                      ) : (
+                        weeklyMachineryList.map((m, idx) => {
+                          let machTotalH = 0;
+                          let machTotalT = 0;
+                          return (
+                            <tr key={m.id} className={`border-b border-slate-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'} hover:bg-blue-50/40`}>
+                              <td className="border border-slate-200 p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                              <td className="border border-slate-200 p-2 font-black text-slate-900">
+                                {[m.kind, m.size].filter(Boolean).join(' ')}
+                              </td>
+                              <td className="border border-slate-200 p-2 text-slate-700 font-bold">{m.owner || '—'}</td>
+                              <td className="border border-slate-200 p-2 text-slate-600">{m.driver || '—'}</td>
+
+                              {weekDays.map(d => {
+                                const h = hoursAny(m.id, d);
+                                const t = tripsAny(m.id, d);
+                                const n = notesAny(m.id, d);
+                                machTotalH += h;
+                                machTotalT += t;
+
+                                return (
+                                  <React.Fragment key={d}>
+                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${h > 0 ? 'text-blue-900 bg-blue-50/50' : 'text-slate-300'}`}>
+                                      {h > 0 ? h : '—'}
+                                    </td>
+                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${t > 0 ? 'text-amber-800 bg-amber-50/50' : 'text-slate-300'}`}>
+                                      {t > 0 ? t : '—'}
+                                    </td>
+                                    <td className="border border-slate-200 p-1.5 text-right text-[11px] max-w-[140px] truncate" title={n || undefined}>
+                                      {n ? (
+                                        <span className="inline-block rounded-md bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-teal-900 font-bold">
+                                          {n}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-300">—</span>
+                                      )}
+                                    </td>
+                                  </React.Fragment>
+                                );
+                              })}
+
+                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-900">
+                                {machTotalH > 0 ? machTotalH : '—'}
+                              </td>
+                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-900">
+                                {machTotalT > 0 ? machTotalT : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-900 text-white font-black text-xs">
+                        <td colSpan={4} className="border border-slate-700 p-2 text-center">
+                          📊 الإجماليات اليومية والعامة
+                        </td>
+                        {weekDays.map(d => {
+                          let dayH = 0;
+                          let dayT = 0;
+                          weeklyMachineryList.forEach(m => {
+                            dayH += hoursAny(m.id, d);
+                            dayT += tripsAny(m.id, d);
+                          });
+                          return (
+                            <React.Fragment key={d}>
+                              <td className="border border-slate-700 p-2 text-center text-blue-300 bg-slate-950 font-black">
+                                {dayH > 0 ? dayH : 0}
+                              </td>
+                              <td className="border border-slate-700 p-2 text-center text-amber-300 bg-slate-950 font-black">
+                                {dayT > 0 ? dayT : 0}
+                              </td>
+                              <td className="border border-slate-700 p-2 text-center text-slate-500 bg-slate-950 text-[10px]">
+                                —
+                              </td>
+                            </React.Fragment>
+                          );
+                        })}
+                        <td className="border border-slate-700 p-2 text-center text-emerald-300 bg-emerald-950 text-sm font-black">
+                          {weeklyStats.totalHours} س
+                        </td>
+                        <td className="border border-slate-700 p-2 text-center text-emerald-300 bg-emerald-950 text-sm font-black">
+                          {weeklyStats.totalTrips} ن
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* 2️⃣ عرض سجل تقارير الشغل التفصيلية */}
+              {weeklyTab === 'logs' && (
+                <div className="overflow-x-auto rounded-2xl border border-slate-300 shadow-sm">
+                  <table className="w-full border-collapse text-right text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-black">
+                        <th className="border border-slate-700 p-2.5 text-center w-12">م</th>
+                        <th className="border border-slate-700 p-2.5 text-center min-w-[90px]">التاريخ</th>
+                        <th className="border border-slate-700 p-2.5 text-center min-w-[70px]">اليوم</th>
+                        <th className="border border-slate-700 p-2.5 min-w-[130px]">المعدة</th>
+                        <th className="border border-slate-700 p-2.5 min-w-[100px]">المالك</th>
+                        <th className="border border-slate-700 p-2.5 min-w-[90px]">السائق</th>
+                        <th className="border border-slate-700 p-2.5 text-center w-16">الساعات</th>
+                        <th className="border border-slate-700 p-2.5 text-center w-16">النقلات</th>
+                        <th className="border border-slate-700 p-2.5 min-w-[250px]">📝 تقرير الشغل والموقع المنفذ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const logsList: {
+                          date: string;
+                          dayName: string;
+                          machine: Machinery;
+                          entry: MachineryHours;
+                        }[] = [];
+
+                        weekDays.forEach(d => {
+                          const dayName = getArabicDayName(d);
+                          weeklyMachineryList.forEach(m => {
+                            const entry = getEntryAny(m.id, d);
+                            if (entry && (entry.hours > 0 || (entry.trips ?? 0) > 0 || entry.notes)) {
+                              logsList.push({
+                                date: d,
+                                dayName,
+                                machine: m,
+                                entry,
+                              });
+                            }
+                          });
+                        });
+
+                        if (logsList.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={9} className="p-8 text-center text-sm font-bold text-slate-400">
+                                لا توجد تقارير شغل أو حركات مسجلة في هذا الأسبوع
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return logsList.map((item, idx) => (
+                          <tr key={`${item.machine.id}_${item.date}`} className={`border-b border-slate-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'} hover:bg-indigo-50/40`}>
+                            <td className="border border-slate-200 p-2.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="border border-slate-200 p-2.5 text-center font-bold text-slate-700">{item.date}</td>
+                            <td className="border border-slate-200 p-2.5 text-center font-bold text-indigo-900">{item.dayName}</td>
+                            <td className="border border-slate-200 p-2.5 font-black text-slate-900">
+                              {[item.machine.kind, item.machine.size].filter(Boolean).join(' ')}
+                            </td>
+                            <td className="border border-slate-200 p-2.5 text-slate-700">{item.machine.owner || '—'}</td>
+                            <td className="border border-slate-200 p-2.5 text-slate-600">{item.machine.driver || '—'}</td>
+                            <td className="border border-slate-200 p-2.5 text-center font-black text-blue-700 text-sm">
+                              {item.entry.hours > 0 ? `${item.entry.hours} س` : '—'}
+                            </td>
+                            <td className="border border-slate-200 p-2.5 text-center font-black text-amber-700 text-sm">
+                              {(item.entry.trips ?? 0) > 0 ? `${item.entry.trips} ن` : '—'}
+                            </td>
+                            <td className="border border-slate-200 p-2.5 text-slate-900 font-bold leading-relaxed">
+                              {item.entry.notes ? (
+                                <span className="inline-block rounded-xl bg-teal-50 border border-teal-200 px-3 py-1.5 text-teal-950 font-black">
+                                  {item.entry.notes}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-normal">لا توجد ملاحظات مكتوبة</span>
+                              )}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* أزرار أسفل المودال */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 print:hidden">
+                <div className="text-xs font-bold text-slate-500">
+                  📅 الأسبوع: {weekDays[0]} إلى {weekEndDate} • إجمالي الساعات: <b>{weeklyStats.totalHours}</b> • إجمالي النقلات: <b>{weeklyStats.totalTrips}</b>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={exportWeeklyExcelAction}
+                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs md:text-sm font-black text-white shadow-md hover:bg-emerald-700 active:scale-95 cursor-pointer"
+                  >
+                    <span>📥</span>
+                    <span>تحميل كشف Excel الأسبوعي</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowWeeklyModal(false)}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs md:text-sm font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 🖨️ طباعة الشيت الشهري الرأسي ===== */}
       {printGrid && (
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGrid(false)}>
           <div className="mx-auto max-w-4xl" onClick={e => e.stopPropagation()}>

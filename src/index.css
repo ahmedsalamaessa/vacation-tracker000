@@ -86,6 +86,11 @@
 
 /* ===== 🖨️ طباعة المأمورية والتقارير — الورقة بس هي اللي تطلع في صفحة نظيفة وبدون أي صفحات فارغة ===== */
 @media print {
+  @page {
+    size: landscape;
+    margin: 4mm 5mm;
+  }
+
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -129,6 +134,7 @@
     box-shadow: none !important;
     padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
   }
 
   /* عند وجود شيت طباعة، يتم إخفاء كل المحتوى الخلفي في الصفحة */
@@ -143,7 +149,7 @@
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 3mm !important;
+    padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
@@ -157,10 +163,5 @@
   tr, .print-sheet tr, .signature-block, .signatures-block {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-  }
-
-  @page {
-    size: landscape;
-    margin: 4mm;
   }
 }

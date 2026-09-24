@@ -504,7 +504,7 @@ export default function MachineryTab({ user }: Props) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 ${showWeeklyModal || printGrid || printOwner ? 'print:hidden' : ''}`}>
       {msg && (
         <div className="fixed bottom-4 left-1/2 z-[500] -translate-x-1/2 rounded-2xl bg-slate-900 px-6 py-3 text-sm font-black text-white shadow-2xl">
           {msg}
@@ -1170,17 +1170,8 @@ export default function MachineryTab({ user }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    printMachineryWeeklyReport(
-                      weekDays,
-                      weeklyMachineryList,
-                      allHours,
-                      deptName,
-                      weeklyStats,
-                      weeklyTab
-                    );
-                  }}
-                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
+                  onClick={() => window.print()}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md active:scale-95"
                 >
                   🖨️ طباعة / PDF
                 </button>
@@ -1371,21 +1362,21 @@ export default function MachineryTab({ user }: Props) {
               </div>
             </div>
 
-            {/* كروت الإحصائيات السريعة للأسبوع */}
+            {/* كروت الإحصائيات السريعة للأسبوع (مخفية في الطباعة لتوفير مساحة الصفحة الأولى) */}
             <div className="p-4 md:p-6 space-y-5">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
                 <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-3.5 text-center shadow-xs">
-                  <div className="text-xs font-bold text-blue-700">⏱️ إجمالي ساعات الأسبوع</div>
+                  <div className="text-xs font-bold text-blue-700">⏱️ إجمالي ساعات الفترة</div>
                   <div className="mt-1 text-2xl font-black text-blue-950">{weeklyStats.totalHours} <span className="text-xs font-bold">ساعة</span></div>
                 </div>
 
                 <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-center shadow-xs">
-                  <div className="text-xs font-bold text-amber-700">🚛 إجمالي نقلات الأسبوع</div>
+                  <div className="text-xs font-bold text-amber-700">🚛 إجمالي نقلات الفترة</div>
                   <div className="mt-1 text-2xl font-black text-amber-950">{weeklyStats.totalTrips} <span className="text-xs font-bold">نقلة</span></div>
                 </div>
 
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-center shadow-xs">
-                  <div className="text-xs font-bold text-emerald-700">🚜 المعدات العاملة بالأسبوع</div>
+                  <div className="text-xs font-bold text-emerald-700">🚜 المعدات العاملة بالفترة</div>
                   <div className="mt-1 text-2xl font-black text-emerald-950">{weeklyStats.activeMachines} <span className="text-xs font-bold">من {weeklyMachineryList.length}</span></div>
                 </div>
 
@@ -1397,8 +1388,8 @@ export default function MachineryTab({ user }: Props) {
 
               {/* 1️⃣ عرض شيت مصفوفة الأسبوع: السبت، الأحد، الاثنين، الثلاثاء، الأربعاء، الخميس، الجمعة */}
               {weeklyTab === 'matrix' && (
-                <div className="overflow-x-auto rounded-2xl border border-slate-300 shadow-sm">
-                  <table className="w-full border-collapse text-right text-xs">
+                <div className="overflow-x-auto rounded-2xl border border-slate-300 shadow-sm print:overflow-visible print:border-none print:shadow-none">
+                  <table className="w-full border-collapse text-right text-xs print:text-[8px] print:leading-tight">
                     <thead>
                       <tr className="bg-slate-900 text-white">
                         <th rowSpan={2} className="border border-slate-700 p-2 text-center w-10">م</th>
@@ -1634,16 +1625,7 @@ export default function MachineryTab({ user }: Props) {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      printMachineryWeeklyReport(
-                        weekDays,
-                        weeklyMachineryList,
-                        allHours,
-                        deptName,
-                        weeklyStats,
-                        weeklyTab
-                      );
-                    }}
+                    onClick={() => window.print()}
                     className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs md:text-sm font-black text-white hover:bg-blue-700 active:scale-95 cursor-pointer shadow-md"
                   >
                     <span>🖨️</span>
@@ -1673,39 +1655,24 @@ export default function MachineryTab({ user }: Props) {
 
       {/* ===== 🖨️ طباعة الشيت الشهري الرأسي ===== */}
       {printGrid && (
-        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGrid(false)}>
-          <div className="mx-auto max-w-4xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4 print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setPrintGrid(false)}>
+          <div className="mx-auto max-w-4xl print:max-w-none print:m-0" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">
               <button
                 type="button"
-                onClick={() => {
-                  printMachineryMonthlyGrid(
-                    month,
-                    deptName,
-                    histList,
-                    monthDays,
-                    hoursOf,
-                    tripsOf,
-                    dayGridTotal,
-                    dayGridTotalTrips,
-                    monthGridTotal,
-                    monthGridTotalTrips,
-                    monthGridGrand,
-                    monthGridGrandTrips
-                  );
-                }}
+                onClick={() => window.print()}
                 className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
               >
                 🖨️ طباعة / حفظ PDF
               </button>
               <button type="button" onClick={() => setPrintGrid(false)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100 cursor-pointer">إغلاق</button>
             </div>
-            <div className="print-sheet rounded-2xl bg-white p-6 text-slate-900 shadow-2xl" dir="rtl">
+            <div className="print-sheet rounded-2xl bg-white p-6 text-slate-900 shadow-2xl print:shadow-none print:border-none print:rounded-none print:p-0" dir="rtl">
               <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
                 <div className="text-lg font-black">{deptName}</div>
                 <div className="mt-1 text-2xl font-black">📊 شيت ساعات ونقلات المعدات — شهر {month}</div>
               </div>
-              <table className="mt-4 w-full border-collapse text-[11px]">
+              <table className="mt-4 w-full border-collapse text-[11px] print:text-[8px]">
                 <thead>
                   <tr className="bg-slate-100">
                     <th className="border border-slate-400 p-1.5 w-24">📅 اليوم</th>
@@ -1780,17 +1747,12 @@ export default function MachineryTab({ user }: Props) {
 
       {/* ===== 🖨️ كشف مالك للتوقيع ===== */}
       {printOwner && (
-        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintOwner(null)}>
-          <div className="mx-auto max-w-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4 print:static print:p-0 print:m-0 print:bg-white print:overflow-visible" onClick={() => setPrintOwner(null)}>
+          <div className="mx-auto max-w-2xl print:max-w-none print:m-0" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">
               <button
                 type="button"
-                onClick={() => {
-                  const o = ownersList.find(x => x.owner === printOwner);
-                  if (o) {
-                    printMachineryOwnerSheet(o, deptName, month, allHours);
-                  }
-                }}
+                onClick={() => window.print()}
                 className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
               >
                 🖨️ طباعة / حفظ PDF
@@ -1801,7 +1763,7 @@ export default function MachineryTab({ user }: Props) {
               const o = ownersList.find(x => x.owner === printOwner);
               if (!o) return null;
               return (
-                <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl" dir="rtl">
+                <div className="print-sheet rounded-2xl bg-white p-8 text-slate-900 shadow-2xl print:shadow-none print:border-none print:rounded-none print:p-0" dir="rtl">
                   <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
                     <div className="text-lg font-black">{deptName}</div>
                     <div className="mt-1 text-2xl font-black">كشف ساعات ونقلات معدات — شهر {month}</div>

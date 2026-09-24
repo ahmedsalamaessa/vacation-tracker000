@@ -8,53 +8,53 @@ interface WeeklyStats {
   totalLogs: number;
 }
 
-function printIsolatedHtml(fullHtml: string) {
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentWindow?.document || iframe.contentDocument;
-  if (!doc || !iframe.contentWindow) {
-    const w = window.open('', '_blank');
-    if (w) {
-      w.document.write(fullHtml);
-      w.document.close();
+/**
+ * دالة فتح نافذة الطباعة المنفصلة والمعزولة بالكامل
+ */
+function openPrintDocument(title: string, fullHtml: string) {
+  const w = window.open('', '_blank', 'width=1150,height=800,scrollbars=yes,resizable=yes');
+  if (!w) {
+    // Fallback: If popup is blocked by aggressive browser settings
+    const iframe = document.createElement('iframe');
+    iframe.id = 'machinery-fallback-iframe';
+    iframe.setAttribute('style', 'position:fixed;top:0;left:0;width:100vw;height:100vh;opacity:0.01;z-index:-9999;pointer-events:none;border:none;');
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (doc && iframe.contentWindow) {
+      doc.open();
+      doc.write(fullHtml);
+      doc.close();
       setTimeout(() => {
-        w.focus();
-        w.print();
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.print();
+        }
       }, 300);
+    } else {
+      window.print();
     }
     return;
   }
 
-  doc.open();
-  doc.write(fullHtml);
-  doc.close();
+  w.document.open();
+  w.document.write(fullHtml);
+  w.document.close();
 
+  // Trigger print cleanly once content is ready
   setTimeout(() => {
     try {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
+      w.focus();
+      w.print();
     } catch (e) {
-      console.error(e);
+      console.warn('Auto print error', e);
     }
-    setTimeout(() => {
-      try {
-        document.body.removeChild(iframe);
-      } catch {
-        // ignore
-      }
-    }, 1500);
-  }, 350);
+  }, 400);
 }
 
 /**
- * 🖨️ طباعة تقرير تشغيل المعدات الأسبوعي (من السبت إلى الجمعة) في صفحة واحدة احترافية
+ * 🖨️ طباعة تقرير تشغيل وتتبع المعدات الأسبوعي (من السبت إلى الجمعة) في صفحة واحدة احترافية
  */
 export function printMachineryWeeklyReport(
   weekDaysInput: string[],
@@ -305,11 +305,47 @@ export function printMachineryWeeklyReport(
       line-height: 1.15;
       direction: rtl;
     }
+    
+    /* Screen toolbar (hidden in print) */
+    .screen-toolbar {
+      background: #0f172a;
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      color: #ffffff;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .btn-print {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-print:hover { background: #1d4ed8; }
+    .btn-close {
+      background: #475569;
+      color: #ffffff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-close:hover { background: #334155; }
+
     .page-container {
       width: 100%;
       max-width: 100%;
       margin: 0 auto;
-      padding: 2px;
+      padding: 2px 6px;
     }
     
     /* Header */
@@ -484,9 +520,26 @@ export function printMachineryWeeklyReport(
     .font-black { font-weight: 900; }
     .text-muted { color: #64748b; }
     .text-indigo { color: #4338ca; }
+
+    @media print {
+      .screen-toolbar {
+        display: none !important;
+      }
+      .page-container {
+        padding: 0 !important;
+      }
+    }
   </style>
 </head>
 <body>
+  <div class="screen-toolbar">
+    <div style="font-weight:bold;font-size:12px;">🚜 تقرير تشغيل المعدات الأسبوعي (جاهز للطباعة والـ PDF في صفحة واحدة A4 Landscape)</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-print" onclick="window.print()">🖨️ طباعة الآن / حفظ PDF</button>
+      <button class="btn-close" onclick="window.close()">✕ إغلاق</button>
+    </div>
+  </div>
+
   <div class="page-container">
     <div class="report-header">
       <div class="header-right">
@@ -539,10 +592,21 @@ export function printMachineryWeeklyReport(
       </div>
     </div>
   </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        try {
+          window.focus();
+          window.print();
+        } catch(e) {}
+      }, 350);
+    };
+  </script>
 </body>
 </html>`;
 
-  printIsolatedHtml(fullHtml);
+  openPrintDocument('تقرير تشغيل المعدات الأسبوعي', fullHtml);
 }
 
 /**
@@ -631,11 +695,32 @@ export function printMachineryMonthlyGrid(
   <style>
     @page { size: A4 landscape; margin: 4mm 5mm; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 7.5pt; margin: 0; padding: 2px; direction: rtl; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 7.5pt; margin: 0; padding: 2px 6px; direction: rtl; }
+    .screen-toolbar {
+      background: #0f172a;
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      color: #ffffff;
+      border-radius: 6px;
+    }
+    .btn-print { background: #2563eb; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .btn-close { background: #475569; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; font-size: 7.2pt; }
+    @media print { .screen-toolbar { display: none !important; } }
   </style>
 </head>
 <body>
+  <div class="screen-toolbar">
+    <div style="font-weight:bold;font-size:12px;">📊 شيت ساعات ونقلات المعدات الشهري — شهر ${month}</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-print" onclick="window.print()">🖨️ طباعة الآن / PDF</button>
+      <button class="btn-close" onclick="window.close()">✕ إغلاق</button>
+    </div>
+  </div>
+
   <div style="border-bottom:2px solid #0f172a;padding-bottom:3px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
     <div>
       <div style="font-size:8pt;font-weight:bold;color:#475569;">${deptName}</div>
@@ -668,10 +753,18 @@ export function printMachineryMonthlyGrid(
       </tr>
     </tfoot>
   </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        try { window.focus(); window.print(); } catch(e) {}
+      }, 350);
+    };
+  </script>
 </body>
 </html>`;
 
-  printIsolatedHtml(fullHtml);
+  openPrintDocument('شيت تشغيل المعدات الشهري', fullHtml);
 }
 
 /**
@@ -695,7 +788,6 @@ export function printMachineryOwnerSheet(
   let rows = '';
   owner.machines.forEach((m, idx) => {
     const title = [m.kind, m.size].filter(Boolean).join(' ');
-    // calculate this machine month hours
     const machEntries = historyMap.filter(
       (h) => Number(h.machineryId) === Number(m.id) && String(h.date || '').startsWith(month)
     );
@@ -723,10 +815,31 @@ export function printMachineryOwnerSheet(
     @page { size: A4 portrait; margin: 8mm 10mm; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     body { font-family: 'Segoe UI', Tahoma, sans-serif; font-size: 9pt; margin: 0; padding: 4px; direction: rtl; color: #0f172a; }
+    .screen-toolbar {
+      background: #0f172a;
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      color: #ffffff;
+      border-radius: 6px;
+    }
+    .btn-print { background: #2563eb; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .btn-close { background: #475569; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 8.5pt; }
+    @media print { .screen-toolbar { display: none !important; } }
   </style>
 </head>
 <body>
+  <div class="screen-toolbar">
+    <div style="font-weight:bold;font-size:12px;">🚜 كشف تشغيل معدات المالك: ${owner.owner}</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-print" onclick="window.print()">🖨️ طباعة الآن / PDF</button>
+      <button class="btn-close" onclick="window.close()">✕ إغلاق</button>
+    </div>
+  </div>
+
   <div style="border-bottom:3px double #0f172a;padding-bottom:6px;text-align:center;">
     <div style="font-size:10pt;font-weight:bold;color:#475569;">${deptName}</div>
     <div style="font-size:14pt;font-weight:900;color:#0f172a;margin-top:2px;">🚜 كشف ساعات ونقلات معدات — شهر ${month}</div>
@@ -777,8 +890,16 @@ export function printMachineryOwnerSheet(
       <div style="margin-top:25px;color:#94a3b8;">...................................</div>
     </div>
   </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        try { window.focus(); window.print(); } catch(e) {}
+      }, 350);
+    };
+  </script>
 </body>
 </html>`;
 
-  printIsolatedHtml(fullHtml);
+  openPrintDocument('كشف تشغيل معدات المالك', fullHtml);
 }

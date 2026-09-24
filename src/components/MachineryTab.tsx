@@ -24,6 +24,11 @@ import {
   parseYMD,
   shiftDateDays,
 } from '../lib/exportMachineryWeekly';
+import {
+  printMachineryWeeklyReport,
+  printMachineryMonthlyGrid,
+  printMachineryOwnerSheet,
+} from '../lib/printMachineryWeekly';
 
 const KINDS = ['لودر', 'عربية قلاب', 'عربية مية', 'حفار', 'أخرى'];
 
@@ -1144,7 +1149,16 @@ export default function MachineryTab({ user }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    printMachineryWeeklyReport(
+                      weekDays,
+                      weeklyMachineryList,
+                      allHours,
+                      deptName,
+                      weeklyStats,
+                      weeklyTab
+                    );
+                  }}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer"
                 >
                   🖨️ طباعة / PDF
@@ -1528,6 +1542,23 @@ export default function MachineryTab({ user }: Props) {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => {
+                      printMachineryWeeklyReport(
+                        weekDays,
+                        weeklyMachineryList,
+                        allHours,
+                        deptName,
+                        weeklyStats,
+                        weeklyTab
+                      );
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs md:text-sm font-black text-white hover:bg-blue-700 active:scale-95 cursor-pointer shadow-md"
+                  >
+                    <span>🖨️</span>
+                    <span>طباعة / حفظ PDF</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={exportWeeklyExcelAction}
                     className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs md:text-sm font-black text-white shadow-md hover:bg-emerald-700 active:scale-95 cursor-pointer"
                   >
@@ -1553,8 +1584,29 @@ export default function MachineryTab({ user }: Props) {
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintGrid(false)}>
           <div className="mx-auto max-w-4xl" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">
-              <button type="button" onClick={() => window.print()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة / حفظ PDF</button>
-              <button type="button" onClick={() => setPrintGrid(false)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100">إغلاق</button>
+              <button
+                type="button"
+                onClick={() => {
+                  printMachineryMonthlyGrid(
+                    month,
+                    deptName,
+                    histList,
+                    monthDays,
+                    hoursOf,
+                    tripsOf,
+                    dayGridTotal,
+                    dayGridTotalTrips,
+                    monthGridTotal,
+                    monthGridTotalTrips,
+                    monthGridGrand,
+                    monthGridGrandTrips
+                  );
+                }}
+                className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
+              >
+                🖨️ طباعة / حفظ PDF
+              </button>
+              <button type="button" onClick={() => setPrintGrid(false)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100 cursor-pointer">إغلاق</button>
             </div>
             <div className="print-sheet rounded-2xl bg-white p-6 text-slate-900 shadow-2xl" dir="rtl">
               <div className="border-b-4 border-double border-slate-900 pb-3 text-center">
@@ -1639,8 +1691,19 @@ export default function MachineryTab({ user }: Props) {
         <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-950/70 p-4" onClick={() => setPrintOwner(null)}>
           <div className="mx-auto max-w-2xl" onClick={e => e.stopPropagation()}>
             <div className="mb-3 flex gap-2 print:hidden">
-              <button type="button" onClick={() => window.print()} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700">🖨️ طباعة / حفظ PDF</button>
-              <button type="button" onClick={() => setPrintOwner(null)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100">إغلاق</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const o = ownersList.find(x => x.owner === printOwner);
+                  if (o) {
+                    printMachineryOwnerSheet(o, deptName, month, allHours);
+                  }
+                }}
+                className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
+              >
+                🖨️ طباعة / حفظ PDF
+              </button>
+              <button type="button" onClick={() => setPrintOwner(null)} className="rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-100 cursor-pointer">إغلاق</button>
             </div>
             {(() => {
               const o = ownersList.find(x => x.owner === printOwner);

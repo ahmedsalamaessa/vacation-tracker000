@@ -84,38 +84,83 @@
   }
 }
 
-/* ===== 🖨️ طباعة المأمورية والتقارير — الورقة بس هي اللي تطلع مع الألوان الكاملة ===== */
+/* ===== 🖨️ طباعة المأمورية والتقارير — الورقة بس هي اللي تطلع في صفحة نظيفة وبدون أي صفحات فارغة ===== */
 @media print {
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     color-adjust: exact !important;
+    box-sizing: border-box !important;
   }
-  body {
-    background: white !important;
-    color: black !important;
-  }
-  body * {
-    visibility: hidden !important;
-  }
-  .print-sheet, .print-sheet * {
-    visibility: visible !important;
-  }
-  .print-sheet {
-    position: absolute !important;
-    top: 0 !important;
-    right: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
+  
+  html, body {
     margin: 0 !important;
-    padding: 6mm !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* إخفاء عناصر الموقع العامة والأزرار وشريط التنقل عند الطباعة */
+  header,
+  nav,
+  aside,
+  footer,
+  button,
+  .no-print,
+  [class*="print:hidden"] {
+    display: none !important;
+  }
+
+  /* إلغاء التثبيت للمودالات لتفادي الحساب الخاطئ للارتفاعات والصفحات الفارغة */
+  .fixed, [class*="fixed"] {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
     box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* عند وجود شيت طباعة، يتم إخفاء كل المحتوى الخلفي في الصفحة */
+  body:has(.print-sheet) #root > div > *:not(main),
+  body:has(.print-sheet) main > *:not(:has(.print-sheet)):not(.print-sheet) {
+    display: none !important;
+  }
+
+  .print-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 3mm !important;
+    box-shadow: none !important;
+    border: none !important;
     border-radius: 0 !important;
     overflow: visible !important;
-    background: white !important;
+    background: #ffffff !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
+
+  /* تفادي قطع الجداول والتوقيعات في منتصف الصفحة */
+  tr, .print-sheet tr, .signature-block, .signatures-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   @page {
     size: landscape;
-    margin: 6mm;
+    margin: 4mm;
   }
 }

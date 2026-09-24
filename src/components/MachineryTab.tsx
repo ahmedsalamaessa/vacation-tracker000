@@ -43,7 +43,6 @@ function byGroup(ms: Machinery[]): { label: string; items: Machinery[] }[] {
 }
 
 function mLabel(m: Machinery): string {
-  // للإكسل: نوع مقاس مالك
   return `${m.kind}${m.size ? ` ${m.size}` : ''} ${m.owner}`.trim();
 }
 
@@ -79,7 +78,7 @@ function MName({ m }: { m: Machinery }) {
 
 /** يحرّك التاريخ كام يوم */
 function shiftDate(d: string, delta: number): string {
-  const dt = new Date(d + 'T00:00:00');
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
   dt.setDate(dt.getDate() + delta);
   return dt.toISOString().slice(0, 10);
 }
@@ -90,11 +89,8 @@ interface Props {
 
 export default function MachineryTab({ user }: Props) {
   const canManage = user.role === 'admin' || user.role === 'manager' || Boolean((user as any).canEditAttendance);
-  // 👑 إدارة المعدات الثقيلة (تعديل/إيقاف/مسح/تفريغ): المالك بس — المساح يسجل الساعات بس
   const isOwnerUser = Boolean((user as any).isOwner);
-  // ➕ إضافة معدة جديدة: المالك + الأدمن/المدير
   const canAddMach = isOwnerUser || user.role === 'admin' || user.role === 'manager';
-  // 🔒 قفل الأيام القديمة: التعديل من المالك + المديرين + أي موظف فك له المالك القفل صراحة
   const canEditLockedDays = isOwnerUser || user.role === 'manager' || Boolean((user as any).canEditPastMachinery);
   const today = new Date().toISOString().slice(0, 10);
   const monthNow = today.slice(0, 7);
@@ -138,7 +134,7 @@ export default function MachineryTab({ user }: Props) {
     }
   }
 
-  async function togglePastMachineryPermission(empId: number, currentVal: boolean) {
+  async function togglePastPastMachineryPermission(empId: number, currentVal: boolean) {
     if (!isOwnerUser) return;
     const target = employeesList.find(e => e.id === empId);
     if (!target) return;
@@ -155,36 +151,36 @@ export default function MachineryTab({ user }: Props) {
     }
   }
 
-  /** الساعات المحفوظة لليوم المختار */
   function draftFor(date: string): Record<number, string> {
     const d: Record<number, string> = {};
+    const dt = String(date).slice(0, 10);
     for (const h of getMachineryHours()) {
-      if (h.date === date && h.hours > 0) d[h.machineryId] = String(h.hours);
+      if (String(h.date).slice(0, 10) === dt && h.hours > 0) d[h.machineryId] = String(h.hours);
     }
     return d;
   }
 
-  /** النقلات المحفوظة لليوم المختار */
   function draftTripsFor(date: string): Record<number, string> {
     const d: Record<number, string> = {};
+    const dt = String(date).slice(0, 10);
     for (const h of getMachineryHours()) {
-      if (h.date === date && (h.trips ?? 0) > 0) d[h.machineryId] = String(h.trips);
+      if (String(h.date).slice(0, 10) === dt && (h.trips ?? 0) > 0) d[h.machineryId] = String(h.trips);
     }
     return d;
   }
 
-  /** تقارير الشغل المحفوظة لليوم المختار */
   function notesFor(date: string): Record<number, string> {
     const d: Record<number, string> = {};
+    const dt = String(date).slice(0, 10);
     for (const h of getMachineryHours()) {
-      if (h.date === date && h.notes) d[h.machineryId] = h.notes || '';
+      if (String(h.date).slice(0, 10) === dt && h.notes) d[h.machineryId] = h.notes || '';
     }
     return d;
   }
 
-  /** 👑 تفاصيل من سجّل الساعات والنقلات ومن سجّل التوجيه (تظهر للمالك فقط) */
   function getLogInfo(mId: number, day: string) {
-    const h = getMachineryHours().find(x => x.machineryId === mId && x.date === day);
+    const dt = String(day).slice(0, 10);
+    const h = getMachineryHours().find(x => x.machineryId === mId && String(x.date).slice(0, 10) === dt);
     if (!h) return null;
     const hoursUser = h.hoursByName || (h.hoursBy ? getEmployees().find(e => e.id === h.hoursBy)?.name : null);
     const tripsUser = h.tripsByName || (h.tripsBy ? getEmployees().find(e => e.id === h.tripsBy)?.name : null);
@@ -222,7 +218,6 @@ export default function MachineryTab({ user }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 🔄 تحديث يدوي: بيجيب آخر بيانات من السيرفر فورًا — وبيحمي ساعات ونقلات اليوم اللي انت كتبها لسه من التمسح */
   function manualRefresh() {
     flash('🔄 بجيب آخر بيانات من السيرفر...');
     const userHadEdits = JSON.stringify(draft) !== JSON.stringify(draftFor(dayDate)) ||
@@ -250,7 +245,6 @@ export default function MachineryTab({ user }: Props) {
   const active = machinery.filter(m => m.active);
   const dayLocked = dayDate < today && !canEditLockedDays;
   const dayFuture = dayDate > today;
-  // التراكمي: كل غير الممسوح + الممسوح اللي عنده ساعات أو نقلات قديمة (شغله محفوظ)
   const histList = machinery.filter(m => !m.deleted || getMachineryHours().some(h => h.machineryId === m.id));
   const daySum = active.reduce((s, m) => s + (parseFloat(draft[m.id] || '') || 0), 0);
   const dayTripsSum = active.reduce((s, m) => s + (parseFloat(draftTrips[m.id] || '') || 0), 0);
@@ -315,22 +309,22 @@ export default function MachineryTab({ user }: Props) {
     }
   }
 
-  /** 🗓️ أيام الشهر المختار + خريطة ساعات ونقلات: معدة → يوم → ساعات / نقلات */
   const monthDaysCount = (() => { const [y, mo] = month.split('-').map(Number); return y && mo ? new Date(y, mo, 0).getDate() : 30; })();
   const monthDays = Array.from({ length: monthDaysCount }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
   const hoursGrid = new Map<number, Map<string, number>>();
   const tripsGrid = new Map<number, Map<string, number>>();
   for (const h of getMachineryHours()) {
-    if (!h.date.startsWith(month)) continue;
+    const dStr = String(h.date).slice(0, 10);
+    if (!dStr.startsWith(month)) continue;
     if (h.hours > 0) {
       if (!hoursGrid.has(h.machineryId)) hoursGrid.set(h.machineryId, new Map());
       const g = hoursGrid.get(h.machineryId)!;
-      g.set(h.date, (g.get(h.date) || 0) + h.hours);
+      g.set(dStr, (g.get(dStr) || 0) + h.hours);
     }
     if ((h.trips ?? 0) > 0) {
       if (!tripsGrid.has(h.machineryId)) tripsGrid.set(h.machineryId, new Map());
       const tg = tripsGrid.get(h.machineryId)!;
-      tg.set(h.date, (tg.get(h.date) || 0) + (h.trips || 0));
+      tg.set(dStr, (tg.get(dStr) || 0) + (h.trips || 0));
     }
   }
   const hoursOf = (mid: number, d: string) => hoursGrid.get(mid)?.get(d) || 0;
@@ -342,42 +336,40 @@ export default function MachineryTab({ user }: Props) {
   const monthGridGrand = histList.reduce((s, m) => s + monthGridTotal(m.id), 0);
   const monthGridGrandTrips = histList.reduce((s, m) => s + monthGridTotalTrips(m.id), 0);
 
-  // 📝 خريطة تقارير الشغل: معدة → يوم → التقرير (وصف إيه اللي اتعمل النهارده)
   const notesGrid = new Map<number, Map<string, string>>();
   for (const h of getMachineryHours()) {
-    if (!h.date.startsWith(month)) continue;
+    const dStr = String(h.date).slice(0, 10);
+    if (!dStr.startsWith(month)) continue;
     if (!h.notes) continue;
     if (!notesGrid.has(h.machineryId)) notesGrid.set(h.machineryId, new Map());
     const g = notesGrid.get(h.machineryId)!;
-    g.set(h.date, h.notes || '');
+    g.set(dStr, h.notes || '');
   }
   const notesOf = (mid: number, d: string) => notesGrid.get(mid)?.get(d) || '';
 
   // 🔍 دوال عامة لأي تاريخ (بما فيها تقرير الأسبوع العابر للشهور)
   const allHoursData = getMachineryHours();
-  const getEntryAny = (mid: number, d: string) => allHoursData.find(h => h.machineryId === mid && h.date === d);
+  const getEntryAny = (mid: number, d: string) =>
+    allHoursData.find(h => Number(h.machineryId) === Number(mid) && String(h.date || '').slice(0, 10) === String(d).slice(0, 10));
   const hoursAny = (mid: number, d: string) => getEntryAny(mid, d)?.hours || 0;
   const tripsAny = (mid: number, d: string) => getEntryAny(mid, d)?.trips || 0;
   const notesAny = (mid: number, d: string) => (getEntryAny(mid, d)?.notes || '').trim();
 
-  /** التراكمي لكل معدة */
   function totalsFor(m: Machinery) {
     const all = getMachineryHours().filter(h => h.machineryId === m.id);
-    const day = all.filter(h => h.date === dayDate).reduce((s, h) => s + h.hours, 0);
-    const dayTrips = all.filter(h => h.date === dayDate).reduce((s, h) => s + (h.trips || 0), 0);
-    const mon = all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + h.hours, 0);
-    const monTrips = all.filter(h => h.date.startsWith(month)).reduce((s, h) => s + (h.trips || 0), 0);
+    const day = all.filter(h => String(h.date).slice(0, 10) === dayDate).reduce((s, h) => s + h.hours, 0);
+    const dayTrips = all.filter(h => String(h.date).slice(0, 10) === dayDate).reduce((s, h) => s + (h.trips || 0), 0);
+    const mon = all.filter(h => String(h.date).slice(0, 7) === month).reduce((s, h) => s + h.hours, 0);
+    const monTrips = all.filter(h => String(h.date).slice(0, 7) === month).reduce((s, h) => s + (h.trips || 0), 0);
     const total = all.reduce((s, h) => s + h.hours, 0);
     const totalTrips = all.reduce((s, h) => s + (h.trips || 0), 0);
     return { day, dayTrips, mon, monTrips, total, totalTrips };
   }
 
-  /** أيام الشغل في الشهر للمعدة */
   function workDays(m: Machinery): number {
-    return getMachineryHours().filter(h => h.machineryId === m.id && h.date.startsWith(month) && (h.hours > 0 || (h.trips ?? 0) > 0)).length;
+    return getMachineryHours().filter(h => h.machineryId === m.id && String(h.date).slice(0, 7) === month && (h.hours > 0 || (h.trips ?? 0) > 0)).length;
   }
 
-  /** 👤 كشف الملاك: كل مالك ومعداته وإجمالي شهره */
   const ownersList = [...new Set(histList.map(m => m.owner.trim()).filter(Boolean))]
     .map(owner => {
       const machines = histList.filter(m => m.owner.trim() === owner);
@@ -399,13 +391,10 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`ساعات_ونقلات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'النقلات', 'تقرير الشغل'], rows);
   }
 
-  /** 📤 كشف الشهر Excel — أيام صفوف × (ساعة + نقلة + تقرير الشغل) لكل معدة + إجمالي تحت */
   function exportMonth() {
     const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
     const mHeader = (m: Machinery) => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '');
-    // سطر العنوان: اليوم | لكل معدة 3 أعمدة (الساعة + النقلة + تقرير الشغل) | إجمالي ساعات اليوم | إجمالي نقلات اليوم
     const headers = ['📅 اليوم', ...histList.flatMap(m => [`${mHeader(m)} — الساعة`, `${mHeader(m)} — النقلة`, `${mHeader(m)} — تقرير الشغل`]), 'إجمالي ساعات اليوم', 'إجمالي نقلات اليوم'];
-    // صف لكل يوم في الشهر
     const dayRows = monthDays.map(d => {
       const dayNum = d.slice(8);
       const dayWd = wd[new Date(d + 'T00:00:00').getDay()];
@@ -418,7 +407,6 @@ export default function MachineryTab({ user }: Props) {
         dayTripsT || '',
       ];
     });
-    // سطر الإجمالي في الآخر
     const totalRow = ['إجمالي الشهر', ...histList.flatMap(m => [monthGridTotal(m.id) || '', monthGridTotalTrips(m.id) || '', '']), monthGridGrand || '', monthGridGrandTrips || ''];
     downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
@@ -537,7 +525,6 @@ export default function MachineryTab({ user }: Props) {
                 <p className="text-xs font-bold text-indigo-700">تحكم فوري في مين مسموح له يعدل الأيام اللي فاتت ومين مقفول عليه (النهارده بس)</p>
               </div>
             </div>
-            {/* مؤشر عدد المفتوح لهم */}
             {(() => {
               const unlockedCount = employeesList.filter(e => e.canEditPastMachinery).length;
               return (
@@ -584,7 +571,7 @@ export default function MachineryTab({ user }: Props) {
                   <button
                     type="button"
                     disabled={empToggling}
-                    onClick={() => togglePastMachineryPermission(currentEmp.id, isUnlocked)}
+                    onClick={() => togglePastPastMachineryPermission(currentEmp.id, isUnlocked)}
                     className={`rounded-xl px-4 py-2 text-xs font-black text-white shadow-md transition-all active:scale-95 disabled:opacity-50 ${
                       isUnlocked ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
                     }`}
@@ -596,7 +583,6 @@ export default function MachineryTab({ user }: Props) {
             })()}
           </div>
 
-          {/* قائمة المفتوح لهم حالياً مع زر إلغاء فوري */}
           {(() => {
             const unlockedList = employeesList.filter(e => e.canEditPastMachinery);
             if (unlockedList.length === 0) return null;
@@ -609,7 +595,7 @@ export default function MachineryTab({ user }: Props) {
                     <button
                       type="button"
                       title="قفل التعديل فوراً"
-                      onClick={() => togglePastMachineryPermission(e.id, true)}
+                      onClick={() => togglePastPastMachineryPermission(e.id, true)}
                       className="text-red-600 hover:text-red-800 font-black px-1 text-sm leading-none"
                     >
                       ×
@@ -667,7 +653,6 @@ export default function MachineryTab({ user }: Props) {
           <div className="rounded-2xl bg-slate-50 p-6 text-center font-bold text-slate-500">لسه مفيش معدات — ضيف أول معدة من قسم ⚙️ المعدات تحت 👇</div>
         ) : (
           <>
-            {/* على الكومبيوتر: جدول الأربع أعمدة: المعدة | ⏱️ الساعات | 🚛 النقلات | 📝 تقرير الشغل */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-right text-sm">
                 <thead>
@@ -742,7 +727,7 @@ export default function MachineryTab({ user }: Props) {
                 </tfoot>
               </table>
             </div>
-            {/* 📱 على الموبايل: بطاقات لكل معدة تشمل الساعات والنقلات وتقرير الشغل */}
+
             <div className="space-y-3 md:hidden">
               {byGroup(active).map(g => (
                 <div key={g.label}>
@@ -773,7 +758,6 @@ export default function MachineryTab({ user }: Props) {
                           </div>
                         </div>
 
-                        {/* خانات الساعات والنقلات (النقلات للعربيات فقط) */}
                         {isTruck(m) ? (
                           <div className="grid grid-cols-2 gap-2 mt-3">
                             <div className="text-center bg-blue-50/60 p-2 rounded-xl border border-blue-100">
@@ -823,7 +807,7 @@ export default function MachineryTab({ user }: Props) {
         )}
       </section>
 
-      {/* ===== 📊 التراكمي — شيت شهري شبكي (المعدات × أيام الشهر) زي تتبع الحضور ===== */}
+      {/* ===== 📊 التراكمي — شيت شهري شبكي (المعدات × أيام الشهر) ===== */}
       {histList.length > 0 && (
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -1107,9 +1091,21 @@ export default function MachineryTab({ user }: Props) {
       {/* ===== 📅 المودال التفاعلي للتقرير الأسبوعي الشامل ===== */}
       {showWeeklyModal && (
         <div className="fixed inset-0 z-[450] overflow-y-auto bg-slate-950/80 p-2 md:p-6 backdrop-blur-xs" onClick={() => setShowWeeklyModal(false)}>
-          <div className="mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()} dir="rtl">
-            {/* رأس المودال */}
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white flex flex-wrap items-center justify-between gap-3">
+          <div className="print-sheet mx-auto max-w-7xl rounded-3xl bg-white text-slate-900 shadow-2xl overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()} dir="rtl">
+            
+            {/* ترويسة خاصة بالطباعة الرسمية الورقية و PDF */}
+            <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-center">
+              <div className="text-sm font-black text-slate-700">{deptName}</div>
+              <h2 className="text-xl font-black text-slate-900 mt-0.5">🚜 تقرير تشغيل وتتبع المعدات الأسبوعي</h2>
+              <div className="mt-2 flex justify-between text-xs font-black text-slate-700 border-t border-slate-200 pt-1.5">
+                <span>الفترة: من <b>{weekDays[0]} ({getArabicDayName(weekDays[0])})</b> إلى <b>{weekEndDate} ({getArabicDayName(weekEndDate)})</b></span>
+                <span>إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours} س</b> | إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips} ن</b></span>
+                <span>تاريخ التقرير: {today}</span>
+              </div>
+            </div>
+
+            {/* رأس المودال على الشاشة */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white flex flex-wrap items-center justify-between gap-3 print:hidden">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-2xl shadow-lg">
                   📊
@@ -1122,7 +1118,7 @@ export default function MachineryTab({ user }: Props) {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={exportWeeklyExcelAction}
@@ -1292,24 +1288,24 @@ export default function MachineryTab({ user }: Props) {
                         {weekDays.map(d => {
                           const dayName = getArabicDayName(d);
                           return (
-                            <th key={d} colSpan={3} className="border border-slate-700 p-1.5 text-center bg-blue-900 min-w-[170px]">
-                              <div className="font-black text-white">{dayName}</div>
+                            <th key={d} colSpan={3} className="border border-slate-700 p-1.5 text-center bg-blue-900 min-w-[180px]">
+                              <div className="font-black text-white text-xs">{dayName}</div>
                               <div className="text-[10px] font-bold text-blue-200">{d}</div>
                             </th>
                           );
                         })}
-                        <th colSpan={2} className="border border-slate-700 p-2 text-center bg-emerald-900 min-w-[120px]">
+                        <th colSpan={2} className="border border-slate-700 p-2 text-center bg-emerald-900 min-w-[130px]">
                           إجمالي الأسبوع
                         </th>
                       </tr>
                       <tr className="bg-slate-800 text-white text-[10px]">
                         {weekDays.flatMap(d => [
-                          <th key={`${d}-h`} className="border border-slate-700 p-1 text-center bg-blue-800 text-blue-100 w-12">ساعة</th>,
-                          <th key={`${d}-t`} className="border border-slate-700 p-1 text-center bg-sky-800 text-sky-100 w-12">نقلة</th>,
-                          <th key={`${d}-n`} className="border border-slate-700 p-1 text-right bg-teal-800 text-teal-100 min-w-[90px]">تقرير الشغل</th>,
+                          <th key={`${d}-h`} className="border border-slate-700 p-1 text-center bg-blue-800 text-blue-100 w-12 font-black">ساعة</th>,
+                          <th key={`${d}-t`} className="border border-slate-700 p-1 text-center bg-sky-800 text-sky-100 w-12 font-black">نقلة</th>,
+                          <th key={`${d}-n`} className="border border-slate-700 p-1 text-right bg-teal-800 text-teal-100 min-w-[100px] font-black">تقرير الشغل</th>,
                         ])}
-                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16">ساعات</th>
-                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16">نقلات</th>
+                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16 font-black">ساعات</th>
+                        <th className="border border-slate-700 p-1 text-center bg-emerald-800 text-emerald-100 w-16 font-black">نقلات</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1341,30 +1337,30 @@ export default function MachineryTab({ user }: Props) {
 
                                 return (
                                   <React.Fragment key={d}>
-                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${h > 0 ? 'text-blue-900 bg-blue-50/50' : 'text-slate-300'}`}>
+                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${h > 0 ? 'text-blue-900 bg-blue-50/70 font-black text-sm' : 'text-slate-300'}`}>
                                       {h > 0 ? h : '—'}
                                     </td>
-                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${t > 0 ? 'text-amber-800 bg-amber-50/50' : 'text-slate-300'}`}>
-                                      {t > 0 ? t : '—'}
+                                    <td className={`border border-slate-200 p-1.5 text-center font-black ${t > 0 ? 'text-amber-800 bg-amber-50/70 font-black text-sm' : 'text-slate-300'}`}>
+                                      {t > 0 ? `${t}ن` : '—'}
                                     </td>
-                                    <td className="border border-slate-200 p-1.5 text-right text-[11px] max-w-[140px] truncate" title={n || undefined}>
+                                    <td className="border border-slate-200 p-1.5 text-right text-[11px] min-w-[130px]">
                                       {n ? (
-                                        <span className="inline-block rounded-md bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-teal-900 font-bold">
+                                        <span className="inline-block rounded-lg bg-teal-50 border border-teal-200 px-2 py-0.5 text-teal-950 font-bold leading-snug">
                                           {n}
                                         </span>
                                       ) : (
-                                        <span className="text-slate-300">—</span>
+                                        <span className="text-slate-300 select-none text-center block">—</span>
                                       )}
                                     </td>
                                   </React.Fragment>
                                 );
                               })}
 
-                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-900">
-                                {machTotalH > 0 ? machTotalH : '—'}
+                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-950">
+                                {machTotalH > 0 ? `${machTotalH} س` : '—'}
                               </td>
-                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-900">
-                                {machTotalT > 0 ? machTotalT : '—'}
+                              <td className="border border-slate-200 p-2 text-center font-black text-sm bg-emerald-50 text-emerald-950">
+                                {machTotalT > 0 ? `${machTotalT} ن` : '—'}
                               </td>
                             </tr>
                           );
@@ -1439,7 +1435,7 @@ export default function MachineryTab({ user }: Props) {
                           const dayName = getArabicDayName(d);
                           weeklyMachineryList.forEach(m => {
                             const entry = getEntryAny(m.id, d);
-                            if (entry && (entry.hours > 0 || (entry.trips ?? 0) > 0 || entry.notes)) {
+                            if (entry && (Number(entry.hours) > 0 || Number(entry.trips ?? 0) > 0 || entry.notes)) {
                               logsList.push({
                                 date: d,
                                 dayName,
@@ -1493,10 +1489,26 @@ export default function MachineryTab({ user }: Props) {
                 </div>
               )}
 
-              {/* أزرار أسفل المودال */}
+              {/* توقيعات الطباعة الرسمية أسفل الصفحة عند الطباعة */}
+              <div className="hidden print:grid grid-cols-3 gap-6 text-center text-xs font-black mt-8 pt-4 border-t-2 border-slate-900">
+                <div>
+                  <div className="text-slate-600">مسؤول الحركة والمعدات</div>
+                  <div className="mt-8 font-bold">..................................</div>
+                </div>
+                <div>
+                  <div className="text-slate-600">مهندس / مدير الموقع</div>
+                  <div className="mt-8 font-bold">..................................</div>
+                </div>
+                <div>
+                  <div className="text-slate-600">المالك / المقاول</div>
+                  <div className="mt-8 font-bold">..................................</div>
+                </div>
+              </div>
+
+              {/* أزرار أسفل المودال على الشاشة */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 print:hidden">
                 <div className="text-xs font-bold text-slate-500">
-                  📅 الأسبوع: {weekDays[0]} إلى {weekEndDate} • إجمالي الساعات: <b>{weeklyStats.totalHours}</b> • إجمالي النقلات: <b>{weeklyStats.totalTrips}</b>
+                  📅 الأسبوع: {weekDays[0]} إلى {weekEndDate} • إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours}</b> • إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips}</b>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">

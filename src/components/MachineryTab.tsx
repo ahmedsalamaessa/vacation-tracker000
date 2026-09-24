@@ -17,6 +17,7 @@ import {
 import { downloadCsv } from '../lib/exportCsv';
 import {
   exportWeeklyMachineryExcel,
+  exportMonthlyMachineryExcel,
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
@@ -413,23 +414,14 @@ export default function MachineryTab({ user }: Props) {
   }
 
   function exportMonth() {
-    const wd = ['أحد', 'اتنين', 'تلات', 'أربع', 'خميس', 'جمعة', 'سبت'];
-    const mHeader = (m: Machinery) => [m.kind, m.size].filter(Boolean).join(' ') + (m.owner ? ` (${m.owner})` : '');
-    const headers = ['📅 اليوم', ...histList.flatMap(m => [`${mHeader(m)} — الساعة`, `${mHeader(m)} — النقلة`, `${mHeader(m)} — تقرير الشغل`]), 'إجمالي ساعات اليوم', 'إجمالي نقلات اليوم'];
-    const dayRows = monthDays.map(d => {
-      const dayNum = d.slice(8);
-      const dayWd = wd[new Date(d + 'T00:00:00').getDay()];
-      const dayT = dayGridTotal(d);
-      const dayTripsT = dayGridTotalTrips(d);
-      return [
-        `${dayNum} — ${dayWd}`,
-        ...histList.flatMap(m => [hoursOf(m.id, d) || '', tripsOf(m.id, d) || '', notesOf(m.id, d) || '']),
-        dayT || '',
-        dayTripsT || '',
-      ];
-    });
-    const totalRow = ['إجمالي الشهر', ...histList.flatMap(m => [monthGridTotal(m.id) || '', monthGridTotalTrips(m.id) || '', '']), monthGridGrand || '', monthGridGrandTrips || ''];
-    downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
+    exportMonthlyMachineryExcel(
+      month,
+      histList,
+      getMachineryHours(),
+      deptName,
+      getEmployees()
+    );
+    flash(`📥 تم تصدير شيت شهر ${month} التراكمي الملون بصيغة Excel بنجاح!`);
   }
 
   // 📅 بيانات التقرير الشامل: يدعم التحديد المانيوال من .. إلى .. أو الأسابيع

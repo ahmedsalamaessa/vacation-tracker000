@@ -54,20 +54,23 @@ function openPrintDocument(title: string, fullHtml: string) {
 }
 
 /**
- * 🖨️ طباعة تقرير تشغيل وتتبع المعدات الأسبوعي (من السبت إلى الجمعة) في صفحة واحدة احترافية
+ * 🖨️ طباعة تقرير تشغيل وتتبع المعدات (أسبوعي أو فترة مخصصة) في صفحة واحدة احترافية
  */
 export function printMachineryWeeklyReport(
-  weekDaysInput: string[],
+  daysListInput: string[],
   machineryList: Machinery[],
   allHours: MachineryHours[],
   deptName = 'قسم المساحة والتشغيل',
   stats?: WeeklyStats,
   mode: 'matrix' | 'logs' = 'matrix'
 ) {
-  const rawStart = weekDaysInput && weekDaysInput.length > 0 ? weekDaysInput[0] : formatYMD(new Date());
-  const weekDays = getWeekDays(rawStart, 7);
-  const startDate = weekDays[0]; // السبت
-  const endDate = weekDays[6]; // الجمعة
+  const weekDays = (daysListInput && daysListInput.length > 0)
+    ? daysListInput
+    : getWeekDays(formatYMD(new Date()), 7);
+  const startDate = weekDays[0];
+  const endDate = weekDays[weekDays.length - 1];
+  const startDayName = getArabicDayName(startDate);
+  const endDayName = getArabicDayName(endDate);
   const todayStr = formatYMD(new Date());
 
   // Map of hours by machineId_date

@@ -66,13 +66,37 @@ export function shiftDateDays(dStr: string, delta: number): string {
 }
 
 /**
- * 📊 تصدير تقرير تشغيل المعدات الأسبوعي الشامل بصيغة Excel منسقة بالكامل بالألوان (من السبت إلى الجمعة)
+ * يرجع مصفوفة التواريخ بين تاريخين محددين مانيوال
+ */
+export function getDaysInRange(startDateStr: string, endDateStr: string, maxDays = 90): string[] {
+  try {
+    let s = parseYMD(startDateStr);
+    let e = parseYMD(endDateStr);
+    if (s > e) {
+      const tmp = s;
+      s = e;
+      e = tmp;
+    }
+    const days: string[] = [];
+    const cur = new Date(s);
+    while (cur <= e && days.length < maxDays) {
+      days.push(formatYMD(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days.length > 0 ? days : [formatYMD(new Date())];
+  } catch {
+    return [formatYMD(new Date())];
+  }
+}
+
+/**
+ * 📊 تصدير تقرير تشغيل المعدات الشامل بصيغة Excel منسقة بالكامل بالألوان لأي فترة مخصصة
  */
 export function exportWeeklyMachineryExcel(
-  weekDaysInput: string[],
+  daysListInput: string[],
   machineryList: Machinery[],
   allHours: MachineryHours[],
-  title = 'تقرير تشغيل وتتبع المعدات الأسبوعي',
+  title = 'تقرير تشغيل وتتبع المعدات',
   employees: Employee[] = []
 ) {
   const esc = (val: unknown): string =>
@@ -81,11 +105,14 @@ export function exportWeeklyMachineryExcel(
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
 
-  // التأكد من أن الأيام تبدأ من السبت إلى الجمعة دائماً
-  const rawStart = weekDaysInput && weekDaysInput.length > 0 ? weekDaysInput[0] : formatYMD(new Date());
-  const weekDays = getWeekDays(rawStart, 7);
-  const startDate = weekDays[0]; // السبت
-  const endDate = weekDays[6]; // الجمعة
+  // استخدام الأيام المحددة في الفترة المختارة
+  const weekDays = (daysListInput && daysListInput.length > 0)
+    ? daysListInput
+    : getWeekDays(formatYMD(new Date()), 7);
+  const startDate = weekDays[0];
+  const endDate = weekDays[weekDays.length - 1];
+  const startDayName = getArabicDayName(startDate);
+  const endDayName = getArabicDayName(endDate);
 
   // خريطة الموظفين بالـ ID
   const empMap = new Map<number, string>();

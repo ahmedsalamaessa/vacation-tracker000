@@ -20,6 +20,7 @@ import {
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
+  getDaysInRange,
   formatYMD,
   parseYMD,
   shiftDateDays,
@@ -113,9 +114,10 @@ export default function MachineryTab({ user }: Props) {
   const [printOwner, setPrintOwner] = useState<string | null>(null);
   const [printGrid, setPrintGrid] = useState(false);
 
-  // 📅 التقرير الأسبوعي الشامل: يبدأ دائماً من السبت وينتهي الجمعة
+  // 📅 تقرير تشغيل وتتبع المعدات الشامل: يدعم التحديد المانيوال من .. إلى .. والأسابيع
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
-  const [weekStartDate, setWeekStartDate] = useState(() => getSaturdayOfWeek(today));
+  const [rangeStartDate, setRangeStartDate] = useState(() => getSaturdayOfWeek(today));
+  const [rangeEndDate, setRangeEndDate] = useState(() => shiftDateDays(getSaturdayOfWeek(today), 6));
   const [weeklyKindFilter, setWeeklyKindFilter] = useState('all');
   const [weeklyOwnerFilter, setWeeklyOwnerFilter] = useState('all');
   const [weeklySearch, setWeeklySearch] = useState('');
@@ -430,10 +432,29 @@ export default function MachineryTab({ user }: Props) {
     downloadCsv(`شيت_ساعات_ونقلات_${month}.csv`, headers, [...dayRows, totalRow]);
   }
 
-  // 📅 بيانات التقرير الأسبوعي: أسبوع كامل يبدأ دائماً من السبت وينتهي بالجمعة
-  const satWeekStart = useMemo(() => getSaturdayOfWeek(weekStartDate), [weekStartDate]);
-  const weekDays = useMemo(() => getWeekDays(satWeekStart, 7), [satWeekStart]);
-  const weekEndDate = weekDays[6] || satWeekStart;
+  // 📅 بيانات التقرير الشامل: يدعم التحديد المانيوال من .. إلى .. أو الأسابيع
+  const weekDays = useMemo(() => {
+    return getDaysInRange(rangeStartDate, rangeEndDate, 60);
+  }, [rangeStartDate, rangeEndDate]);
+  const weekStartDate = weekDays[0] || rangeStartDate;
+  const weekEndDate = weekDays[weekDays.length - 1] || rangeEndDate;
+  const startDayName = useMemo(() => getArabicDayName(weekStartDate), [weekStartDate]);
+  const endDayName = useMemo(() => getArabicDayName(weekEndDate), [weekEndDate]);
+
+  const setThisMonthPreset = () => {
+    const d = parseYMD(today);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const s = formatYMD(new Date(y, m, 1, 12, 0, 0));
+    const e = formatYMD(new Date(y, m + 1, 0, 12, 0, 0));
+    setRangeStartDate(s);
+    setRangeEndDate(e);
+  };
+
+  const shiftCurrentRange = (deltaDays: number) => {
+    setRangeStartDate(prev => shiftDateDays(prev, deltaDays));
+    setRangeEndDate(prev => shiftDateDays(prev, deltaDays));
+  };
 
   const weeklyMachineryList = useMemo(() => {
     return histList.filter(m => {
@@ -476,10 +497,10 @@ export default function MachineryTab({ user }: Props) {
       weekDays,
       weeklyMachineryList,
       getMachineryHours(),
-      `تقرير تشغيل وتتبع المعدات الأسبوعي (${deptName})`,
+      `تقرير تشغيل وتتبع المعدات (${weekStartDate} إلى ${weekEndDate}) - ${deptName}`,
       getEmployees()
     );
-    flash('📥 تم تصدير تقرير المعدات الأسبوعي بصيغة Excel بنجاح!');
+    flash('📥 تم تصدير تقرير المعدات بصيغة Excel بنجاح!');
   }
 
   return (
@@ -1116,9 +1137,9 @@ export default function MachineryTab({ user }: Props) {
             {/* ترويسة خاصة بالطباعة الرسمية الورقية و PDF */}
             <div className="hidden print:block border-b-2 border-slate-900 pb-3 mb-4 text-center">
               <div className="text-sm font-black text-slate-700">{deptName}</div>
-              <h2 className="text-xl font-black text-slate-900 mt-0.5">🚜 تقرير تشغيل وتتبع المعدات الأسبوعي (من السبت إلى الجمعة)</h2>
+              <h2 className="text-xl font-black text-slate-900 mt-0.5">🚜 تقرير تشغيل وتتبع المعدات</h2>
               <div className="mt-2 flex justify-between text-xs font-black text-slate-700 border-t border-slate-200 pt-1.5">
-                <span>الفترة: من <b>السبت ({weekDays[0]})</b> إلى <b>الجمعة ({weekEndDate})</b></span>
+                <span>الفترة: من <b>{startDayName} ({weekStartDate})</b> إلى <b>{endDayName} ({weekEndDate})</b> [{weekDays.length} يوم]</span>
                 <span>إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours} س</b> | إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips} ن</b></span>
                 <span>تاريخ التقرير: {today}</span>
               </div>
@@ -1131,9 +1152,9 @@ export default function MachineryTab({ user }: Props) {
                   📊
                 </div>
                 <div>
-                  <h3 className="text-lg md:text-xl font-black text-white">تقرير تشغيل المعدات الأسبوعي الشامل</h3>
+                  <h3 className="text-lg md:text-xl font-black text-white">تقرير تشغيل وتتبع المعدات الشامل</h3>
                   <p className="text-xs font-bold text-slate-300 mt-0.5">
-                    الأسبوع: من <b>السبت {weekDays[0]}</b> إلى <b>الجمعة {weekEndDate}</b> (أسبوع عمل كامل 7 أيام)
+                    الفترة: من <b>{startDayName} {weekStartDate}</b> إلى <b>{endDayName} {weekEndDate}</b> ({weekDays.length} {weekDays.length === 1 ? 'يوم' : weekDays.length === 2 ? 'يومان' : 'أيام'})
                   </p>
                 </div>
               </div>
@@ -1145,7 +1166,7 @@ export default function MachineryTab({ user }: Props) {
                   className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs md:text-sm font-black text-white shadow-md hover:from-emerald-600 hover:to-teal-700 active:scale-95 cursor-pointer"
                 >
                   <span>📥</span>
-                  <span>تحميل شيت إكسيل الأسبوع (.xls)</span>
+                  <span>تحميل شيت إكسيل الفترة (.xls)</span>
                 </button>
                 <button
                   type="button"
@@ -1159,7 +1180,7 @@ export default function MachineryTab({ user }: Props) {
                       weeklyTab
                     );
                   }}
-                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer"
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-xs md:text-sm font-black text-white hover:bg-blue-700 cursor-pointer shadow-md"
                 >
                   🖨️ طباعة / PDF
                 </button>
@@ -1173,46 +1194,117 @@ export default function MachineryTab({ user }: Props) {
               </div>
             </div>
 
-            {/* شريط التحكم بالفترة والأسابيع والفلاتر (مخفي عند الطباعة) */}
-            <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 print:hidden space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                {/* اختيار الأسبوع من السبت إلى الجمعة */}
-                <div className="md:col-span-6 flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-black text-slate-700">📅 الأسبوع (السبت - الجمعة):</span>
-                  <select
-                    value={satWeekStart}
-                    onChange={e => setWeekStartDate(e.target.value)}
-                    className="rounded-xl border-2 border-indigo-300 bg-white px-3 py-1.5 text-xs font-black text-indigo-950 outline-none focus:border-indigo-600 flex-1 min-w-[240px]"
-                  >
-                    {recentWeeksList.map(w => (
-                      <option key={w.sat} value={w.sat}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </select>
+            {/* شريط التحكم بالفترة والتواريخ مانيوال والفلاتر (مخفي عند الطباعة) */}
+            <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 print:hidden space-y-3.5">
+              
+              {/* 1. بوكس تحديد التواريخ مانيوال + اختصارات سريعة */}
+              <div className="rounded-2xl bg-white border border-slate-200 p-3.5 shadow-xs space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-black shadow-xs">📅</span>
+                    <span className="text-xs md:text-sm font-black text-slate-900">تحديد الفترة بالتواريخ (مانيوال أو سريع):</span>
+                    <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-2 py-0.5">
+                      من {startDayName} ({weekStartDate}) إلى {endDayName} ({weekEndDate}) • {weekDays.length} {weekDays.length === 1 ? 'يوم' : weekDays.length === 2 ? 'يومان' : 'أيام'}
+                    </span>
+                  </div>
 
-                  <div className="flex items-center gap-1">
+                  {/* أزرار سريعة للأسابيع والشهر */}
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setWeekStartDate(shiftDateDays(satWeekStart, -7))}
-                      title="الأسبوع السابق (7 أيام للخلف)"
-                      className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => {
+                        const sat = getSaturdayOfWeek(today);
+                        setRangeStartDate(sat);
+                        setRangeEndDate(shiftDateDays(sat, 6));
+                      }}
+                      className="rounded-lg bg-indigo-50 border border-indigo-200 px-2.5 py-1 text-[11px] font-black text-indigo-700 hover:bg-indigo-100 cursor-pointer"
                     >
-                      ◀ أسبوع سابق
+                      🌟 هذا الأسبوع (السبت-الجمعة)
                     </button>
                     <button
                       type="button"
-                      onClick={() => setWeekStartDate(shiftDateDays(satWeekStart, 7))}
-                      title="الأسبوع التالي (7 أيام للأمام)"
-                      className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-100 cursor-pointer"
+                      onClick={() => shiftCurrentRange(-7)}
+                      className="rounded-lg bg-slate-100 border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-200 cursor-pointer"
                     >
-                      أسبوع تالي ▶
+                      ◀ 7 أيام للخلف
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => shiftCurrentRange(7)}
+                      className="rounded-lg bg-slate-100 border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-200 cursor-pointer"
+                    >
+                      7 أيام للأمام ▶
+                    </button>
+                    <button
+                      type="button"
+                      onClick={setThisMonthPreset}
+                      className="rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-200 cursor-pointer"
+                    >
+                      📅 هذا الشهر
                     </button>
                   </div>
                 </div>
 
-                {/* فلتر النوع والمالك والبحث */}
-                <div className="md:col-span-6 flex flex-wrap items-center gap-2 justify-start md:justify-end">
+                {/* إدخال التواريخ مانيوال (من تاريخ .. إلى تاريخ) + دروب داون الأسابيع */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-2.5 items-center">
+                  {/* من تاريخ مانيوال */}
+                  <div className="md:col-span-3 flex items-center gap-2 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 focus-within:border-indigo-600 focus-within:bg-white transition-colors">
+                    <label className="text-xs font-black text-slate-700 whitespace-nowrap">من تاريخ:</label>
+                    <input
+                      type="date"
+                      value={rangeStartDate}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        setRangeStartDate(val);
+                        if (val > rangeEndDate) setRangeEndDate(val);
+                      }}
+                      className="bg-transparent text-xs font-black text-slate-900 outline-none w-full cursor-pointer font-mono"
+                    />
+                  </div>
+
+                  {/* إلى تاريخ مانيوال */}
+                  <div className="md:col-span-3 flex items-center gap-2 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 focus-within:border-indigo-600 focus-within:bg-white transition-colors">
+                    <label className="text-xs font-black text-slate-700 whitespace-nowrap">إلى تاريخ:</label>
+                    <input
+                      type="date"
+                      value={rangeEndDate}
+                      min={rangeStartDate}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        setRangeEndDate(val);
+                        if (val < rangeStartDate) setRangeStartDate(val);
+                      }}
+                      className="bg-transparent text-xs font-black text-slate-900 outline-none w-full cursor-pointer font-mono"
+                    />
+                  </div>
+
+                  {/* دروب داون الأسابيع الجاهزة */}
+                  <div className="md:col-span-6 flex items-center gap-2">
+                    <select
+                      value={recentWeeksList.some(w => w.sat === rangeStartDate && w.fri === rangeEndDate) ? rangeStartDate : 'custom'}
+                      onChange={e => {
+                        if (e.target.value === 'custom') return;
+                        setRangeStartDate(e.target.value);
+                        setRangeEndDate(shiftDateDays(e.target.value, 6));
+                      }}
+                      className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-3 py-2 text-xs font-bold text-indigo-950 outline-none focus:border-indigo-600 w-full cursor-pointer"
+                    >
+                      <option value="custom">📅 فترة مخصصة مانيوال: ({rangeStartDate} إلى {rangeEndDate}) [{weekDays.length} يوم]</option>
+                      {recentWeeksList.map(w => (
+                        <option key={w.sat} value={w.sat}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. فلتر النوع والمالك والبحث السريع */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                <div className="md:col-span-12 flex flex-wrap items-center gap-2 justify-start md:justify-end">
                   <select
                     value={weeklyKindFilter}
                     onChange={e => setWeeklyKindFilter(e.target.value)}
@@ -1240,7 +1332,7 @@ export default function MachineryTab({ user }: Props) {
                     value={weeklySearch}
                     onChange={e => setWeeklySearch(e.target.value)}
                     placeholder="🔍 بحث سريع بالمعدة، السواق، الملاحظات..."
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold outline-none focus:border-indigo-600 w-40 md:w-52"
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold outline-none focus:border-indigo-600 w-44 md:w-64"
                   />
                 </div>
               </div>
@@ -1257,7 +1349,7 @@ export default function MachineryTab({ user }: Props) {
                         : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
-                    📊 شيت مصفوفة الأسبوع (السبت إلى الجمعة)
+                    📊 شيت مصفوفة الفترة ({weekDays.length} يوم)
                   </button>
 
                   <button
@@ -1274,7 +1366,7 @@ export default function MachineryTab({ user }: Props) {
                 </div>
 
                 <div className="text-xs font-bold text-slate-500 hidden sm:block">
-                  الأسبوع: <b>السبت {weekDays[0]}</b> ⬅ إلى ➡ <b>الجمعة {weekEndDate}</b> 📊
+                  الفترة: <b>{startDayName} {weekStartDate}</b> ⬅ إلى ➡ <b>{endDayName} {weekEndDate}</b> 📊
                 </div>
               </div>
             </div>
@@ -1536,7 +1628,7 @@ export default function MachineryTab({ user }: Props) {
               {/* أزرار أسفل المودال على الشاشة */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200 print:hidden">
                 <div className="text-xs font-bold text-slate-500">
-                  📅 الأسبوع: <b>السبت {weekDays[0]}</b> إلى <b>الجمعة {weekEndDate}</b> • إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours}</b> • إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips}</b>
+                  📅 الفترة: <b>{startDayName} {weekStartDate}</b> إلى <b>{endDayName} {weekEndDate}</b> ({weekDays.length} يوم) • إجمالي الساعات: <b className="text-blue-900">{weeklyStats.totalHours}</b> • إجمالي النقلات: <b className="text-amber-900">{weeklyStats.totalTrips}</b>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1563,7 +1655,7 @@ export default function MachineryTab({ user }: Props) {
                     className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs md:text-sm font-black text-white shadow-md hover:bg-emerald-700 active:scale-95 cursor-pointer"
                   >
                     <span>📥</span>
-                    <span>تحميل كشف Excel الأسبوعي</span>
+                    <span>تحميل كشف Excel الفترة</span>
                   </button>
                   <button
                     type="button"

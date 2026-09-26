@@ -161,16 +161,15 @@ export function exportWeeklyMachineryExcel(
   const totalCols = 4 + weekDays.length * 3 + 2;
 
   // ترقيم الصفوف الفعلي في Excel:
-  // Row 1: العنوان الرئيسي
-  // Row 2: التفاصيل والفترة
-  // Row 3: الترويسة الرئيسية (Top Header: م، المعدة، المالك، السائق، الأيام، إجمالي الفترة)
-  // Row 4: الترويسة الفرعية (Sub Header: ساعة، نقلة، تقرير الشغل ...)
-  // Row 5: أول معدة في القائمة (startRow = 5)
-  // Row 4 + N: آخر معدة في القائمة (endRow = 4 + machineryList.length)
-  // Row 5 + N: صف الإجماليات (totalsRow = 5 + machineryList.length)
-  const startRow = 5;
-  const endRow = machineryList.length > 0 ? 4 + machineryList.length : startRow;
-  const totalsRow = 5 + machineryList.length;
+  // Row 1: العنوان الرئيسي والفترة
+  // Row 2: الترويسة الرئيسية (Top Header: م، المعدة، المالك، السائق، الأيام، إجمالي الفترة)
+  // Row 3: الترويسة الفرعية (Sub Header: ساعة، نقلة، تقرير الشغل ...)
+  // Row 4: أول معدة في القائمة (startRow = 4)
+  // Row 3 + N: آخر معدة في القائمة (endRow = 3 + machineryList.length)
+  // Row 4 + N: صف الإجماليات (totalsRow = 4 + machineryList.length)
+  const startRow = 4;
+  const endRow = machineryList.length > 0 ? 3 + machineryList.length : startRow;
+  const totalsRow = 4 + machineryList.length;
 
   // أعمدة الساعات والنقلات لكل يوم
   const dayHourColLetters: string[] = [];
@@ -261,9 +260,9 @@ export function exportWeeklyMachineryExcel(
 
     const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
 
-    // معادلة إجمالي ساعات المعدة في الأسبوع =SUM(E5,H5,K5,N5,Q5,T5,W5)
+    // معادلة إجمالي ساعات المعدة في الأسبوع =SUM(E4,H4,K4,N4,Q4,T4,W4)
     const machHourFormula = `=SUM(${dayHourColLetters.map(col => `${col}${currentRow}`).join(',')})`;
-    // معادلة إجمالي نقلات المعدة في الأسبوع =SUM(F5,I5,L5,O5,R5,U5,X5)
+    // معادلة إجمالي نقلات المعدة في الأسبوع =SUM(F4,I4,L4,O4,R4,U4,X4)
     const machTripFormula = `=SUM(${dayTripColLetters.map(col => `${col}${currentRow}`).join(',')})`;
 
     rowsHtml += `
@@ -283,7 +282,7 @@ export function exportWeeklyMachineryExcel(
     `;
   });
 
-  // 3) صف الإجماليات بمعادلات الإكسيل الحية =SUM(col5:colEnd)
+  // 3) صف الإجماليات بمعادلات الإكسيل الحية =SUM(col4:colEnd)
   let totalsDayCells = '';
   weekDays.forEach((_, dIdx) => {
     const hCol = dayHourColLetters[dIdx];
@@ -409,21 +408,15 @@ export function exportWeeklyMachineryExcel(
 <!-- 1️⃣ شيت التقرير الأسبوعي المجمع: من السبت إلى الجمعة -->
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
-    <!-- Row 1: العنوان الرئيسي -->
-    <tr style="height:38px;">
-      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
-        🚜 ${esc(title)}
+    <!-- Row 1: العنوان الرئيسي والتفاصيل -->
+    <tr style="height:36px;">
+      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:15px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(title)} — الفترة من ${startDayName} (${startDate}) إلى ${endDayName} (${endDate}) • إجمالي الساعات: ${totalWeekHours} • إجمالي النقلات: ${totalWeekTrips}
       </th>
     </tr>
-    <!-- Row 2: التفاصيل والفترة -->
-    <tr style="height:26px;">
-      <th colspan="${totalCols}" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
-        الفترة من: ${startDayName} ${startDate} إلى ${endDayName} ${endDate} (أسبوع عمل كامل 7 أيام) • إجمالي المعدات: ${machineryList.length} • إجمالي الساعات: ${totalWeekHours} • إجمالي النقلات: ${totalWeekTrips}
-      </th>
-    </tr>
-    <!-- Row 3: الترويسة الرئيسية -->
+    <!-- Row 2: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
-    <!-- Row 4: الترويسة الفرعية -->
+    <!-- Row 3: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -433,10 +426,14 @@ export function exportWeeklyMachineryExcel(
 </table>
 
 <!-- 2️⃣ كشف الحركات والتقارير اليومية المفصلة -->
-<h3 style="color:#0f172a;margin-top:30px;margin-bottom:8px;font-size:15px;font-weight:bold;">📝 سجل الحركات والتقارير اليومية بالتفصيل (${logCounter} حركة)</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
-    <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
+    <tr style="height:32px;">
+      <th colspan="10" style="background-color:#0f172a;color:#ffffff;font-size:14px;text-align:center;padding:6px;font-weight:bold;">
+        📝 سجل الحركات والتقارير اليومية بالتفصيل (${logCounter} حركة)
+      </th>
+    </tr>
+    <tr style="background-color:#1e293b;color:#ffffff;text-align:center;font-weight:bold;">
       <th style="padding:8px;border:1px solid #334155;">م</th>
       <th style="padding:8px;border:1px solid #334155;">التاريخ</th>
       <th style="padding:8px;border:1px solid #334155;">اليوم</th>
@@ -522,16 +519,15 @@ export function exportMonthlyMachineryExcel(
   const totalCols = 1 + histList.length * 3 + 2;
 
   // ترقيم الصفوف الفعلي في Excel:
-  // Row 1: العنوان الرئيسي
-  // Row 2: التفاصيل والفترة
-  // Row 3: الترويسة الرئيسية (Top Header)
-  // Row 4: الترويسة الفرعية (Sub Header)
-  // Row 5: أول يوم في الشهر (startRow = 5)
-  // Row 4 + N: آخر يوم في الشهر (endRow = 4 + monthDays.length)
-  // Row 5 + N: صف الإجمالي العام (totalsRow = 5 + monthDays.length)
-  const startRow = 5;
-  const endRow = monthDays.length > 0 ? 4 + monthDays.length : startRow;
-  const totalsRow = 5 + monthDays.length;
+  // Row 1: العنوان الرئيسي والتفاصيل
+  // Row 2: الترويسة الرئيسية (Top Header: اليوم، المعدات، إجمالي اليوم)
+  // Row 3: الترويسة الفرعية (Sub Header: ساعة، نقلة، تقرير الشغل ...)
+  // Row 4: أول يوم في الشهر (startRow = 4)
+  // Row 3 + D: آخر يوم في الشهر (endRow = 3 + monthDays.length)
+  // Row 4 + D: صف الإجمالي العام (totalsRow = 4 + monthDays.length)
+  const startRow = 4;
+  const endRow = monthDays.length > 0 ? 3 + monthDays.length : startRow;
+  const totalsRow = 4 + monthDays.length;
 
   // أعمدة كل معدة
   const machHourColLetters: string[] = [];
@@ -806,21 +802,15 @@ export function exportMonthlyMachineryExcel(
 <!-- 1️⃣ شيت التقرير الشهري التراكمي المجمع: الأيام × المعدات -->
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
-    <!-- Row 1: العنوان الرئيسي -->
-    <tr style="height:38px;">
-      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
-        🚜 ${esc(deptName)} — شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي
+    <!-- Row 1: العنوان الرئيسي والتفاصيل -->
+    <tr style="height:36px;">
+      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:15px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي (${month}) • إجمالي الساعات: ${grandHours} • إجمالي النقلات: ${grandTrips}
       </th>
     </tr>
-    <!-- Row 2: التفاصيل والفترة -->
-    <tr style="height:26px;">
-      <th colspan="${totalCols}" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
-        شهر: ${month} (إجمالي أيام الشهر: ${daysCount} يوم) • إجمالي المعدات: ${histList.length} • إجمالي الساعات: ${grandHours} • إجمالي النقلات: ${grandTrips}
-      </th>
-    </tr>
-    <!-- Row 3: الترويسة الرئيسية -->
+    <!-- Row 2: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
-    <!-- Row 4: الترويسة الفرعية -->
+    <!-- Row 3: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -830,10 +820,14 @@ export function exportMonthlyMachineryExcel(
 </table>
 
 <!-- 2️⃣ ملخص كشف الملاك للشهر -->
-<h3 style="color:#0f172a;margin-top:30px;margin-bottom:8px;font-size:15px;font-weight:bold;">👤 ملخص كشف ساعات ونقلات الملاك لشهر ${month}</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
-    <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
+    <tr style="height:32px;">
+      <th colspan="6" style="background-color:#0f172a;color:#ffffff;font-size:14px;text-align:center;padding:6px;font-weight:bold;">
+        👤 ملخص كشف ساعات ونقلات الملاك لشهر ${month}
+      </th>
+    </tr>
+    <tr style="background-color:#1e293b;color:#ffffff;text-align:center;font-weight:bold;">
       <th style="padding:8px;border:1px solid #334155;width:40px;">م</th>
       <th style="padding:8px;border:1px solid #334155;text-align:right;">المالك</th>
       <th style="padding:8px;border:1px solid #334155;width:90px;">عدد المعدات</th>
@@ -855,10 +849,14 @@ export function exportMonthlyMachineryExcel(
 </table>
 
 <!-- 3️⃣ سجل الحركات والتقارير اليومية المفصلة للشهر -->
-<h3 style="color:#0f172a;margin-top:30px;margin-bottom:8px;font-size:15px;font-weight:bold;">📝 سجل الحركات والتقارير اليومية بالتفصيل لشهر ${month} (${logCounter} حركة)</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
-    <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
+    <tr style="height:32px;">
+      <th colspan="10" style="background-color:#0f172a;color:#ffffff;font-size:14px;text-align:center;padding:6px;font-weight:bold;">
+        📝 سجل الحركات والتقارير اليومية بالتفصيل لشهر ${month} (${logCounter} حركة)
+      </th>
+    </tr>
+    <tr style="background-color:#1e293b;color:#ffffff;text-align:center;font-weight:bold;">
       <th style="padding:8px;border:1px solid #334155;">م</th>
       <th style="padding:8px;border:1px solid #334155;">التاريخ</th>
       <th style="padding:8px;border:1px solid #334155;">اليوم</th>
@@ -903,9 +901,9 @@ export function exportDailyMachineryExcel(
   deptName = 'قسم المساحة'
 ) {
   const dayName = getArabicDayName(dayDate);
-  const startRow = 4;
-  const endRow = activeMachinery.length > 0 ? 3 + activeMachinery.length : startRow;
-  const totalsRow = 4 + activeMachinery.length;
+  const startRow = 3;
+  const endRow = activeMachinery.length > 0 ? 2 + activeMachinery.length : startRow;
+  const totalsRow = 3 + activeMachinery.length;
 
   let totalHours = 0;
   let totalTrips = 0;
@@ -972,13 +970,8 @@ export function exportDailyMachineryExcel(
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
     <tr style="height:36px;">
-      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
-        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات المعدات اليومي
-      </th>
-    </tr>
-    <tr style="height:26px;">
-      <th colspan="7" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
-        يوم: ${dayName} (${dayDate}) • إجمالي المعدات: ${activeMachinery.length}
+      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:15px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات المعدات اليومي — يوم: ${dayName} (${dayDate})
       </th>
     </tr>
     <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
@@ -1027,9 +1020,9 @@ export function exportOwnersMachineryExcel(
   ownersList: { owner: string; machines: Machinery[]; mon: number; monTrips: number; total: number; totalTrips: number }[],
   deptName = 'قسم المساحة'
 ) {
-  const startRow = 4;
-  const endRow = ownersList.length > 0 ? 3 + ownersList.length : startRow;
-  const totalsRow = 4 + ownersList.length;
+  const startRow = 3;
+  const endRow = ownersList.length > 0 ? 2 + ownersList.length : startRow;
+  const totalsRow = 3 + ownersList.length;
 
   let grandMonHours = 0;
   let grandMonTrips = 0;
@@ -1097,13 +1090,8 @@ export function exportOwnersMachineryExcel(
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
     <tr style="height:36px;">
-      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
-        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات الملاك
-      </th>
-    </tr>
-    <tr style="height:26px;">
-      <th colspan="7" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
-        شهر: ${month} • إجمالي الملاك: ${ownersList.length}
+      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:15px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات الملاك — شهر: ${month}
       </th>
     </tr>
     <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">

@@ -1018,3 +1018,129 @@ export function exportDailyMachineryExcel(
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * 📊 تصدير كشف الملاك بصيغة Excel ملونة مع معادلات الإكسيل الحية (=SUM)
+ */
+export function exportOwnersMachineryExcel(
+  month: string,
+  ownersList: { owner: string; machines: Machinery[]; mon: number; monTrips: number; total: number; totalTrips: number }[],
+  deptName = 'قسم المساحة'
+) {
+  const startRow = 4;
+  const endRow = ownersList.length > 0 ? 3 + ownersList.length : startRow;
+  const totalsRow = 4 + ownersList.length;
+
+  let grandMonHours = 0;
+  let grandMonTrips = 0;
+  let grandTotalHours = 0;
+  let grandTotalTrips = 0;
+
+  let rowsHtml = '';
+  ownersList.forEach((o, idx) => {
+    grandMonHours += o.mon;
+    grandMonTrips += o.monTrips;
+    grandTotalHours += o.total;
+    grandTotalTrips += o.totalTrips;
+
+    rowsHtml += `
+      <tr style="background-color:${idx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+        <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">👤 ${esc(o.owner)}</td>
+        <td x:num="${o.machines.length}" style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${o.machines.length}</td>
+        <td x:num="${o.mon}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${o.mon}</td>
+        <td x:num="${o.monTrips}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${o.monTrips}</td>
+        <td x:num="${o.total}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#ecfdf5;color:#065f46;">${o.total}</td>
+        <td x:num="${o.totalTrips}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fef3c7;color:#92400e;">${o.totalTrips}</td>
+      </tr>
+    `;
+  });
+
+  const fmlaMonH = ownersList.length > 0 ? `=SUM(D${startRow}:D${endRow})` : `=0`;
+  const fmlaMonT = ownersList.length > 0 ? `=SUM(E${startRow}:E${endRow})` : `=0`;
+  const fmlaTotH = ownersList.length > 0 ? `=SUM(F${startRow}:F${endRow})` : `=0`;
+  const fmlaTotT = ownersList.length > 0 ? `=SUM(G${startRow}:G${endRow})` : `=0`;
+
+  const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel"
+      xmlns="http://www.w3.org/TR/REC-html40"
+      dir="rtl"
+      lang="ar">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="ProgId" content="Excel.Sheet">
+<meta name="Generator" content="Microsoft Excel 15">
+<!--[if gte mso 9]>
+<xml>
+ <x:ExcelWorkbook>
+  <x:ExcelWorksheets>
+   <x:ExcelWorksheet>
+    <x:Name>كشف الملاك شهر ${month}</x:Name>
+    <x:WorksheetOptions>
+     <x:DisplayRightToLeft/>
+     <x:Selected/>
+     <x:DoNotDisplayGridlines/>
+    </x:WorksheetOptions>
+   </x:ExcelWorksheet>
+  </x:ExcelWorksheets>
+ </x:ExcelWorkbook>
+</xml>
+<![endif]-->
+<style>
+  body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; margin: 15px; direction: rtl; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
+  <thead>
+    <tr style="height:36px;">
+      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات الملاك
+      </th>
+    </tr>
+    <tr style="height:26px;">
+      <th colspan="7" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
+        شهر: ${month} • إجمالي الملاك: ${ownersList.length}
+      </th>
+    </tr>
+    <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
+      <th style="padding:8px;border:1px solid #334155;width:40px;">م</th>
+      <th style="padding:8px;border:1px solid #334155;text-align:right;">المالك</th>
+      <th style="padding:8px;border:1px solid #334155;width:80px;">عدد المعدات</th>
+      <th style="padding:8px;border:1px solid #334155;width:110px;">ساعات ${month}</th>
+      <th style="padding:8px;border:1px solid #334155;width:110px;">نقلات ${month}</th>
+      <th style="padding:8px;border:1px solid #334155;width:120px;">إجمالي الساعات الكلي</th>
+      <th style="padding:8px;border:1px solid #334155;width:120px;">إجمالي النقلات الكلي</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rowsHtml}
+  </tbody>
+  <tfoot>
+    <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
+      <td colspan="3" style="mso-number-format:\\@;padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;">الإجمالي العام</td>
+      <td x:num="${grandMonHours}" x:fmla="${fmlaMonH}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#ffffff;">${grandMonHours}</td>
+      <td x:num="${grandMonTrips}" x:fmla="${fmlaMonT}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#fde68a;">${grandMonTrips}</td>
+      <td x:num="${grandTotalHours}" x:fmla="${fmlaTotH}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#065f46;color:#ffffff;">${grandTotalHours}</td>
+      <td x:num="${grandTotalTrips}" x:fmla="${fmlaTotT}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#065f46;color:#fde68a;">${grandTotalTrips}</td>
+    </tr>
+  </tfoot>
+</table>
+
+</body>
+</html>`;
+
+  const filename = `كشف_الملاك_${month}`;
+  const blob = new Blob(['\uFEFF' + fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

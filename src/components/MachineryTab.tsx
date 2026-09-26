@@ -19,6 +19,7 @@ import {
   exportWeeklyMachineryExcel,
   exportMonthlyMachineryExcel,
   exportDailyMachineryExcel,
+  exportOwnersMachineryExcel,
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
@@ -405,8 +406,8 @@ export default function MachineryTab({ user }: Props) {
     .sort((a, b) => b.mon - a.mon || b.monTrips - a.monTrips || a.owner.localeCompare(b.owner, 'ar'));
 
   function exportOwners() {
-    const rows = ownersList.map(o => [o.owner, o.machines.length, o.mon, o.monTrips, o.total, o.totalTrips]);
-    downloadCsv(`كشف_الملاك_${month}.csv`, ['المالك', 'عدد المعدات', `ساعات ${month}`, `نقلات ${month}`, 'إجمالي الساعات', 'إجمالي النقلات'], [...rows, ['الإجمالي', '', ownersList.reduce((s2, o) => s2 + o.mon, 0), ownersList.reduce((s2, o) => s2 + o.monTrips, 0), ownersList.reduce((s2, o) => s2 + o.total, 0), ownersList.reduce((s2, o) => s2 + o.totalTrips, 0)]]);
+    exportOwnersMachineryExcel(month, ownersList, deptName);
+    flash(`📥 تم تصدير كشف الملاك لشهر ${month} بصيغة Excel الملونة بنجاح!`);
   }
 
   function exportDay() {

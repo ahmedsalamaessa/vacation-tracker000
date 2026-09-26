@@ -13,7 +13,7 @@ export function parseYMD(str: string): Date {
   const clean = String(str || '').slice(0, 10);
   const parts = clean.split('-').map(Number);
   if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0); // 12 ظهراً لتجنب أي فرق توقيت
+    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
   }
   const fallback = new Date();
   fallback.setHours(12, 0, 0, 0);
@@ -160,16 +160,17 @@ export function exportWeeklyMachineryExcel(
   // إجمالي الأعمدة في الجدول
   const totalCols = 4 + weekDays.length * 3 + 2;
 
-  // ترقيم الصفوف للإكسيل
-  // Row 1: Title
-  // Row 2: Subtitle
-  // Row 3: Blank
-  // Row 4: Top Header
-  // Row 5: Sub Header
-  // Row 6: First Machine (startRow = 6)
-  const startRow = 6;
-  const endRow = machineryList.length > 0 ? startRow + machineryList.length - 1 : startRow;
-  const totalsRow = endRow + 1;
+  // ترقيم الصفوف الفعلي في Excel:
+  // Row 1: العنوان الرئيسي
+  // Row 2: التفاصيل والفترة
+  // Row 3: الترويسة الرئيسية (Top Header: م، المعدة، المالك، السائق، الأيام، إجمالي الفترة)
+  // Row 4: الترويسة الفرعية (Sub Header: ساعة، نقلة، تقرير الشغل ...)
+  // Row 5: أول معدة في القائمة (startRow = 5)
+  // Row 4 + N: آخر معدة في القائمة (endRow = 4 + machineryList.length)
+  // Row 5 + N: صف الإجماليات (totalsRow = 5 + machineryList.length)
+  const startRow = 5;
+  const endRow = machineryList.length > 0 ? 4 + machineryList.length : startRow;
+  const totalsRow = 5 + machineryList.length;
 
   // أعمدة الساعات والنقلات لكل يوم
   const dayHourColLetters: string[] = [];
@@ -240,49 +241,49 @@ export function exportWeeklyMachineryExcel(
       machTotalHours += h;
       machTotalTrips += t;
 
-      // خلية الساعات كـ رقم صافي بدون حروف
+      // خلية الساعات: رقم صافي بدون أي بوينت أو حروف
       const hourCell = h > 0
-        ? `<td x:num="${h}" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
-        : `<td x:num="0" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
+        ? `<td x:num="${h}" style="mso-number-format:General;padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
+        : `<td x:num="0" style="mso-number-format:General;padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
-      // خلية النقلات كـ رقم صافي بدون حروف
+      // خلية النقلات: رقم صافي بدون أي بوينت أو حروف
       const tripCell = t > 0
-        ? `<td x:num="${t}" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
-        : `<td x:num="0" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
+        ? `<td x:num="${t}" style="mso-number-format:General;padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
+        : `<td x:num="0" style="mso-number-format:General;padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
-      // تقرير الشغل كنص عادي
+      // تقرير الشغل كنص
       const noteCell = n
-        ? `<td style="mso-number-format:'\\@';padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11px;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n)}</td>`
-        : `<td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td style="mso-number-format:\\@;padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11px;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n)}</td>`
+        : `<td style="mso-number-format:\\@;padding:6px 8px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
 
       dayCells += hourCell + tripCell + noteCell;
     });
 
     const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
 
-    // معادلة إجمالي ساعات المعدة في الأسبوع =SUM(E6,H6,K6,N6,Q6,T6,W6)
+    // معادلة إجمالي ساعات المعدة في الأسبوع =SUM(E5,H5,K5,N5,Q5,T5,W5)
     const machHourFormula = `=SUM(${dayHourColLetters.map(col => `${col}${currentRow}`).join(',')})`;
-    // معادلة إجمالي نقلات المعدة في الأسبوع =SUM(F6,I6,L6,O6,R6,U6,X6)
+    // معادلة إجمالي نقلات المعدة في الأسبوع =SUM(F5,I5,L5,O5,R5,U5,X5)
     const machTripFormula = `=SUM(${dayTripColLetters.map(col => `${col}${currentRow}`).join(',')})`;
 
     rowsHtml += `
       <tr style="background-color:${rowBg};">
-        <td style="mso-number-format:'0';padding:8px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
-        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;font-size:12px;">${esc(kindLabel)}</td>
-        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;color:#334155;font-weight:bold;">${esc(m.owner || '—')}</td>
-        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+        <td style="mso-number-format:0;padding:8px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
+        <td style="mso-number-format:\\@;padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;font-size:12px;">${esc(kindLabel)}</td>
+        <td style="mso-number-format:\\@;padding:8px;border:1px solid #cbd5e1;text-align:right;color:#334155;font-weight:bold;">${esc(m.owner || '—')}</td>
+        <td style="mso-number-format:\\@;padding:8px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
         ${dayCells}
-        <td x:num="${machTotalHours}" x:fmla="${machHourFormula}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
+        <td x:num="${machTotalHours}" x:fmla="${machHourFormula}" style="mso-number-format:General;padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
           ${machTotalHours}
         </td>
-        <td x:num="${machTotalTrips}" x:fmla="${machTripFormula}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
+        <td x:num="${machTotalTrips}" x:fmla="${machTripFormula}" style="mso-number-format:General;padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
           ${machTotalTrips}
         </td>
       </tr>
     `;
   });
 
-  // 3) صف الإجماليات بمعادلات الإكسيل الحية =SUM(col6:colEnd)
+  // 3) صف الإجماليات بمعادلات الإكسيل الحية =SUM(col5:colEnd)
   let totalsDayCells = '';
   weekDays.forEach((_, dIdx) => {
     const hCol = dayHourColLetters[dIdx];
@@ -294,13 +295,13 @@ export function exportWeeklyMachineryExcel(
     const fmlaT = machineryList.length > 0 ? `=SUM(${tCol}${startRow}:${tCol}${endRow})` : `=0`;
 
     totalsDayCells += `
-      <td x:num="${sumH}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
+      <td x:num="${sumH}" x:fmla="${fmlaH}" style="mso-number-format:General;padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
         ${sumH}
       </td>
-      <td x:num="${sumT}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
+      <td x:num="${sumT}" x:fmla="${fmlaT}" style="mso-number-format:General;padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
         ${sumT}
       </td>
-      <td style="mso-number-format:'\\@';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:11px;background-color:#0f172a;color:#94a3b8;">
+      <td style="mso-number-format:\\@;padding:10px 4px;border:1px solid #334155;text-align:center;font-size:11px;background-color:#0f172a;color:#94a3b8;">
         —
       </td>
     `;
@@ -311,14 +312,14 @@ export function exportWeeklyMachineryExcel(
 
   const totalsRowHtml = `
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td colspan="4" style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
+      <td colspan="4" style="mso-number-format:\\@;padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
         📊 إجمالي الفترة
       </td>
       ${totalsDayCells}
-      <td x:num="${totalWeekHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#ffffff;">
+      <td x:num="${totalWeekHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:General;padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#ffffff;">
         ${totalWeekHours}
       </td>
-      <td x:num="${totalWeekTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#fde68a;">
+      <td x:num="${totalWeekTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:General;padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#fde68a;">
         ${totalWeekTrips}
       </td>
     </tr>
@@ -345,16 +346,16 @@ export function exportWeeklyMachineryExcel(
 
         logRowsHtml += `
           <tr style="background-color:${logCounter % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-            <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
-            <td style="mso-number-format:'yyyy-mm-dd';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
-            <td x:num="${entry.hours || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
-            <td x:num="${entry.trips || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
-            <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
-            <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
+            <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
+            <td style="mso-number-format:yyyy-mm-dd;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+            <td x:num="${entry.hours || 0}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
+            <td x:num="${entry.trips || 0}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
+            <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
+            <td style="mso-number-format:\\@;padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
           </tr>
         `;
       }
@@ -420,13 +421,9 @@ export function exportWeeklyMachineryExcel(
         الفترة من: ${startDayName} ${startDate} إلى ${endDayName} ${endDate} (أسبوع عمل كامل 7 أيام) • إجمالي المعدات: ${machineryList.length} • إجمالي الساعات: ${totalWeekHours} • إجمالي النقلات: ${totalWeekTrips}
       </th>
     </tr>
-    <!-- Row 3: فاصل -->
-    <tr style="height:6px;">
-      <td colspan="${totalCols}" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
-    </tr>
-    <!-- Row 4: الترويسة الرئيسية -->
+    <!-- Row 3: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
-    <!-- Row 5: الترويسة الفرعية -->
+    <!-- Row 4: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -524,16 +521,17 @@ export function exportMonthlyMachineryExcel(
   // إجمالي الأعمدة
   const totalCols = 1 + histList.length * 3 + 2;
 
-  // ترقيم الصفوف للإكسيل
-  // Row 1: Title
-  // Row 2: Subtitle
-  // Row 3: Blank
-  // Row 4: Top Header
-  // Row 5: Sub Header
-  // Row 6: First Day (startRow = 6)
-  const startRow = 6;
-  const endRow = monthDays.length > 0 ? startRow + monthDays.length - 1 : startRow;
-  const totalsRow = endRow + 1;
+  // ترقيم الصفوف الفعلي في Excel:
+  // Row 1: العنوان الرئيسي
+  // Row 2: التفاصيل والفترة
+  // Row 3: الترويسة الرئيسية (Top Header)
+  // Row 4: الترويسة الفرعية (Sub Header)
+  // Row 5: أول يوم في الشهر (startRow = 5)
+  // Row 4 + N: آخر يوم في الشهر (endRow = 4 + monthDays.length)
+  // Row 5 + N: صف الإجمالي العام (totalsRow = 5 + monthDays.length)
+  const startRow = 5;
+  const endRow = monthDays.length > 0 ? 4 + monthDays.length : startRow;
+  const totalsRow = 5 + monthDays.length;
 
   // أعمدة كل معدة
   const machHourColLetters: string[] = [];
@@ -605,16 +603,16 @@ export function exportMonthlyMachineryExcel(
       daySumT += t;
 
       const hourCell = h > 0
-        ? `<td x:num="${h}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
-        : `<td x:num="0" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
+        ? `<td x:num="${h}" style="mso-number-format:General;padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
+        : `<td x:num="0" style="mso-number-format:General;padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
       const tripCell = t > 0
-        ? `<td x:num="${t}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
-        : `<td x:num="0" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
+        ? `<td x:num="${t}" style="mso-number-format:General;padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
+        : `<td x:num="0" style="mso-number-format:General;padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
       const noteCell = n
-        ? `<td style="mso-number-format:'\\@';padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;font-size:11px;">${esc(n)}</td>`
-        : `<td style="mso-number-format:'\\@';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td style="mso-number-format:\\@;padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;font-size:11px;">${esc(n)}</td>`
+        : `<td style="mso-number-format:\\@;padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
 
       machineCells += hourCell + tripCell + noteCell;
     });
@@ -623,20 +621,20 @@ export function exportMonthlyMachineryExcel(
     const dayTripFmla = histList.length > 0 ? `=SUM(${machTripColLetters.map(col => `${col}${currentRow}`).join(',')})` : `=0`;
 
     const dayTotalHCell = `
-      <td x:num="${daySumH}" x:fmla="${dayHourFmla}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#dbeafe;color:#1e40af;font-size:12px;">
+      <td x:num="${daySumH}" x:fmla="${dayHourFmla}" style="mso-number-format:General;padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#dbeafe;color:#1e40af;font-size:12px;">
         ${daySumH}
       </td>
     `;
 
     const dayTotalTCell = `
-      <td x:num="${daySumT}" x:fmla="${dayTripFmla}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fef3c7;color:#92400e;font-size:12px;">
+      <td x:num="${daySumT}" x:fmla="${dayTripFmla}" style="mso-number-format:General;padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fef3c7;color:#92400e;font-size:12px;">
         ${daySumT}
       </td>
     `;
 
     dayRowsHtml += `
       <tr style="background-color:${rowBg};">
-        <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;white-space:nowrap;color:${isFri ? '#92400e' : '#0f172a'};">
+        <td style="mso-number-format:\\@;padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;white-space:nowrap;color:${isFri ? '#92400e' : '#0f172a'};">
           ${dayNum} — ${dayName} ${isFri ? '🌴' : ''}
         </td>
         ${machineCells}
@@ -665,9 +663,9 @@ export function exportMonthlyMachineryExcel(
     const fmlaT = monthDays.length > 0 ? `=SUM(${tCol}${startRow}:${tCol}${endRow})` : `=0`;
 
     monthTotalsMachineCells += `
-      <td x:num="${mTotalH}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#6ee7b7;font-size:13px;">${mTotalH}</td>
-      <td x:num="${mTotalT}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#fde68a;font-size:13px;">${mTotalT}</td>
-      <td style="mso-number-format:'\\@';padding:8px 4px;border:1px solid #334155;text-align:center;background-color:#0f172a;color:#64748b;font-size:11px;">—</td>
+      <td x:num="${mTotalH}" x:fmla="${fmlaH}" style="mso-number-format:General;padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#6ee7b7;font-size:13px;">${mTotalH}</td>
+      <td x:num="${mTotalT}" x:fmla="${fmlaT}" style="mso-number-format:General;padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#fde68a;font-size:13px;">${mTotalT}</td>
+      <td style="mso-number-format:\\@;padding:8px 4px;border:1px solid #334155;text-align:center;background-color:#0f172a;color:#64748b;font-size:11px;">—</td>
     `;
   });
 
@@ -676,14 +674,14 @@ export function exportMonthlyMachineryExcel(
 
   const monthGrandTotalRow = `
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
+      <td style="mso-number-format:\\@;padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
         📊 إجمالي شهر ${month}
       </td>
       ${monthTotalsMachineCells}
-      <td x:num="${grandHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
+      <td x:num="${grandHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:General;padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
         ${grandHours}
       </td>
-      <td x:num="${grandTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
+      <td x:num="${grandTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:General;padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
         ${grandTrips}
       </td>
     </tr>
@@ -714,12 +712,12 @@ export function exportMonthlyMachineryExcel(
     const machListStr = data.machines.map(m => [m.kind, m.size].filter(Boolean).join(' ')).join('، ');
     ownersRowsHtml += `
       <tr style="background-color:${ownerIdx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${ownerIdx}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">👤 ${esc(ownerName)}</td>
-        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${data.machines.length}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;color:#475569;font-size:11px;">${esc(machListStr)}</td>
-        <td x:num="${data.hours}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:13px;">${data.hours}</td>
-        <td x:num="${data.trips}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:13px;">${data.trips}</td>
+        <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${ownerIdx}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">👤 ${esc(ownerName)}</td>
+        <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${data.machines.length}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;color:#475569;font-size:11px;">${esc(machListStr)}</td>
+        <td x:num="${data.hours}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:13px;">${data.hours}</td>
+        <td x:num="${data.trips}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:13px;">${data.trips}</td>
       </tr>
     `;
   });
@@ -745,16 +743,16 @@ export function exportMonthlyMachineryExcel(
 
         logRowsHtml += `
           <tr style="background-color:${logCounter % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-            <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
-            <td style="mso-number-format:'yyyy-mm-dd';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
-            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
-            <td x:num="${entry.hours || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
-            <td x:num="${entry.trips || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
-            <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
-            <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
+            <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
+            <td style="mso-number-format:yyyy-mm-dd;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+            <td style="mso-number-format:\\@;padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+            <td x:num="${entry.hours || 0}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
+            <td x:num="${entry.trips || 0}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
+            <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
+            <td style="mso-number-format:\\@;padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
           </tr>
         `;
       }
@@ -820,13 +818,9 @@ export function exportMonthlyMachineryExcel(
         شهر: ${month} (إجمالي أيام الشهر: ${daysCount} يوم) • إجمالي المعدات: ${histList.length} • إجمالي الساعات: ${grandHours} • إجمالي النقلات: ${grandTrips}
       </th>
     </tr>
-    <!-- Row 3: فاصل -->
-    <tr style="height:6px;">
-      <td colspan="${totalCols}" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
-    </tr>
-    <!-- Row 4: الترويسة الرئيسية -->
+    <!-- Row 3: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
-    <!-- Row 5: الترويسة الفرعية -->
+    <!-- Row 4: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -853,9 +847,9 @@ export function exportMonthlyMachineryExcel(
   </tbody>
   <tfoot>
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td colspan="4" style="mso-number-format:'\\@';padding:8px;border:1px solid #334155;text-align:center;">الإجمالي العام لكافة الملاك</td>
-      <td x:num="${grandHours}" style="mso-number-format:'0.##';padding:8px;border:1px solid #334155;text-align:center;color:#6ee7b7;font-size:13px;font-weight:bold;">${grandHours}</td>
-      <td x:num="${grandTrips}" style="mso-number-format:'0.##';padding:8px;border:1px solid #334155;text-align:center;color:#fde68a;font-size:13px;font-weight:bold;">${grandTrips}</td>
+      <td colspan="4" style="mso-number-format:\\@;padding:8px;border:1px solid #334155;text-align:center;">الإجمالي العام لكافة الملاك</td>
+      <td x:num="${grandHours}" style="mso-number-format:General;padding:8px;border:1px solid #334155;text-align:center;color:#6ee7b7;font-size:13px;font-weight:bold;">${grandHours}</td>
+      <td x:num="${grandTrips}" style="mso-number-format:General;padding:8px;border:1px solid #334155;text-align:center;color:#fde68a;font-size:13px;font-weight:bold;">${grandTrips}</td>
     </tr>
   </tfoot>
 </table>
@@ -909,9 +903,9 @@ export function exportDailyMachineryExcel(
   deptName = 'قسم المساحة'
 ) {
   const dayName = getArabicDayName(dayDate);
-  const startRow = 5;
-  const endRow = activeMachinery.length > 0 ? startRow + activeMachinery.length - 1 : startRow;
-  const totalsRow = endRow + 1;
+  const startRow = 4;
+  const endRow = activeMachinery.length > 0 ? 3 + activeMachinery.length : startRow;
+  const totalsRow = 4 + activeMachinery.length;
 
   let totalHours = 0;
   let totalTrips = 0;
@@ -928,13 +922,13 @@ export function exportDailyMachineryExcel(
 
     rowsHtml += `
       <tr style="background-color:${idx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
-        <td x:num="${h}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${h}</td>
-        <td x:num="${t}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${t}</td>
-        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n || '—')}</td>
+        <td style="mso-number-format:0;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+        <td x:num="${h}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${h}</td>
+        <td x:num="${t}" style="mso-number-format:General;padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${t}</td>
+        <td style="mso-number-format:\\@;padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n || '—')}</td>
       </tr>
     `;
   });
@@ -987,9 +981,6 @@ export function exportDailyMachineryExcel(
         يوم: ${dayName} (${dayDate}) • إجمالي المعدات: ${activeMachinery.length}
       </th>
     </tr>
-    <tr style="height:6px;">
-      <td colspan="7" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
-    </tr>
     <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
       <th style="padding:8px;border:1px solid #334155;width:40px;">م</th>
       <th style="padding:8px;border:1px solid #334155;text-align:right;">المعدة والمقاس</th>
@@ -1005,10 +996,10 @@ export function exportDailyMachineryExcel(
   </tbody>
   <tfoot>
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td colspan="4" style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;">إجمالي اليوم</td>
-      <td x:num="${totalHours}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#ffffff;">${totalHours}</td>
-      <td x:num="${totalTrips}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#fde68a;">${totalTrips}</td>
-      <td style="mso-number-format:'\\@';padding:10px;border:1px solid #334155;text-align:center;color:#94a3b8;">—</td>
+      <td colspan="4" style="mso-number-format:\\@;padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;">إجمالي اليوم</td>
+      <td x:num="${totalHours}" x:fmla="${fmlaH}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#ffffff;">${totalHours}</td>
+      <td x:num="${totalTrips}" x:fmla="${fmlaT}" style="mso-number-format:General;padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#fde68a;">${totalTrips}</td>
+      <td style="mso-number-format:\\@;padding:10px;border:1px solid #334155;text-align:center;color:#94a3b8;">—</td>
     </tr>
   </tfoot>
 </table>

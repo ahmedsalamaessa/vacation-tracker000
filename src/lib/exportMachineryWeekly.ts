@@ -13,7 +13,7 @@ export function parseYMD(str: string): Date {
   const clean = String(str || '').slice(0, 10);
   const parts = clean.split('-').map(Number);
   if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0); // ساعة 12 ظهراً لتجنب أي فرق توقيت أو تغيير توقيت صيفي
+    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0); // 12 ظهراً لتجنب أي فرق توقيت
   }
   const fallback = new Date();
   fallback.setHours(12, 0, 0, 0);
@@ -45,7 +45,7 @@ export function getSaturdayOfWeek(dStr: string): string {
 }
 
 /**
- * يرجع مصفوفة 7 أيام تبدأ بالسبت وتنتهي بالجمعة: [السبت, الأحد, الاثنين, الثلاثاء, الأربعاء, الخميس, الجمعة]
+ * يرجع مصفوفة 7 أيام تبدأ بالسبت وتنتهي بالجمعة
  */
 export function getWeekDays(startDate: string, count = 7): string[] {
   const satStart = getSaturdayOfWeek(startDate);
@@ -66,7 +66,7 @@ export function shiftDateDays(dStr: string, delta: number): string {
 }
 
 /**
- * يرجع مصفوفة التواريخ بين تاريخين محددين مانيوال
+ * يرجع مصفوفة التواريخ بين تاريخين محددين
  */
 export function getDaysInRange(startDateStr: string, endDateStr: string, maxDays = 90): string[] {
   try {
@@ -90,7 +90,26 @@ export function getDaysInRange(startDateStr: string, endDateStr: string, maxDays
 }
 
 /**
- * 📊 تصدير تقرير تشغيل المعدات الشامل بصيغة Excel منسقة بالكامل بالألوان لأي فترة مخصصة
+ * 🔤 تحويل رقم العمود إلى حرف الإكسيل المقابل (0 -> A, 1 -> B, 25 -> Z, 26 -> AA, 27 -> AB)
+ */
+export function colToExcelLetter(colIndex: number): string {
+  let temp = colIndex;
+  let letter = '';
+  while (temp >= 0) {
+    letter = String.fromCharCode((temp % 26) + 65) + letter;
+    temp = Math.floor(temp / 26) - 1;
+  }
+  return letter;
+}
+
+const esc = (val: unknown): string =>
+  String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+/**
+ * 📊 تصدير تقرير تشغيل المعدات الأسبوعي / الشامل بصيغة Excel منسقة مع معادلات رياضية حية (=SUM) وأرقام صافية
  */
 export function exportWeeklyMachineryExcel(
   daysListInput: string[],
@@ -99,13 +118,6 @@ export function exportWeeklyMachineryExcel(
   title = 'تقرير تشغيل وتتبع المعدات',
   employees: Employee[] = []
 ) {
-  const esc = (val: unknown): string =>
-    String(val ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-  // استخدام الأيام المحددة في الفترة المختارة
   const weekDays = (daysListInput && daysListInput.length > 0)
     ? daysListInput
     : getWeekDays(formatYMD(new Date()), 7);
@@ -114,13 +126,11 @@ export function exportWeeklyMachineryExcel(
   const startDayName = getArabicDayName(startDate);
   const endDayName = getArabicDayName(endDate);
 
-  // خريطة الموظفين بالـ ID
   const empMap = new Map<number, string>();
   for (const emp of employees) {
     if (emp && emp.id) empMap.set(emp.id, emp.name);
   }
 
-  // خريطة سريعة ودقيقة للبيانات مع توحيد التاريخ والـ ID
   const dataMap = new Map<string, MachineryHours>();
   for (const h of allHours) {
     if (h && h.machineryId != null && h.date) {
@@ -130,7 +140,7 @@ export function exportWeeklyMachineryExcel(
     }
   }
 
-  // حساب إجماليات كل يوم من السبت إلى الجمعة
+  // إجماليات الأيام
   const dayTotals = weekDays.map((d) => {
     let hours = 0;
     let trips = 0;
@@ -147,7 +157,25 @@ export function exportWeeklyMachineryExcel(
   const totalWeekHours = dayTotals.reduce((s, d) => s + d.hours, 0);
   const totalWeekTrips = dayTotals.reduce((s, d) => s + d.trips, 0);
 
-  // 1) بناء أعمدة العناوين (Top Headers & Sub Headers)
+  // إجمالي الأعمدة في الجدول
+  const totalCols = 4 + weekDays.length * 3 + 2;
+
+  // ترقيم الصفوف للإكسيل
+  // Row 1: Title
+  // Row 2: Subtitle
+  // Row 3: Blank
+  // Row 4: Top Header
+  // Row 5: Sub Header
+  // Row 6: First Machine (startRow = 6)
+  const startRow = 6;
+  const endRow = machineryList.length > 0 ? startRow + machineryList.length - 1 : startRow;
+  const totalsRow = endRow + 1;
+
+  // أعمدة الساعات والنقلات لكل يوم
+  const dayHourColLetters: string[] = [];
+  const dayTripColLetters: string[] = [];
+
+  // 1) بناء ترويسة الجدول
   let topHeaderCells = `
     <th rowspan="2" style="background-color:#0f172a;color:#ffffff;border:1px solid #334155;padding:10px 6px;font-size:13px;text-align:center;font-weight:bold;width:40px;">م</th>
     <th rowspan="2" style="background-color:#0f172a;color:#ffffff;border:1px solid #334155;padding:10px 8px;font-size:13px;min-width:140px;text-align:right;font-weight:bold;">المعدة والمقاس</th>
@@ -157,12 +185,14 @@ export function exportWeeklyMachineryExcel(
 
   let subHeaderCells = '';
 
-  // التكرار بالترتيب الصارم: السبت ← الأحد ← الاثنين ← الثلاثاء ← الأربعاء ← الخميس ← الجمعة
-  weekDays.forEach((d) => {
+  weekDays.forEach((d, dIdx) => {
     const dayName = getArabicDayName(d);
+    const isFri = dayName === 'الجمعة';
+    const headerBg = isFri ? '#b45309' : '#1e40af';
+
     topHeaderCells += `
-      <th colspan="3" style="background-color:#1e40af;color:#ffffff;border:1px solid #3b82f6;padding:8px;font-size:12px;text-align:center;font-weight:bold;">
-        <div style="font-size:13px;font-weight:bold;">${dayName}</div>
+      <th colspan="3" style="background-color:${headerBg};color:#ffffff;border:1px solid #3b82f6;padding:8px;font-size:12px;text-align:center;font-weight:bold;">
+        <div style="font-size:13px;font-weight:bold;">${dayName} ${isFri ? '🌴' : ''}</div>
         <div style="font-size:10px;opacity:0.85;color:#bfdbfe;">${d}</div>
       </th>
     `;
@@ -172,10 +202,18 @@ export function exportWeeklyMachineryExcel(
       <th style="background-color:#0284c7;color:#ffffff;border:1px solid #38bdf8;padding:6px 4px;font-size:11px;min-width:55px;text-align:center;font-weight:bold;">نقلة</th>
       <th style="background-color:#0f766e;color:#ffffff;border:1px solid #2dd4bf;padding:6px 8px;font-size:11px;min-width:160px;text-align:right;font-weight:bold;">تقرير الشغل</th>
     `;
+
+    const hColIdx = 4 + dIdx * 3;
+    const tColIdx = 4 + dIdx * 3 + 1;
+    dayHourColLetters.push(colToExcelLetter(hColIdx));
+    dayTripColLetters.push(colToExcelLetter(tColIdx));
   });
 
+  const totHoursColLetter = colToExcelLetter(4 + weekDays.length * 3);
+  const totTripsColLetter = colToExcelLetter(4 + weekDays.length * 3 + 1);
+
   topHeaderCells += `
-    <th colspan="2" style="background-color:#065f46;color:#ffffff;border:1px solid #10b981;padding:8px;font-size:13px;text-align:center;font-weight:bold;">إجمالي الأسبوع</th>
+    <th colspan="2" style="background-color:#065f46;color:#ffffff;border:1px solid #10b981;padding:8px;font-size:13px;text-align:center;font-weight:bold;">إجمالي الفترة</th>
   `;
 
   subHeaderCells += `
@@ -183,9 +221,10 @@ export function exportWeeklyMachineryExcel(
     <th style="background-color:#047857;color:#ffffff;border:1px solid #34d399;padding:6px 4px;font-size:12px;min-width:75px;text-align:center;font-weight:bold;">نقلات</th>
   `;
 
-  // 2) بناء صفوف المعدات
+  // 2) بناء صفوف المعدات مع أرقام صافية ومعادلات الجمع للأسبوع
   let rowsHtml = '';
   machineryList.forEach((m, idx) => {
+    const currentRow = startRow + idx;
     let machTotalHours = 0;
     let machTotalTrips = 0;
     const isEven = idx % 2 === 0;
@@ -201,76 +240,94 @@ export function exportWeeklyMachineryExcel(
       machTotalHours += h;
       machTotalTrips += t;
 
+      // خلية الساعات كـ رقم صافي بدون حروف
       const hourCell = h > 0
-        ? `<td style="padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
-        : `<td style="padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td x:num="${h}" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
+        : `<td x:num="0" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
+      // خلية النقلات كـ رقم صافي بدون حروف
       const tripCell = t > 0
-        ? `<td style="padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}ن</td>`
-        : `<td style="padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td x:num="${t}" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
+        : `<td x:num="0" style="mso-number-format:'0.##';padding:6px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
+      // تقرير الشغل كنص عادي
       const noteCell = n
-        ? `<td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11px;font-weight:bold;background-color:#f0fdfa;color:#115e59;">
-            <div style="background-color:#ccfbf1;border:1px solid #99f6e4;color:#134e4a;padding:3px 6px;border-radius:4px;display:inline-block;">${esc(n)}</div>
-          </td>`
-        : `<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td style="mso-number-format:'\\@';padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:11px;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n)}</td>`
+        : `<td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
 
       dayCells += hourCell + tripCell + noteCell;
     });
 
     const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
 
+    // معادلة إجمالي ساعات المعدة في الأسبوع =SUM(E6,H6,K6,N6,Q6,T6,W6)
+    const machHourFormula = `=SUM(${dayHourColLetters.map(col => `${col}${currentRow}`).join(',')})`;
+    // معادلة إجمالي نقلات المعدة في الأسبوع =SUM(F6,I6,L6,O6,R6,U6,X6)
+    const machTripFormula = `=SUM(${dayTripColLetters.map(col => `${col}${currentRow}`).join(',')})`;
+
     rowsHtml += `
       <tr style="background-color:${rowBg};">
-        <td style="padding:8px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
-        <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;font-size:12px;">${esc(kindLabel)}</td>
-        <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;color:#334155;font-weight:bold;">${esc(m.owner || '—')}</td>
-        <td style="padding:8px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+        <td style="mso-number-format:'0';padding:8px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
+        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;font-size:12px;">${esc(kindLabel)}</td>
+        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;color:#334155;font-weight:bold;">${esc(m.owner || '—')}</td>
+        <td style="mso-number-format:'\\@';padding:8px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
         ${dayCells}
-        <td style="padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
-          ${machTotalHours > 0 ? machTotalHours + ' س' : '—'}
+        <td x:num="${machTotalHours}" x:fmla="${machHourFormula}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
+          ${machTotalHours}
         </td>
-        <td style="padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
-          ${machTotalTrips > 0 ? machTotalTrips + ' ن' : '—'}
+        <td x:num="${machTotalTrips}" x:fmla="${machTripFormula}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #a7f3d0;text-align:center;font-weight:bold;font-size:13px;background-color:#ecfdf5;color:#065f46;">
+          ${machTotalTrips}
         </td>
       </tr>
     `;
   });
 
-  // 3) بناء صف الإجماليات اليومية والعامة
-  let dayTotalCells = '';
-  dayTotals.forEach((d) => {
-    dayTotalCells += `
-      <td style="padding:8px 4px;border:1px solid #64748b;text-align:center;font-weight:bold;font-size:12px;background-color:#dbeafe;color:#1e3a8a;">
-        ${d.hours > 0 ? d.hours : 0}
+  // 3) صف الإجماليات بمعادلات الإكسيل الحية =SUM(col6:colEnd)
+  let totalsDayCells = '';
+  weekDays.forEach((_, dIdx) => {
+    const hCol = dayHourColLetters[dIdx];
+    const tCol = dayTripColLetters[dIdx];
+    const sumH = dayTotals[dIdx]?.hours || 0;
+    const sumT = dayTotals[dIdx]?.trips || 0;
+
+    const fmlaH = machineryList.length > 0 ? `=SUM(${hCol}${startRow}:${hCol}${endRow})` : `=0`;
+    const fmlaT = machineryList.length > 0 ? `=SUM(${tCol}${startRow}:${tCol}${endRow})` : `=0`;
+
+    totalsDayCells += `
+      <td x:num="${sumH}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
+        ${sumH}
       </td>
-      <td style="padding:8px 4px;border:1px solid #64748b;text-align:center;font-weight:bold;font-size:12px;background-color:#fef3c7;color:#92400e;">
-        ${d.trips > 0 ? d.trips : 0}
+      <td x:num="${sumT}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
+        ${sumT}
       </td>
-      <td style="padding:8px 4px;border:1px solid #64748b;text-align:center;font-size:11px;background-color:#1e293b;color:#94a3b8;">
+      <td style="mso-number-format:'\\@';padding:10px 4px;border:1px solid #334155;text-align:center;font-size:11px;background-color:#0f172a;color:#94a3b8;">
         —
       </td>
     `;
   });
 
+  const grandHoursFmla = machineryList.length > 0 ? `=SUM(${totHoursColLetter}${startRow}:${totHoursColLetter}${endRow})` : `=0`;
+  const grandTripsFmla = machineryList.length > 0 ? `=SUM(${totTripsColLetter}${startRow}:${totTripsColLetter}${endRow})` : `=0`;
+
   const totalsRowHtml = `
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td colspan="4" style="padding:10px 8px;border:1px solid #64748b;text-align:center;font-size:13px;color:#ffffff;font-weight:bold;">
-        📊 الإجماليات اليومية والعامة
+      <td colspan="4" style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
+        📊 إجمالي الفترة
       </td>
-      ${dayTotalCells}
-      <td style="padding:10px 4px;border:1px solid #10b981;text-align:center;font-size:13px;background-color:#059669;color:#ffffff;font-weight:bold;">
-        ${totalWeekHours} س
+      ${totalsDayCells}
+      <td x:num="${totalWeekHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#ffffff;">
+        ${totalWeekHours}
       </td>
-      <td style="padding:10px 4px;border:1px solid #10b981;text-align:center;font-size:13px;background-color:#047857;color:#ffffff;font-weight:bold;">
-        ${totalWeekTrips} ن
+      <td x:num="${totalWeekTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#065f46;color:#fde68a;">
+        ${totalWeekTrips}
       </td>
     </tr>
   `;
 
-  // 4) بناء كشف الحركات والتقارير التفصيلية
-  let logRowsHtml = '';
+  // 4) كشف الحركات والتقارير اليومية بالتفصيل
   let logCounter = 0;
+  let logRowsHtml = '';
+
   weekDays.forEach((d) => {
     const dayName = getArabicDayName(d);
     machineryList.forEach((m) => {
@@ -288,16 +345,16 @@ export function exportWeeklyMachineryExcel(
 
         logRowsHtml += `
           <tr style="background-color:${logCounter % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
-            <td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
-            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
+            <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
+            <td style="mso-number-format:'yyyy-mm-dd';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+            <td x:num="${entry.hours || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
+            <td x:num="${entry.trips || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
+            <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
+            <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
           </tr>
         `;
       }
@@ -344,39 +401,32 @@ export function exportWeeklyMachineryExcel(
   th, td {
     vertical-align: middle;
   }
-  .title-box {
-    text-align: center;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #0f172a;
-    padding-bottom: 12px;
-  }
-  .title {
-    color: #0f172a;
-    font-size: 20px;
-    font-weight: bold;
-    margin: 0;
-  }
-  .subtitle {
-    color: #475569;
-    font-size: 13px;
-    margin: 4px 0 0 0;
-    font-weight: bold;
-  }
 </style>
 </head>
 <body>
 
-<div class="title-box">
-  <h2 class="title">🚜 ${esc(title)}</h2>
-  <p class="subtitle">الفترة من: <b>السبت ${startDate}</b> إلى <b>الجمعة ${endDate}</b> (أسبوع عمل كامل 7 أيام)</p>
-  <p class="subtitle">إجمالي المعدات: <b>${machineryList.length}</b> • إجمالي الساعات: <b style="color:#1e40af;">${totalWeekHours} ساعة</b> • إجمالي النقلات: <b style="color:#b45309;">${totalWeekTrips} نقلة</b></p>
-</div>
-
 <!-- 1️⃣ شيت التقرير الأسبوعي المجمع: من السبت إلى الجمعة -->
-<h3 style="color:#0f172a;margin-bottom:8px;font-size:15px;font-weight:bold;">📋 شيت تشغيل المعدات الأسبوعي الشامل (من السبت إلى الجمعة)</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
+    <!-- Row 1: العنوان الرئيسي -->
+    <tr style="height:38px;">
+      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(title)}
+      </th>
+    </tr>
+    <!-- Row 2: التفاصيل والفترة -->
+    <tr style="height:26px;">
+      <th colspan="${totalCols}" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
+        الفترة من: ${startDayName} ${startDate} إلى ${endDayName} ${endDate} (أسبوع عمل كامل 7 أيام) • إجمالي المعدات: ${machineryList.length} • إجمالي الساعات: ${totalWeekHours} • إجمالي النقلات: ${totalWeekTrips}
+      </th>
+    </tr>
+    <!-- Row 3: فاصل -->
+    <tr style="height:6px;">
+      <td colspan="${totalCols}" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
+    </tr>
+    <!-- Row 4: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
+    <!-- Row 5: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -410,7 +460,7 @@ export function exportWeeklyMachineryExcel(
 </body>
 </html>`;
 
-  const filename = `تقرير_المعدات_الأسبوعي_من_السبت_${startDate}_إلى_الجمعة_${endDate}`;
+  const filename = `تقرير_المعدات_الأسبوعي_من_${startDate}_إلى_${endDate}`;
   const blob = new Blob(['\uFEFF' + fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -423,7 +473,7 @@ export function exportWeeklyMachineryExcel(
 }
 
 /**
- * 📊 تصدير شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي بصيغة Excel ملونة ومنسقة بالكامل (.xls)
+ * 📊 تصدير شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي بصيغة Excel ملونة مع معادلات رياضية حية (=SUM) وأرقام صافية
  */
 export function exportMonthlyMachineryExcel(
   month: string,
@@ -432,12 +482,6 @@ export function exportMonthlyMachineryExcel(
   deptName = 'قسم المساحة',
   employees: Employee[] = []
 ) {
-  const esc = (val: unknown): string =>
-    String(val ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
   const [yearStr, monthStr] = (month || formatYMD(new Date()).slice(0, 7)).split('-');
   const year = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
@@ -447,13 +491,11 @@ export function exportMonthlyMachineryExcel(
     monthDays.push(`${month}-${String(d).padStart(2, '0')}`);
   }
 
-  // خريطة الموظفين بالـ ID
   const empMap = new Map<number, string>();
   for (const emp of employees) {
     if (emp && emp.id) empMap.set(emp.id, emp.name);
   }
 
-  // خريطة سريعة للبيانات
   const dataMap = new Map<string, MachineryHours>();
   for (const h of allHours) {
     if (h && h.machineryId != null && h.date) {
@@ -479,14 +521,32 @@ export function exportMonthlyMachineryExcel(
   const grandHours = dayTotals.reduce((s, d) => s + d.hours, 0);
   const grandTrips = dayTotals.reduce((s, d) => s + d.trips, 0);
 
-  // 1) بناء الترويسة الرئيسية والفرعية (الأيام × المعدات)
+  // إجمالي الأعمدة
+  const totalCols = 1 + histList.length * 3 + 2;
+
+  // ترقيم الصفوف للإكسيل
+  // Row 1: Title
+  // Row 2: Subtitle
+  // Row 3: Blank
+  // Row 4: Top Header
+  // Row 5: Sub Header
+  // Row 6: First Day (startRow = 6)
+  const startRow = 6;
+  const endRow = monthDays.length > 0 ? startRow + monthDays.length - 1 : startRow;
+  const totalsRow = endRow + 1;
+
+  // أعمدة كل معدة
+  const machHourColLetters: string[] = [];
+  const machTripColLetters: string[] = [];
+
+  // 1) ترويسة الجدول
   let topHeaderCells = `
-    <th rowspan="2" style="background-color:#0f172a;color:#ffffff;border:1px solid #334155;padding:10px 8px;font-size:13px;text-align:center;font-weight:bold;width:90px;">📅 اليوم والتاريخ</th>
+    <th rowspan="2" style="background-color:#0f172a;color:#ffffff;border:1px solid #334155;padding:10px 8px;font-size:13px;text-align:center;font-weight:bold;width:95px;">📅 اليوم والتاريخ</th>
   `;
 
   let subHeaderCells = '';
 
-  histList.forEach((m) => {
+  histList.forEach((m, mIdx) => {
     const machTitle = [m.kind, m.size].filter(Boolean).join(' ');
     const ownerLabel = m.owner ? ` (${m.owner})` : '';
     const driverLabel = m.driver ? ` · السائق: ${m.driver}` : '';
@@ -503,7 +563,15 @@ export function exportMonthlyMachineryExcel(
       <th style="background-color:#0284c7;color:#ffffff;border:1px solid #38bdf8;padding:6px 4px;font-size:11px;min-width:50px;text-align:center;font-weight:bold;">نقلة</th>
       <th style="background-color:#0f766e;color:#ffffff;border:1px solid #2dd4bf;padding:6px 8px;font-size:11px;min-width:140px;text-align:right;font-weight:bold;">تقرير الشغل</th>
     `;
+
+    const hColIdx = 1 + mIdx * 3;
+    const tColIdx = 1 + mIdx * 3 + 1;
+    machHourColLetters.push(colToExcelLetter(hColIdx));
+    machTripColLetters.push(colToExcelLetter(tColIdx));
   });
+
+  const dayTotHColLetter = colToExcelLetter(1 + histList.length * 3);
+  const dayTotTColLetter = colToExcelLetter(1 + histList.length * 3 + 1);
 
   topHeaderCells += `
     <th colspan="2" style="background-color:#065f46;color:#ffffff;border:1px solid #10b981;padding:8px;font-size:13px;text-align:center;font-weight:bold;">إجمالي اليوم</th>
@@ -514,9 +582,10 @@ export function exportMonthlyMachineryExcel(
     <th style="background-color:#047857;color:#ffffff;border:1px solid #34d399;padding:6px 4px;font-size:12px;min-width:70px;text-align:center;font-weight:bold;">نقلات</th>
   `;
 
-  // 2) بناء صفوف أيام الشهر (Day by Day Rows)
+  // 2) صفوف أيام الشهر مع أرقام صافية ومعادلات الجمع لليوم
   let dayRowsHtml = '';
   monthDays.forEach((d, idx) => {
+    const currentRow = startRow + idx;
     const dayNum = d.slice(8);
     const dayName = getArabicDayName(d);
     const isFri = dayName === 'الجمعة';
@@ -536,31 +605,38 @@ export function exportMonthlyMachineryExcel(
       daySumT += t;
 
       const hourCell = h > 0
-        ? `<td style="padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
-        : `<td style="padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td x:num="${h}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:12px;">${h}</td>`
+        : `<td x:num="0" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
       const tripCell = t > 0
-        ? `<td style="padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}ن</td>`
-        : `<td style="padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td x:num="${t}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:12px;">${t}</td>`
+        : `<td x:num="0" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;">0</td>`;
 
       const noteCell = n
-        ? `<td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;font-size:11px;">${esc(n)}</td>`
-        : `<td style="padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+        ? `<td style="mso-number-format:'\\@';padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;font-size:11px;">${esc(n)}</td>`
+        : `<td style="mso-number-format:'\\@';padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
 
       machineCells += hourCell + tripCell + noteCell;
     });
 
-    const dayTotalHCell = daySumH > 0
-      ? `<td style="padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#dbeafe;color:#1e40af;font-size:12px;">${daySumH} س</td>`
-      : `<td style="padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+    const dayHourFmla = histList.length > 0 ? `=SUM(${machHourColLetters.map(col => `${col}${currentRow}`).join(',')})` : `=0`;
+    const dayTripFmla = histList.length > 0 ? `=SUM(${machTripColLetters.map(col => `${col}${currentRow}`).join(',')})` : `=0`;
 
-    const dayTotalTCell = daySumT > 0
-      ? `<td style="padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fef3c7;color:#92400e;font-size:12px;">${daySumT} ن</td>`
-      : `<td style="padding:5px 4px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;">—</td>`;
+    const dayTotalHCell = `
+      <td x:num="${daySumH}" x:fmla="${dayHourFmla}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#dbeafe;color:#1e40af;font-size:12px;">
+        ${daySumH}
+      </td>
+    `;
+
+    const dayTotalTCell = `
+      <td x:num="${daySumT}" x:fmla="${dayTripFmla}" style="mso-number-format:'0.##';padding:5px 4px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fef3c7;color:#92400e;font-size:12px;">
+        ${daySumT}
+      </td>
+    `;
 
     dayRowsHtml += `
       <tr style="background-color:${rowBg};">
-        <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;white-space:nowrap;color:${isFri ? '#92400e' : '#0f172a'};">
+        <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;white-space:nowrap;color:${isFri ? '#92400e' : '#0f172a'};">
           ${dayNum} — ${dayName} ${isFri ? '🌴' : ''}
         </td>
         ${machineCells}
@@ -570,9 +646,9 @@ export function exportMonthlyMachineryExcel(
     `;
   });
 
-  // 3) صف إجمالي الشهر لكل معدة والإجمالي العام النهائي
+  // 3) صف إجمالي الشهر لكل معدة بمعادلات الإكسيل الحية
   let monthTotalsMachineCells = '';
-  histList.forEach((m) => {
+  histList.forEach((m, mIdx) => {
     let mTotalH = 0;
     let mTotalT = 0;
     monthDays.forEach((d) => {
@@ -583,66 +659,37 @@ export function exportMonthlyMachineryExcel(
       }
     });
 
+    const hCol = machHourColLetters[mIdx];
+    const tCol = machTripColLetters[mIdx];
+    const fmlaH = monthDays.length > 0 ? `=SUM(${hCol}${startRow}:${hCol}${endRow})` : `=0`;
+    const fmlaT = monthDays.length > 0 ? `=SUM(${tCol}${startRow}:${tCol}${endRow})` : `=0`;
+
     monthTotalsMachineCells += `
-      <td style="padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#6ee7b7;font-size:13px;">${mTotalH > 0 ? mTotalH + ' س' : '—'}</td>
-      <td style="padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#fde68a;font-size:13px;">${mTotalT > 0 ? mTotalT + ' ن' : '—'}</td>
-      <td style="padding:8px 4px;border:1px solid #334155;text-align:center;background-color:#0f172a;color:#64748b;font-size:11px;">—</td>
+      <td x:num="${mTotalH}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#6ee7b7;font-size:13px;">${mTotalH}</td>
+      <td x:num="${mTotalT}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:8px 4px;border:1px solid #334155;text-align:center;font-weight:bold;background-color:#064e3b;color:#fde68a;font-size:13px;">${mTotalT}</td>
+      <td style="mso-number-format:'\\@';padding:8px 4px;border:1px solid #334155;text-align:center;background-color:#0f172a;color:#64748b;font-size:11px;">—</td>
     `;
   });
 
+  const grandHoursFmla = monthDays.length > 0 ? `=SUM(${dayTotHColLetter}${startRow}:${dayTotHColLetter}${endRow})` : `=0`;
+  const grandTripsFmla = monthDays.length > 0 ? `=SUM(${dayTotTColLetter}${startRow}:${dayTotTColLetter}${endRow})` : `=0`;
+
   const monthGrandTotalRow = `
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td style="padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
+      <td style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;font-weight:bold;background-color:#0f172a;color:#ffffff;">
         📊 إجمالي شهر ${month}
       </td>
       ${monthTotalsMachineCells}
-      <td style="padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
-        ${grandHours} س
+      <td x:num="${grandHours}" x:fmla="${grandHoursFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#ffffff;">
+        ${grandHours}
       </td>
-      <td style="padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
-        ${grandTrips} ن
+      <td x:num="${grandTrips}" x:fmla="${grandTripsFmla}" style="mso-number-format:'0.##';padding:10px 6px;border:1px solid #10b981;text-align:center;font-size:14px;font-weight:bold;background-color:#1e40af;color:#fde68a;">
+        ${grandTrips}
       </td>
     </tr>
   `;
 
-  // 4) بناء سجل تقارير الشغل التفصيلية لكامل الشهر
-  let logCounter = 0;
-  let logRowsHtml = '';
-
-  monthDays.forEach((d) => {
-    const dayName = getArabicDayName(d);
-    histList.forEach((m) => {
-      const entry = dataMap.get(`${Number(m.id)}_${d}`);
-      if (entry && (Number(entry.hours) > 0 || Number(entry.trips ?? 0) > 0 || entry.notes)) {
-        logCounter++;
-        const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
-        const recordedBy =
-          entry.hoursByName ||
-          entry.tripsByName ||
-          entry.notesByName ||
-          (entry.createdBy ? empMap.get(entry.createdBy) : '') ||
-          (entry.hoursBy ? empMap.get(entry.hoursBy) : '') ||
-          '—';
-
-        logRowsHtml += `
-          <tr style="background-color:${logCounter % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
-            <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
-            <td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
-            <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
-          </tr>
-        `;
-      }
-    });
-  });
-
-  // 5) ملخص الملاك للشهر
+  // 4) ملخص الملاك للشهر
   const ownersMap = new Map<string, { machines: Machinery[]; hours: number; trips: number }>();
   histList.forEach((m) => {
     const ownerName = (m.owner || 'بدون مالك').trim();
@@ -667,14 +714,51 @@ export function exportMonthlyMachineryExcel(
     const machListStr = data.machines.map(m => [m.kind, m.size].filter(Boolean).join(' ')).join('، ');
     ownersRowsHtml += `
       <tr style="background-color:${ownerIdx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
-        <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${ownerIdx}</td>
-        <td style="padding:6px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">👤 ${esc(ownerName)}</td>
-        <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${data.machines.length}</td>
-        <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569;font-size:11px;">${esc(machListStr)}</td>
-        <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:13px;">${data.hours} س</td>
-        <td style="padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:13px;">${data.trips} ن</td>
+        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${ownerIdx}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;font-weight:bold;color:#0f172a;">👤 ${esc(ownerName)}</td>
+        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${data.machines.length}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;color:#475569;font-size:11px;">${esc(machListStr)}</td>
+        <td x:num="${data.hours}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;font-size:13px;">${data.hours}</td>
+        <td x:num="${data.trips}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;font-size:13px;">${data.trips}</td>
       </tr>
     `;
+  });
+
+  // 5) سجل الحركات التفصيلية
+  let logCounter = 0;
+  let logRowsHtml = '';
+
+  monthDays.forEach((d) => {
+    const dayName = getArabicDayName(d);
+    histList.forEach((m) => {
+      const entry = dataMap.get(`${Number(m.id)}_${d}`);
+      if (entry && (Number(entry.hours) > 0 || Number(entry.trips ?? 0) > 0 || entry.notes)) {
+        logCounter++;
+        const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
+        const recordedBy =
+          entry.hoursByName ||
+          entry.tripsByName ||
+          entry.notesByName ||
+          (entry.createdBy ? empMap.get(entry.createdBy) : '') ||
+          (entry.hoursBy ? empMap.get(entry.hoursBy) : '') ||
+          '—';
+
+        logRowsHtml += `
+          <tr style="background-color:${logCounter % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+            <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${logCounter}</td>
+            <td style="mso-number-format:'yyyy-mm-dd';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#0f172a;">${d}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#1e40af;">${dayName}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+            <td style="mso-number-format:'\\@';padding:6px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+            <td x:num="${entry.hours || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${entry.hours || 0}</td>
+            <td x:num="${entry.trips || 0}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${entry.trips || 0}</td>
+            <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(entry.notes || '—')}</td>
+            <td style="mso-number-format:'\\@';padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;color:#64748b;">${esc(recordedBy)}</td>
+          </tr>
+        `;
+      }
+    });
   });
 
   const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -717,39 +801,32 @@ export function exportMonthlyMachineryExcel(
   th, td {
     vertical-align: middle;
   }
-  .title-box {
-    text-align: center;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #0f172a;
-    padding-bottom: 12px;
-  }
-  .title {
-    color: #0f172a;
-    font-size: 20px;
-    font-weight: bold;
-    margin: 0;
-  }
-  .subtitle {
-    color: #475569;
-    font-size: 13px;
-    margin: 4px 0 0 0;
-    font-weight: bold;
-  }
 </style>
 </head>
 <body>
 
-<div class="title-box">
-  <h2 class="title">🚜 ${esc(deptName)} — شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي</h2>
-  <p class="subtitle">شهر: <b>${month}</b> (إجمالي أيام الشهر: <b>${daysCount} يوم</b>)</p>
-  <p class="subtitle">إجمالي المعدات: <b>${histList.length}</b> • إجمالي الساعات: <b style="color:#1e3a8a;">${grandHours} ساعة</b> • إجمالي النقلات: <b style="color:#b45309;">${grandTrips} نقلة</b></p>
-</div>
-
 <!-- 1️⃣ شيت التقرير الشهري التراكمي المجمع: الأيام × المعدات -->
-<h3 style="color:#0f172a;margin-bottom:8px;font-size:15px;font-weight:bold;">📊 مصفوفة شيت تشغيل وساعات المعدات لشهر ${month}</h3>
 <table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
   <thead>
+    <!-- Row 1: العنوان الرئيسي -->
+    <tr style="height:38px;">
+      <th colspan="${totalCols}" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — شيت تشغيل وساعات ونقلات المعدات الشهري التراكمي
+      </th>
+    </tr>
+    <!-- Row 2: التفاصيل والفترة -->
+    <tr style="height:26px;">
+      <th colspan="${totalCols}" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
+        شهر: ${month} (إجمالي أيام الشهر: ${daysCount} يوم) • إجمالي المعدات: ${histList.length} • إجمالي الساعات: ${grandHours} • إجمالي النقلات: ${grandTrips}
+      </th>
+    </tr>
+    <!-- Row 3: فاصل -->
+    <tr style="height:6px;">
+      <td colspan="${totalCols}" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
+    </tr>
+    <!-- Row 4: الترويسة الرئيسية -->
     <tr>${topHeaderCells}</tr>
+    <!-- Row 5: الترويسة الفرعية -->
     <tr>${subHeaderCells}</tr>
   </thead>
   <tbody>
@@ -776,9 +853,9 @@ export function exportMonthlyMachineryExcel(
   </tbody>
   <tfoot>
     <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
-      <td colspan="4" style="padding:8px;border:1px solid #334155;text-align:center;">الإجمالي العام لكافة الملاك</td>
-      <td style="padding:8px;border:1px solid #334155;text-align:center;color:#6ee7b7;font-size:13px;">${grandHours} س</td>
-      <td style="padding:8px;border:1px solid #334155;text-align:center;color:#fde68a;font-size:13px;">${grandTrips} ن</td>
+      <td colspan="4" style="mso-number-format:'\\@';padding:8px;border:1px solid #334155;text-align:center;">الإجمالي العام لكافة الملاك</td>
+      <td x:num="${grandHours}" style="mso-number-format:'0.##';padding:8px;border:1px solid #334155;text-align:center;color:#6ee7b7;font-size:13px;font-weight:bold;">${grandHours}</td>
+      <td x:num="${grandTrips}" style="mso-number-format:'0.##';padding:8px;border:1px solid #334155;text-align:center;color:#fde68a;font-size:13px;font-weight:bold;">${grandTrips}</td>
     </tr>
   </tfoot>
 </table>
@@ -820,3 +897,133 @@ export function exportMonthlyMachineryExcel(
   URL.revokeObjectURL(url);
 }
 
+/**
+ * 📊 تصدير كشف يوم واحد للمعدات بصيغة Excel ملونة مع معادلات الإكسيل الحية (=SUM)
+ */
+export function exportDailyMachineryExcel(
+  dayDate: string,
+  activeMachinery: Machinery[],
+  draftHours: Record<number, string>,
+  draftTrips: Record<number, string>,
+  draftNotes: Record<number, string>,
+  deptName = 'قسم المساحة'
+) {
+  const dayName = getArabicDayName(dayDate);
+  const startRow = 5;
+  const endRow = activeMachinery.length > 0 ? startRow + activeMachinery.length - 1 : startRow;
+  const totalsRow = endRow + 1;
+
+  let totalHours = 0;
+  let totalTrips = 0;
+
+  let rowsHtml = '';
+  activeMachinery.forEach((m, idx) => {
+    const h = parseFloat(draftHours[m.id] || '') || 0;
+    const t = parseFloat(draftTrips[m.id] || '') || 0;
+    const n = (draftNotes[m.id] || '').trim();
+    totalHours += h;
+    totalTrips += t;
+
+    const kindLabel = [m.kind, m.size].filter(Boolean).join(' ');
+
+    rowsHtml += `
+      <tr style="background-color:${idx % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+        <td style="mso-number-format:'0';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;color:#64748b;">${idx + 1}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;color:#0f172a;">${esc(kindLabel)}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#334155;">${esc(m.owner || '—')}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;color:#1e40af;">${esc(m.driver || '—')}</td>
+        <td x:num="${h}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#eff6ff;color:#1e3a8a;">${h}</td>
+        <td x:num="${t}" style="mso-number-format:'0.##';padding:6px;border:1px solid #cbd5e1;text-align:center;font-weight:bold;background-color:#fffbeb;color:#b45309;">${t}</td>
+        <td style="mso-number-format:'\\@';padding:6px 10px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;background-color:#f0fdfa;color:#115e59;">${esc(n || '—')}</td>
+      </tr>
+    `;
+  });
+
+  const fmlaH = activeMachinery.length > 0 ? `=SUM(E${startRow}:E${endRow})` : `=0`;
+  const fmlaT = activeMachinery.length > 0 ? `=SUM(F${startRow}:F${endRow})` : `=0`;
+
+  const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel"
+      xmlns="http://www.w3.org/TR/REC-html40"
+      dir="rtl"
+      lang="ar">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="ProgId" content="Excel.Sheet">
+<meta name="Generator" content="Microsoft Excel 15">
+<!--[if gte mso 9]>
+<xml>
+ <x:ExcelWorkbook>
+  <x:ExcelWorksheets>
+   <x:ExcelWorksheet>
+    <x:Name>كشف يوم ${dayDate}</x:Name>
+    <x:WorksheetOptions>
+     <x:DisplayRightToLeft/>
+     <x:Selected/>
+     <x:DoNotDisplayGridlines/>
+    </x:WorksheetOptions>
+   </x:ExcelWorksheet>
+  </x:ExcelWorksheets>
+ </x:ExcelWorkbook>
+</xml>
+<![endif]-->
+<style>
+  body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; margin: 15px; direction: rtl; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<table border="1" style="border-collapse:collapse;border:1px solid #cbd5e1;">
+  <thead>
+    <tr style="height:36px;">
+      <th colspan="7" style="background-color:#0f172a;color:#ffffff;font-size:16px;text-align:center;padding:8px;font-weight:bold;">
+        🚜 ${esc(deptName)} — كشف تشغيل وساعات ونقلات المعدات اليومي
+      </th>
+    </tr>
+    <tr style="height:26px;">
+      <th colspan="7" style="background-color:#1e293b;color:#cbd5e1;font-size:12px;text-align:center;padding:5px;font-weight:bold;">
+        يوم: ${dayName} (${dayDate}) • إجمالي المعدات: ${activeMachinery.length}
+      </th>
+    </tr>
+    <tr style="height:6px;">
+      <td colspan="7" style="background-color:#f1f5f9;border:1px solid #cbd5e1;"></td>
+    </tr>
+    <tr style="background-color:#0f172a;color:#ffffff;text-align:center;font-weight:bold;">
+      <th style="padding:8px;border:1px solid #334155;width:40px;">م</th>
+      <th style="padding:8px;border:1px solid #334155;text-align:right;">المعدة والمقاس</th>
+      <th style="padding:8px;border:1px solid #334155;text-align:right;">المالك</th>
+      <th style="padding:8px;border:1px solid #334155;text-align:right;">السائق</th>
+      <th style="padding:8px;border:1px solid #334155;width:80px;">الساعات</th>
+      <th style="padding:8px;border:1px solid #334155;width:80px;">النقلات</th>
+      <th style="padding:8px;border:1px solid #334155;text-align:right;">تقرير الشغل والموقع</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rowsHtml}
+  </tbody>
+  <tfoot>
+    <tr style="background-color:#0f172a;color:#ffffff;font-weight:bold;">
+      <td colspan="4" style="mso-number-format:'\\@';padding:10px 8px;border:1px solid #334155;text-align:center;font-size:13px;">إجمالي اليوم</td>
+      <td x:num="${totalHours}" x:fmla="${fmlaH}" style="mso-number-format:'0.##';padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#ffffff;">${totalHours}</td>
+      <td x:num="${totalTrips}" x:fmla="${fmlaT}" style="mso-number-format:'0.##';padding:10px;border:1px solid #10b981;text-align:center;font-size:14px;background-color:#1e40af;color:#fde68a;">${totalTrips}</td>
+      <td style="mso-number-format:'\\@';padding:10px;border:1px solid #334155;text-align:center;color:#94a3b8;">—</td>
+    </tr>
+  </tfoot>
+</table>
+
+</body>
+</html>`;
+
+  const filename = `ساعات_ونقلات_معدات_${dayDate}`;
+  const blob = new Blob(['\uFEFF' + fullHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

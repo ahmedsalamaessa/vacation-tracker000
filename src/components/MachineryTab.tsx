@@ -18,6 +18,7 @@ import { downloadCsv } from '../lib/exportCsv';
 import {
   exportWeeklyMachineryExcel,
   exportMonthlyMachineryExcel,
+  exportDailyMachineryExcel,
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
@@ -409,8 +410,8 @@ export default function MachineryTab({ user }: Props) {
   }
 
   function exportDay() {
-    const rows = active.map(m => [mLabel(m), m.driver || '', parseFloat(draft[m.id] || '') || 0, parseFloat(draftTrips[m.id] || '') || 0, (draftNotes[m.id] || '').trim()]);
-    downloadCsv(`ساعات_ونقلات_معدات_${dayDate}.csv`, ['المعدة', 'السواق', 'الساعات', 'النقلات', 'تقرير الشغل'], rows);
+    exportDailyMachineryExcel(dayDate, active, draft, draftTrips, draftNotes, deptName);
+    flash(`📥 تم تصدير كشف يوم ${dayDate} بصيغة Excel الملونة بنجاح!`);
   }
 
   function exportMonth() {

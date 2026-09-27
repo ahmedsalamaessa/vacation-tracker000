@@ -116,6 +116,7 @@ export default function MachineryTab({ user }: Props) {
   const [deptName, setDeptName] = useState('قسم المساحة');
   const [printOwner, setPrintOwner] = useState<string | null>(null);
   const [printGrid, setPrintGrid] = useState(false);
+  const [showMonthExportModal, setShowMonthExportModal] = useState(false);
 
   // 📅 تقرير تشغيل وتتبع المعدات الشامل: يدعم التحديد المانيوال من .. إلى .. والأسابيع
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
@@ -416,14 +417,21 @@ export default function MachineryTab({ user }: Props) {
   }
 
   function exportMonth() {
+    setShowMonthExportModal(true);
+  }
+
+  function exportMonthType(type: 'all' | 'hours' | 'trips' | 'combined') {
     exportMonthlyMachineryExcel(
       month,
       histList,
       getMachineryHours(),
       deptName,
-      getEmployees()
+      getEmployees(),
+      type
     );
-    flash(`📥 تم تصدير شيت شهر ${month} التراكمي الملون بصيغة Excel بنجاح!`);
+    const label = type === 'hours' ? 'ساعات فقط' : type === 'trips' ? 'نقلات فقط' : type === 'combined' ? 'ساعات ونقلات' : 'الشامل الكل';
+    flash(`📥 تم تصدير شيت شهر ${month} (${label}) بصيغة Excel بنجاح!`);
+    setShowMonthExportModal(false);
   }
 
   // 📅 بيانات التقرير الشامل: يدعم التحديد المانيوال من .. إلى .. أو الأسابيع
@@ -1812,6 +1820,116 @@ export default function MachineryTab({ user }: Props) {
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* ===== 📥 مودال خيارات تصدير شيت الشهر Excel ===== */}
+      {showMonthExportModal && isOwnerUser && (
+        <div className="fixed inset-0 z-[450] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs" onClick={() => setShowMonthExportModal(false)}>
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 text-slate-900 animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()} dir="rtl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 text-2xl font-black">
+                  📥
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">تصدير شيت شهر {month} Excel</h3>
+                  <p className="text-xs font-bold text-slate-500 mt-0.5">اختر نمط الشيت الذي ترغب في تحميله بصيغة Excel ملونة ومجهزة بالمعادلات:</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMonthExportModal(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {/* خيار 1: الشامل الكل */}
+              <button
+                type="button"
+                onClick={() => exportMonthType('all')}
+                className="w-full text-right p-4 rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-50/80 via-white to-teal-50/60 hover:border-emerald-600 hover:shadow-md transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📑</span>
+                    <div>
+                      <div className="font-black text-sm text-emerald-950 group-hover:text-emerald-700">شيت الشهر الشامل (كافة الشيتات معاً)</div>
+                      <div className="text-xs font-medium text-slate-500 mt-0.5">ملف واحد مجمع يحتوي على: ساعات ونقلات، ساعات فقط، نقلات فقط، كشف الملاك، وسجل الحركات</div>
+                    </div>
+                  </div>
+                  <span className="rounded-xl bg-emerald-600 text-white px-2.5 py-1 text-xs font-black shadow-xs">موصى به ⭐</span>
+                </div>
+              </button>
+
+              {/* خيار 2: ساعات فقط */}
+              <button
+                type="button"
+                onClick={() => exportMonthType('hours')}
+                className="w-full text-right p-4 rounded-2xl border border-blue-200 bg-blue-50/40 hover:bg-blue-50 hover:border-blue-500 transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">⏱️</span>
+                    <div>
+                      <div className="font-black text-sm text-blue-950 group-hover:text-blue-700">شيت ساعات فقط (Hours Only)</div>
+                      <div className="text-xs font-medium text-slate-500 mt-0.5">مصفوفة مخصصة لعمود الساعات وتقارير الشغل وإجمالي ساعات اليوم والشهر (لودرات وحفارات)</div>
+                    </div>
+                  </div>
+                  <span className="text-blue-600 text-sm font-black">تحميل ⬅</span>
+                </div>
+              </button>
+
+              {/* خيار 3: نقلات فقط */}
+              <button
+                type="button"
+                onClick={() => exportMonthType('trips')}
+                className="w-full text-right p-4 rounded-2xl border border-amber-200 bg-amber-50/40 hover:bg-amber-50 hover:border-amber-500 transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🚚</span>
+                    <div>
+                      <div className="font-black text-sm text-amber-950 group-hover:text-amber-700">شيت نقلات فقط (Trips Only)</div>
+                      <div className="text-xs font-medium text-slate-500 mt-0.5">مصفوفة مخصصة لعمود النقلات وتقارير الشغل وإجمالي نقلات اليوم والشهر (قلابات وسيارات نقل)</div>
+                    </div>
+                  </div>
+                  <span className="text-amber-600 text-sm font-black">تحميل ⬅</span>
+                </div>
+              </button>
+
+              {/* خيار 4: ساعات ونقلات معاً */}
+              <button
+                type="button"
+                onClick={() => exportMonthType('combined')}
+                className="w-full text-right p-4 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-slate-100 hover:border-slate-400 transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📊</span>
+                    <div>
+                      <div className="font-black text-sm text-slate-900 group-hover:text-slate-700">شيت ساعات ونقلات معاً (Combined)</div>
+                      <div className="text-xs font-medium text-slate-500 mt-0.5">مصفوفة ثنائية تجمع عمود الساعات وعمود النقلات لكل معدة في شيت واحد</div>
+                    </div>
+                  </div>
+                  <span className="text-slate-700 text-sm font-black">تحميل ⬅</span>
+                </div>
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowMonthExportModal(false)}
+                className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}

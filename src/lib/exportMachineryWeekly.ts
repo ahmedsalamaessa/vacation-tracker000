@@ -1024,51 +1024,28 @@ export function exportMonthlyMachineryExcel(
     </table>
   `;
 
-  // تحديد الجداول المعروضة بناءً على اختيار المستخدم
+  // تحديد الجداول واسم الشيت المعروض
   let bodyContent = '';
   let filename = '';
-  let sheetDeclarations = '';
+  let sheetName = '';
 
   if (exportType === 'hours') {
-    bodyContent = tableHoursOnlyHtml + '<br style="page-break-before:always; mso-break-type:section-break">' + tableOwnersHtml;
+    bodyContent = tableHoursOnlyHtml + tableOwnersHtml + tableLogsHtml;
     filename = `شيت_ساعات_المعدات_شهر_${month}`;
-    sheetDeclarations = `
-      <x:ExcelWorksheet><x:Name>ساعات فقط</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>ملخص الملاك</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-    `;
+    sheetName = `ساعات شهر ${month}`;
   } else if (exportType === 'trips') {
-    bodyContent = tableTripsOnlyHtml + '<br style="page-break-before:always; mso-break-type:section-break">' + tableOwnersHtml;
+    bodyContent = tableTripsOnlyHtml + tableOwnersHtml + tableLogsHtml;
     filename = `شيت_نقلات_المعدات_شهر_${month}`;
-    sheetDeclarations = `
-      <x:ExcelWorksheet><x:Name>نقلات فقط</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>ملخص الملاك</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-    `;
+    sheetName = `نقلات شهر ${month}`;
   } else if (exportType === 'combined') {
-    bodyContent = tableCombinedHtml + '<br style="page-break-before:always; mso-break-type:section-break">' + tableOwnersHtml;
+    bodyContent = tableCombinedHtml + tableOwnersHtml + tableLogsHtml;
     filename = `شيت_ساعات_ونقلات_المعدات_شهر_${month}`;
-    sheetDeclarations = `
-      <x:ExcelWorksheet><x:Name>ساعات ونقلات</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>ملخص الملاك</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-    `;
+    sheetName = `ساعات ونقلات شهر ${month}`;
   } else {
-    // تصدير شامل (كل الشيتات معاً)
-    bodyContent = tableCombinedHtml +
-      '<br style="page-break-before:always; mso-break-type:section-break">' +
-      tableHoursOnlyHtml +
-      '<br style="page-break-before:always; mso-break-type:section-break">' +
-      tableTripsOnlyHtml +
-      '<br style="page-break-before:always; mso-break-type:section-break">' +
-      tableOwnersHtml +
-      '<br style="page-break-before:always; mso-break-type:section-break">' +
-      tableLogsHtml;
+    // تصدير شامل (كل الجداول معاً في شيت متكامل)
+    bodyContent = tableCombinedHtml + tableHoursOnlyHtml + tableTripsOnlyHtml + tableOwnersHtml + tableLogsHtml;
     filename = `شيت_ساعات_ونقلات_المعدات_الشامل_شهر_${month}`;
-    sheetDeclarations = `
-      <x:ExcelWorksheet><x:Name>ساعات ونقلات شامل</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>ساعات فقط</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>نقلات فقط</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>ملخص الملاك</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-      <x:ExcelWorksheet><x:Name>سجل الحركات اليومي</x:Name><x:WorksheetOptions><x:DisplayRightToLeft/><x:DoNotDisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-    `;
+    sheetName = `كشف شهر ${month} الشامل`;
   }
 
   const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -1084,7 +1061,14 @@ export function exportMonthlyMachineryExcel(
 <xml>
  <x:ExcelWorkbook>
   <x:ExcelWorksheets>
-   ${sheetDeclarations}
+   <x:ExcelWorksheet>
+    <x:Name>${esc(sheetName)}</x:Name>
+    <x:WorksheetOptions>
+     <x:DisplayRightToLeft/>
+     <x:Selected/>
+     <x:DoNotDisplayGridlines/>
+    </x:WorksheetOptions>
+   </x:ExcelWorksheet>
   </x:ExcelWorksheets>
  </x:ExcelWorkbook>
 </xml>

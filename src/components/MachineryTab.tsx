@@ -20,6 +20,7 @@ import {
   exportMonthlyMachineryExcel,
   exportDailyMachineryExcel,
   exportOwnersMachineryExcel,
+  exportSingleOwnerMachineryExcel,
   getArabicDayName,
   getSaturdayOfWeek,
   getWeekDays,
@@ -431,6 +432,19 @@ export default function MachineryTab({ user }: Props) {
     );
     const label = type === 'hours' ? 'ساعات فقط' : type === 'trips' ? 'نقلات فقط' : type === 'combined' ? 'ساعات ونقلات' : 'الشامل الكل';
     flash(`📥 تم تصدير شيت شهر ${month} (${label}) بصيغة Excel بنجاح!`);
+    setShowMonthExportModal(false);
+  }
+
+  function exportSingleOwner(ownerName: string) {
+    exportSingleOwnerMachineryExcel(
+      month,
+      ownerName,
+      histList,
+      getMachineryHours(),
+      deptName,
+      getEmployees()
+    );
+    flash(`📥 تم تصدير كشف معدات المالك (${ownerName}) لشهر ${month} بصيغة Excel بنجاح!`);
     setShowMonthExportModal(false);
   }
 
@@ -1011,7 +1025,23 @@ export default function MachineryTab({ user }: Props) {
                     <td className="p-3 font-bold text-amber-800">{o.totalTrips ? `${o.totalTrips} نقلة` : '—'}</td>
                     <td className="p-3">
                       {isOwnerUser && (
-                        <button type="button" onClick={() => setPrintOwner(o.owner)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-200">🖨️ كشف للتوقيع</button>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => exportSingleOwner(o.owner)}
+                            className="rounded-lg border border-emerald-500/30 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 hover:bg-emerald-600 hover:text-white transition cursor-pointer"
+                            title={`تحميل شيت إكسيل ملون لمعدات المالك (${o.owner})`}
+                          >
+                            📥 Excel المالك
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPrintOwner(o.owner)}
+                            className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                          >
+                            🖨️ كشف للتوقيع
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -1919,6 +1949,35 @@ export default function MachineryTab({ user }: Props) {
                   <span className="text-slate-700 text-sm font-black">تحميل ⬅</span>
                 </div>
               </button>
+
+              {/* خيار 5: شيت لكل مالك على حدة */}
+              <div className="pt-2 border-t border-slate-200">
+                <div className="text-xs font-black text-slate-700 mb-2 flex items-center gap-1.5">
+                  <span>👤</span>
+                  <span>تحميل كشف مخصص لمالك محدد (معداته وساعاته ونقلاته فقط):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                  {ownersList.map(o => (
+                    <button
+                      key={o.owner}
+                      type="button"
+                      onClick={() => exportSingleOwner(o.owner)}
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 hover:border-indigo-400 text-right transition cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-black text-xs text-indigo-950">👤 {o.owner}</div>
+                        <div className="text-[10px] text-indigo-700 font-bold mt-0.5">
+                          {o.machines.length} معدة • {o.mon || 0} س • {o.monTrips || 0} ن
+                        </div>
+                      </div>
+                      <span className="rounded-lg bg-indigo-600 text-white px-2 py-0.5 text-[10px] font-black">تحميل 📥</span>
+                    </button>
+                  ))}
+                  {ownersList.length === 0 && (
+                    <div className="col-span-2 text-center text-xs text-slate-400 p-3">لا يوجد ملاك مسجلين في هذا الشهر</div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end">
